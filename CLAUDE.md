@@ -21,6 +21,13 @@ npx expo start
 ```
 → iPhoneのカメラでQRコードをスキャン → Expo Goで開く
 
+## AIガイドラインの管理
+- このファイルを更新するときは `.github/copilot-instructions.md` も同時に更新する
+
+## Gitについて
+- **`git push` はユーザーが明示的に指示したときのみ行う**
+- コード編集・コミットは自由に行ってよいが、プッシュは指示待ち
+
 ## 技術スタック
 - Expo SDK 54 / React Native 0.81.5
 - expo-router v6
