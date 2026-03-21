@@ -1,0 +1,22 @@
+{
+  "name": "moneyplanner",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "postCreateCommand": "npm install",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "ms-vscode.vscode-typescript-next",
+        "expo.vscode-expo-tools"
+      ]
+    }
+  },
+  "forwardPorts": [8081],
+  "portsAttributes": {
+    "8081": {
+      "label": "Expo",
+      "onAutoForward": "notify"
+    }
+  }
+}
