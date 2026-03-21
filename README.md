@@ -12,14 +12,35 @@
 
 ## 開発環境のセットアップ
 
+### ローカル（PC）
+
 ```bash
-git clone <repo>
+git clone https://github.com/PLUG365/moneyplanner.git
 cd moneyplanner
 npm install
 npx expo start
 ```
 
 iPhoneのカメラでQRコードをスキャン → Expo Goで開く
+
+### GitHub Codespaces（ブラウザ上で開発）
+
+PCがなくてもブラウザだけで開発できる環境です。Node.jsなどの環境構築は不要で、起動するだけで使えます。
+
+**起動手順**
+
+1. [Code] ボタン → [Codespaces] タブ → [Create codespace on master]
+2. ブラウザ上でVS Codeが開き、`npm install` が自動実行される
+
+**動作確認**
+
+```bash
+npx expo start --tunnel
+```
+
+表示されたQRコードをiPhoneのカメラでスキャン → Expo Goで開く
+
+> `--tunnel` をつけることでCodespacesの外（iPhone）からアクセスできるようになります。
 
 ## ドキュメント
 
