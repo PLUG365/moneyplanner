@@ -19,18 +19,54 @@ export interface Breakdown {
   isDefault: boolean;
 }
 
+export interface Store {
+  id: number;
+  name: string;
+  categoryId: number;
+  lastUsedAt: string;
+}
+
+export interface MonthlyBudget {
+  categoryId: number;
+  categoryName: string;
+  categoryColor: string;
+  amount: number;
+}
+
+export type BudgetAlertLevel = "none" | "warning" | "exceeded";
+
+export interface BudgetStatus {
+  categoryId: number;
+  categoryName: string;
+  categoryColor: string;
+  budgetAmount: number;
+  spentAmount: number;
+  usageRate: number;
+  level: BudgetAlertLevel;
+}
+
 export interface Transaction {
   id: number;
   date: string; // YYYY-MM-DD
   amount: number;
   type: TransactionType;
-  categoryId: number;
+  categoryId: number | null;
   categoryName: string;
   categoryColor: string;
   breakdownId: number | null;
   breakdownName: string;
+  storeId: number | null;
+  storeName: string;
   memo: string;
   createdAt: string;
+}
+
+export interface PlanLifeEvent {
+  id: number;
+  eventType: string;
+  paramsJson: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 const DEFAULT_CATEGORIES: {
@@ -233,6 +269,9 @@ export function initDatabase() {
       type TEXT NOT NULL,
       category_id INTEGER REFERENCES categories(id),
       breakdown_id INTEGER REFERENCES category_breakdowns(id),
+      category_name_snapshot TEXT NOT NULL DEFAULT '',
+      category_color_snapshot TEXT NOT NULL DEFAULT '#666666',
+      breakdown_name_snapshot TEXT NOT NULL DEFAULT '',
       memo TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     );
@@ -242,6 +281,30 @@ export function initDatabase() {
       name TEXT NOT NULL,
       is_default INTEGER NOT NULL DEFAULT 0
     );
+    CREATE TABLE IF NOT EXISTS budgets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      year INTEGER NOT NULL,
+      month INTEGER NOT NULL,
+      category_id INTEGER NOT NULL REFERENCES categories(id),
+      amount INTEGER NOT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+      UNIQUE(year, month, category_id)
+    );
+    CREATE TABLE IF NOT EXISTS plan_life_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_type TEXT NOT NULL,
+      params_json TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+    );
+    CREATE TABLE IF NOT EXISTS stores (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      category_id INTEGER NOT NULL REFERENCES categories(id),
+      last_used_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+      UNIQUE(name, category_id)
+    );
   `);
 
   if (!columnExists("transactions", "breakdown_id")) {
@@ -249,6 +312,50 @@ export function initDatabase() {
       "ALTER TABLE transactions ADD COLUMN breakdown_id INTEGER REFERENCES category_breakdowns(id)",
     );
   }
+  if (!columnExists("transactions", "category_name_snapshot")) {
+    db.runSync(
+      "ALTER TABLE transactions ADD COLUMN category_name_snapshot TEXT NOT NULL DEFAULT ''",
+    );
+  }
+  if (!columnExists("transactions", "category_color_snapshot")) {
+    db.runSync(
+      "ALTER TABLE transactions ADD COLUMN category_color_snapshot TEXT NOT NULL DEFAULT '#666666'",
+    );
+  }
+  if (!columnExists("transactions", "breakdown_name_snapshot")) {
+    db.runSync(
+      "ALTER TABLE transactions ADD COLUMN breakdown_name_snapshot TEXT NOT NULL DEFAULT ''",
+    );
+  }
+  if (!columnExists("transactions", "store_id")) {
+    db.runSync(
+      "ALTER TABLE transactions ADD COLUMN store_id INTEGER REFERENCES stores(id)",
+    );
+  }
+  if (!columnExists("transactions", "store_name_snapshot")) {
+    db.runSync(
+      "ALTER TABLE transactions ADD COLUMN store_name_snapshot TEXT NOT NULL DEFAULT ''",
+    );
+  }
+
+  // 旧仕様（年+月/年無関係+月）を、カテゴリ単位の共通予算（year=0, month=0）へ統合する。
+  db.runSync(
+    `INSERT INTO budgets (year, month, category_id, amount, created_at, updated_at)
+     SELECT 0, 0, b.category_id, b.amount, b.created_at, b.updated_at
+     FROM budgets b
+     WHERE NOT EXISTS (
+       SELECT 1
+       FROM budgets newer
+       WHERE newer.category_id = b.category_id
+         AND (
+           newer.updated_at > b.updated_at
+           OR (newer.updated_at = b.updated_at AND newer.id > b.id)
+         )
+     )
+     ON CONFLICT(year, month, category_id)
+     DO UPDATE SET amount = excluded.amount, updated_at = excluded.updated_at`,
+  );
+  db.runSync("DELETE FROM budgets WHERE NOT (year = 0 AND month = 0)");
 
   ensureDefaultCategories();
 
@@ -273,6 +380,84 @@ export function initDatabase() {
       ["その他", "expense", "#757575"],
     );
   }
+
+  db.runSync(
+    `UPDATE transactions
+     SET category_name_snapshot = COALESCE(
+       NULLIF(category_name_snapshot, ''),
+       (SELECT name FROM categories WHERE categories.id = transactions.category_id),
+       '未分類'
+     ),
+     category_color_snapshot = COALESCE(
+       NULLIF(category_color_snapshot, ''),
+       (SELECT color FROM categories WHERE categories.id = transactions.category_id),
+       '#666666'
+     ),
+     breakdown_name_snapshot = COALESCE(
+       NULLIF(breakdown_name_snapshot, ''),
+       (SELECT name FROM category_breakdowns WHERE category_breakdowns.id = transactions.breakdown_id),
+       ''
+     ),
+     store_name_snapshot = COALESCE(
+       NULLIF(store_name_snapshot, ''),
+       (SELECT name FROM stores WHERE stores.id = transactions.store_id),
+       ''
+     )`,
+  );
+}
+
+export function resetDatabaseForDevelopment() {
+  if (!__DEV__) {
+    throw new Error("DBリセットは開発環境でのみ実行できます");
+  }
+
+  db.execSync(`
+    DELETE FROM transactions;
+    DELETE FROM budgets;
+    DELETE FROM plan_life_events;
+    DELETE FROM stores;
+    DELETE FROM category_breakdowns;
+    DELETE FROM categories;
+    DELETE FROM sqlite_sequence
+    WHERE name IN ('transactions', 'budgets', 'plan_life_events', 'stores', 'category_breakdowns', 'categories');
+  `);
+
+  ensureDefaultCategories();
+}
+
+export function resetCategoryAndBreakdownsToDefault() {
+  db.execSync(`
+    UPDATE transactions SET category_id = NULL, breakdown_id = NULL, store_id = NULL;
+    DELETE FROM budgets;
+    DELETE FROM plan_life_events;
+    DELETE FROM stores;
+    DELETE FROM category_breakdowns;
+    DELETE FROM categories;
+    DELETE FROM sqlite_sequence
+    WHERE name IN ('budgets', 'plan_life_events', 'stores', 'category_breakdowns', 'categories');
+  `);
+
+  ensureDefaultCategories();
+}
+
+function resolveTransactionSnapshot(
+  categoryId: number,
+  breakdownId?: number | null,
+): { categoryName: string; categoryColor: string; breakdownName: string } {
+  const category = getCategoryById(categoryId);
+  const breakdown =
+    breakdownId != null
+      ? db.getFirstSync<{ name: string }>(
+          "SELECT name FROM category_breakdowns WHERE id = ? LIMIT 1",
+          [breakdownId],
+        )
+      : null;
+
+  return {
+    categoryName: category?.name ?? "未分類",
+    categoryColor: category?.color ?? "#666666",
+    breakdownName: breakdown?.name ?? "",
+  };
 }
 
 // Categories
@@ -302,11 +487,12 @@ export function addCategory(
 
 export function deleteCategory(id: number) {
   db.runSync(
-    "UPDATE transactions SET breakdown_id = NULL WHERE category_id = ?",
+    "UPDATE transactions SET category_id = NULL, breakdown_id = NULL WHERE category_id = ?",
     [id],
   );
+  db.runSync("DELETE FROM budgets WHERE category_id = ?", [id]);
   db.runSync("DELETE FROM category_breakdowns WHERE category_id = ?", [id]);
-  db.runSync("DELETE FROM categories WHERE id = ? AND is_default = 0", [id]);
+  db.runSync("DELETE FROM categories WHERE id = ?", [id]);
 }
 
 export function updateCategory(id: number, name: string, color: string) {
@@ -353,10 +539,7 @@ export function deleteBreakdown(id: number) {
     "UPDATE transactions SET breakdown_id = NULL WHERE breakdown_id = ?",
     [id],
   );
-  db.runSync(
-    "DELETE FROM category_breakdowns WHERE id = ? AND is_default = 0",
-    [id],
-  );
+  db.runSync("DELETE FROM category_breakdowns WHERE id = ?", [id]);
 }
 
 // Transactions
@@ -367,10 +550,36 @@ export function addTransaction(
   categoryId: number,
   memo: string,
   breakdownId?: number | null,
+  storeId?: number | null,
 ): number {
+  const snapshot = resolveTransactionSnapshot(categoryId, breakdownId);
+  const storeNameSnapshot = storeId
+    ? db.getFirstSync<{ name: string }>(
+        "SELECT name FROM stores WHERE id = ? LIMIT 1",
+        [storeId],
+      )?.name ?? ""
+    : "";
+  if (storeId) {
+    db.runSync(
+      "UPDATE stores SET last_used_at = datetime('now', 'localtime') WHERE id = ?",
+      [storeId],
+    );
+  }
   const result = db.runSync(
-    "INSERT INTO transactions (date, amount, type, category_id, breakdown_id, memo) VALUES (?, ?, ?, ?, ?, ?)",
-    [date, amount, type, categoryId, breakdownId ?? null, memo],
+    "INSERT INTO transactions (date, amount, type, category_id, breakdown_id, category_name_snapshot, category_color_snapshot, breakdown_name_snapshot, memo, store_id, store_name_snapshot) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [
+      date,
+      amount,
+      type,
+      categoryId,
+      breakdownId ?? null,
+      snapshot.categoryName,
+      snapshot.categoryColor,
+      snapshot.breakdownName,
+      memo,
+      storeId ?? null,
+      storeNameSnapshot,
+    ],
   );
   return result.lastInsertRowId;
 }
@@ -383,15 +592,99 @@ export function updateTransaction(
   categoryId: number,
   memo: string,
   breakdownId?: number | null,
+  storeId?: number | null,
 ) {
+  const snapshot = resolveTransactionSnapshot(categoryId, breakdownId);
+  const storeNameSnapshot = storeId
+    ? db.getFirstSync<{ name: string }>(
+        "SELECT name FROM stores WHERE id = ? LIMIT 1",
+        [storeId],
+      )?.name ?? ""
+    : "";
+  if (storeId) {
+    db.runSync(
+      "UPDATE stores SET last_used_at = datetime('now', 'localtime') WHERE id = ?",
+      [storeId],
+    );
+  }
   db.runSync(
-    "UPDATE transactions SET date=?, amount=?, type=?, category_id=?, breakdown_id=?, memo=? WHERE id=?",
-    [date, amount, type, categoryId, breakdownId ?? null, memo, id],
+    "UPDATE transactions SET date=?, amount=?, type=?, category_id=?, breakdown_id=?, category_name_snapshot=?, category_color_snapshot=?, breakdown_name_snapshot=?, memo=?, store_id=?, store_name_snapshot=? WHERE id=?",
+    [
+      date,
+      amount,
+      type,
+      categoryId,
+      breakdownId ?? null,
+      snapshot.categoryName,
+      snapshot.categoryColor,
+      snapshot.breakdownName,
+      memo,
+      storeId ?? null,
+      storeNameSnapshot,
+      id,
+    ],
   );
 }
 
 export function deleteTransaction(id: number) {
   db.runSync("DELETE FROM transactions WHERE id = ?", [id]);
+}
+
+// Stores
+export function getStoresByCategory(categoryId: number): Store[] {
+  const rows = db.getAllSync<any>(
+    "SELECT * FROM stores WHERE category_id = ? ORDER BY last_used_at DESC, name ASC",
+    [categoryId],
+  );
+  return rows.map(mapStore);
+}
+
+export function upsertStore(name: string, categoryId: number): number {
+  db.runSync(
+    "INSERT OR IGNORE INTO stores (name, category_id) VALUES (?, ?)",
+    [name, categoryId],
+  );
+  const row = db.getFirstSync<{ id: number }>(
+    "SELECT id FROM stores WHERE name = ? AND category_id = ? LIMIT 1",
+    [name, categoryId],
+  );
+  return row!.id;
+}
+
+export function addLifeEvent(eventType: string, paramsJson: string): number {
+  const result = db.runSync(
+    `INSERT INTO plan_life_events (event_type, params_json, updated_at)
+     VALUES (?, ?, datetime('now', 'localtime'))`,
+    [eventType, paramsJson],
+  );
+  return result.lastInsertRowId;
+}
+
+export function updateLifeEvent(id: number, paramsJson: string) {
+  db.runSync(
+    `UPDATE plan_life_events
+     SET params_json = ?, updated_at = datetime('now', 'localtime')
+     WHERE id = ?`,
+    [paramsJson, id],
+  );
+}
+
+export function deleteLifeEvent(id: number) {
+  db.runSync("DELETE FROM plan_life_events WHERE id = ?", [id]);
+}
+
+export function getLifeEvents(): PlanLifeEvent[] {
+  const rows = db.getAllSync<any>(
+    `SELECT * FROM plan_life_events
+     ORDER BY created_at ASC, id ASC`,
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    eventType: r.event_type,
+    paramsJson: r.params_json,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
 }
 
 export function getTransactionsByMonth(
@@ -465,10 +758,20 @@ export function getMonthCategorySummary(
   const to = `${year}-${String(month).padStart(2, "0")}-31`;
   return db
     .getAllSync<any>(
-      `SELECT t.type, t.category_id, c.name as category_name, c.color as category_color, SUM(t.amount) as total
-     FROM transactions t LEFT JOIN categories c ON t.category_id = c.id
+      `SELECT
+       t.type,
+       COALESCE(t.category_id, 0) as category_id,
+       COALESCE(NULLIF(t.category_name_snapshot, ''), c.name, '未分類') as category_name,
+       COALESCE(NULLIF(t.category_color_snapshot, ''), c.color, '#666666') as category_color,
+       SUM(t.amount) as total
+     FROM transactions t
+     LEFT JOIN categories c ON t.category_id = c.id
      WHERE t.date >= ? AND t.date <= ?
-     GROUP BY t.type, t.category_id
+     GROUP BY
+       t.type,
+       COALESCE(t.category_id, 0),
+       COALESCE(NULLIF(t.category_name_snapshot, ''), c.name, '未分類'),
+       COALESCE(NULLIF(t.category_color_snapshot, ''), c.color, '#666666')
      ORDER BY t.type, total DESC`,
       [from, to],
     )
@@ -485,6 +788,169 @@ export interface MonthlyTotal {
   month: number;
   income: number;
   expense: number;
+}
+
+export function setMonthlyBudget(categoryId: number, amount: number) {
+  db.runSync(
+    `INSERT INTO budgets (year, month, category_id, amount, updated_at)
+     VALUES (?, ?, ?, ?, datetime('now', 'localtime'))
+     ON CONFLICT(year, month, category_id)
+     DO UPDATE SET amount = excluded.amount, updated_at = datetime('now', 'localtime')`,
+    [0, 0, categoryId, amount],
+  );
+}
+
+export function deleteMonthlyBudget(categoryId: number) {
+  db.runSync(
+    "DELETE FROM budgets WHERE year = 0 AND month = 0 AND category_id = ?",
+    [categoryId],
+  );
+}
+
+export function getMonthlyBudgets(
+  type: TransactionType = "expense",
+): MonthlyBudget[] {
+  return db
+    .getAllSync<any>(
+      `SELECT
+         c.id as category_id,
+         c.name as category_name,
+         c.color as category_color,
+         COALESCE(b.amount, 0) as amount
+       FROM categories c
+       LEFT JOIN budgets b
+         ON b.category_id = c.id AND b.year = 0 AND b.month = 0
+       WHERE c.type = ?
+       ORDER BY c.is_default DESC, c.name ASC`,
+      [type],
+    )
+    .map((r) => ({
+      categoryId: r.category_id,
+      categoryName: r.category_name,
+      categoryColor: r.category_color,
+      amount: r.amount,
+    }));
+}
+
+export function getMonthBudgetStatuses(
+  year: number,
+  month: number,
+): BudgetStatus[] {
+  const rows = db.getAllSync<any>(
+    `SELECT
+       c.id as category_id,
+       c.name as category_name,
+       c.color as category_color,
+       b.amount as budget_amount,
+       COALESCE((
+         SELECT SUM(t.amount)
+         FROM transactions t
+         WHERE t.type = 'expense'
+           AND t.date >= ?
+           AND t.date <= ?
+           AND (
+             t.category_id = c.id
+             OR (
+               t.category_id IS NULL
+               AND COALESCE(NULLIF(t.category_name_snapshot, ''), '未分類') = c.name
+             )
+           )
+       ), 0) as spent_amount
+     FROM budgets b
+     JOIN categories c ON c.id = b.category_id
+     WHERE b.year = ?
+       AND b.month = ?
+       AND c.type = 'expense'
+       AND b.amount > 0
+     ORDER BY c.name ASC`,
+    [
+      `${year}-${String(month).padStart(2, "0")}-01`,
+      `${year}-${String(month).padStart(2, "0")}-31`,
+      0,
+      0,
+    ],
+  );
+
+  return rows
+    .map((row) => {
+      const budgetAmount = row.budget_amount as number;
+      const spentAmount = row.spent_amount as number;
+      const usageRate = budgetAmount > 0 ? spentAmount / budgetAmount : 0;
+      const level: BudgetAlertLevel =
+        usageRate >= 1 ? "exceeded" : usageRate >= 0.8 ? "warning" : "none";
+
+      return {
+        categoryId: row.category_id,
+        categoryName: row.category_name,
+        categoryColor: row.category_color,
+        budgetAmount,
+        spentAmount,
+        usageRate,
+        level,
+      };
+    })
+    .sort((a, b) => b.usageRate - a.usageRate);
+}
+
+export function getBudgetStatusForDate(
+  date: string,
+  categoryId: number,
+): BudgetStatus | null {
+  const [yearText, monthText] = date.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  if (!year || !month) {
+    return null;
+  }
+
+  const category = getCategoryById(categoryId);
+  if (!category || category.type !== "expense") {
+    return null;
+  }
+
+  const budget = db.getFirstSync<{ amount: number }>(
+    "SELECT amount FROM budgets WHERE year = ? AND month = ? AND category_id = ? LIMIT 1",
+    [0, 0, categoryId],
+  );
+  if (!budget || budget.amount <= 0) {
+    return null;
+  }
+
+  const spent = db.getFirstSync<{ total: number }>(
+    `SELECT COALESCE(SUM(amount), 0) as total
+     FROM transactions
+     WHERE type = 'expense'
+       AND (
+         category_id = ?
+         OR (
+           category_id IS NULL
+           AND COALESCE(NULLIF(category_name_snapshot, ''), '未分類') = ?
+         )
+       )
+       AND date >= ?
+       AND date <= ?`,
+    [
+      categoryId,
+      category.name,
+      `${year}-${String(month).padStart(2, "0")}-01`,
+      `${year}-${String(month).padStart(2, "0")}-31`,
+    ],
+  );
+
+  const spentAmount = spent?.total ?? 0;
+  const usageRate = spentAmount / budget.amount;
+  const level: BudgetAlertLevel =
+    usageRate >= 1 ? "exceeded" : usageRate >= 0.8 ? "warning" : "none";
+
+  return {
+    categoryId,
+    categoryName: category.name,
+    categoryColor: category.color,
+    budgetAmount: budget.amount,
+    spentAmount,
+    usageRate,
+    level,
+  };
 }
 
 export function getYearMonthlyTotals(year: number): MonthlyTotal[] {
@@ -546,13 +1012,24 @@ function mapTransaction(r: any): Transaction {
     date: r.date,
     amount: r.amount,
     type: r.type as TransactionType,
-    categoryId: r.category_id,
-    categoryName: r.category_name || "未分類",
-    categoryColor: r.category_color || "#666666",
+    categoryId: r.category_id ?? null,
+    categoryName: r.category_name_snapshot || r.category_name || "未分類",
+    categoryColor: r.category_color_snapshot || r.category_color || "#666666",
     breakdownId: r.breakdown_id ?? null,
-    breakdownName: r.breakdown_name || "",
+    breakdownName: r.breakdown_name_snapshot || r.breakdown_name || "",
+    storeId: r.store_id ?? null,
+    storeName: r.store_name_snapshot || "",
     memo: r.memo || "",
     createdAt: r.created_at,
+  };
+}
+
+function mapStore(r: any): Store {
+  return {
+    id: r.id,
+    name: r.name,
+    categoryId: r.category_id,
+    lastUsedAt: r.last_used_at,
   };
 }
 

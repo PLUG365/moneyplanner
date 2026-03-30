@@ -1,8 +1,11 @@
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
     Alert,
+    InputAccessoryView,
+    Keyboard,
     Modal,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -21,8 +24,13 @@ import {
     Category,
     deleteBreakdown,
     deleteCategory,
+    deleteMonthlyBudget,
     getBreakdownsByCategory,
     getCategories,
+    getMonthlyBudgets,
+    resetCategoryAndBreakdownsToDefault,
+    resetDatabaseForDevelopment,
+    setMonthlyBudget,
     TransactionType,
     updateBreakdown,
     updateCategory,
@@ -47,6 +55,14 @@ const PRESET_COLORS = [
 ];
 
 type ManagerTab = "category" | "breakdown";
+const KEYBOARD_ACCESSORY_VIEW_ID = "settings-keyboard-accessory";
+
+function formatYenDisplay(rawDigits: string): string {
+  if (!rawDigits) return "";
+  const amount = parseInt(rawDigits, 10);
+  if (isNaN(amount)) return "";
+  return `¥${amount.toLocaleString("ja-JP")}`;
+}
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? "light";
@@ -76,6 +92,7 @@ export default function SettingsScreen() {
   const [breakdownNameInput, setBreakdownNameInput] = useState("");
 
   const [exporting, setExporting] = useState(false);
+  const [budgetInputs, setBudgetInputs] = useState<Record<number, string>>({});
 
   const load = useCallback(() => {
     const allCategories = getCategories();
@@ -97,11 +114,25 @@ export default function SettingsScreen() {
     }
   }, [activeType, selectedCategoryId]);
 
+  const loadBudgetEditor = useCallback(() => {
+    const rows = getMonthlyBudgets("expense");
+    const nextInputs: Record<number, string> = {};
+    rows.forEach((row) => {
+      nextInputs[row.categoryId] = row.amount > 0 ? String(row.amount) : "";
+    });
+    setBudgetInputs(nextInputs);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load]),
+      loadBudgetEditor();
+    }, [load, loadBudgetEditor]),
   );
+
+  useEffect(() => {
+    loadBudgetEditor();
+  }, [loadBudgetEditor]);
 
   const visibleCategories = useMemo(
     () => categories.filter((c) => c.type === activeType),
@@ -158,6 +189,7 @@ export default function SettingsScreen() {
     }
 
     load();
+    loadBudgetEditor();
     resetCategoryForm();
   };
 
@@ -168,11 +200,6 @@ export default function SettingsScreen() {
   };
 
   const handleDeleteCategory = (cat: Category) => {
-    if (cat.isDefault) {
-      Alert.alert("削除不可", "デフォルトカテゴリは削除できません");
-      return;
-    }
-
     Alert.alert("削除確認", `「${cat.name}」を削除しますか？`, [
       { text: "キャンセル", style: "cancel" },
       {
@@ -181,6 +208,7 @@ export default function SettingsScreen() {
         onPress: () => {
           deleteCategory(cat.id);
           load();
+          loadBudgetEditor();
           if (selectedCategoryId === cat.id) {
             setSelectedCategoryId(null);
           }
@@ -216,11 +244,6 @@ export default function SettingsScreen() {
   };
 
   const handleDeleteBreakdown = (item: Breakdown) => {
-    if (item.isDefault) {
-      Alert.alert("削除不可", "デフォルト内訳は削除できません");
-      return;
-    }
-
     Alert.alert("削除確認", `「${item.name}」を削除しますか？`, [
       { text: "キャンセル", style: "cancel" },
       {
@@ -234,11 +257,52 @@ export default function SettingsScreen() {
     ]);
   };
 
+  const handleResetMasterToDefault = () => {
+    Alert.alert(
+      "カテゴリ/内訳をデフォルトに戻す",
+      "カテゴリと内訳のマスタを初期状態に戻します。記録済みデータは削除されません。実行しますか？",
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "実行",
+          style: "destructive",
+          onPress: () => {
+            try {
+              resetCategoryAndBreakdownsToDefault();
+              load();
+              resetCategoryForm();
+              resetBreakdownForm();
+              loadBudgetEditor();
+              Alert.alert("完了", "カテゴリ/内訳をデフォルトに戻しました");
+            } catch {
+              Alert.alert("エラー", "初期化に失敗しました");
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleOpenManager = () => {
     resetCategoryForm();
     resetBreakdownForm();
     setManagerTab("category");
     setShowManagerModal(true);
+  };
+
+  const handleBudgetInputChange = (categoryId: number, raw: string) => {
+    const normalized = raw.replace(/\D/g, "").slice(0, 7);
+    setBudgetInputs((prev) => ({ ...prev, [categoryId]: normalized }));
+
+    if (!normalized) {
+      deleteMonthlyBudget(categoryId);
+      return;
+    }
+
+    const amount = parseInt(normalized, 10);
+    if (!isNaN(amount) && amount >= 0) {
+      setMonthlyBudget(categoryId, amount);
+    }
   };
 
   const handleExportCSV = async () => {
@@ -250,6 +314,34 @@ export default function SettingsScreen() {
     } finally {
       setExporting(false);
     }
+  };
+
+  const handleResetDatabase = () => {
+    Alert.alert(
+      "開発用DBリセット",
+      "カテゴリ・内訳・記録データをすべて初期化します。実行しますか？",
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "リセット",
+          style: "destructive",
+          onPress: () => {
+            try {
+              resetDatabaseForDevelopment();
+              load();
+              setSelectedCategoryId(null);
+              setCategoryEditingId(null);
+              setBreakdownEditingId(null);
+              setCategoryNameInput("");
+              setBreakdownNameInput("");
+              Alert.alert("完了", "DBを初期化しました（開発用）");
+            } catch {
+              Alert.alert("エラー", "DB初期化に失敗しました");
+            }
+          },
+        },
+      ],
+    );
   };
 
   const incomeColor = colorScheme === "dark" ? "#42A5F5" : "#1565C0";
@@ -278,6 +370,15 @@ export default function SettingsScreen() {
             {exporting ? "出力中..." : "CSVで書き出す"}
           </Text>
         </TouchableOpacity>
+
+        {__DEV__ && (
+          <TouchableOpacity
+            style={[styles.actionButton, styles.devResetButton]}
+            onPress={handleResetDatabase}
+          >
+            <Text style={styles.actionButtonText}>開発用: DBをリセット</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View
@@ -297,6 +398,14 @@ export default function SettingsScreen() {
           onPress={handleOpenManager}
         >
           <Text style={styles.actionButtonText}>管理画面を開く</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.resetDefaultButton]}
+          onPress={handleResetMasterToDefault}
+        >
+          <Text style={styles.actionButtonText}>
+            カテゴリ/内訳をデフォルトに戻す
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -393,273 +502,351 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={styles.popupContent}>
+            <View style={styles.managerBody}>
               {managerTab === "category" ? (
                 <>
-                  <Text style={[styles.groupLabel, { color: colors.subText }]}>
-                    カテゴリ一覧
-                  </Text>
-                  {visibleCategories.map((cat) => (
-                    <View
-                      key={cat.id}
-                      style={[styles.itemRow, { borderColor: colors.border }]}
+                  <ScrollView
+                    style={styles.managerListScroll}
+                    contentContainerStyle={styles.managerListContent}
+                  >
+                    <Text
+                      style={[styles.groupLabel, { color: colors.subText }]}
                     >
+                      カテゴリ一覧
+                    </Text>
+                    {visibleCategories.map((cat) => (
                       <View
+                        key={cat.id}
+                        style={[styles.itemRow, { borderColor: colors.border }]}
+                      >
+                        <View
+                          style={[
+                            styles.categoryDot,
+                            { backgroundColor: cat.color },
+                          ]}
+                        />
+                        <Text style={[styles.itemName, { color: colors.text }]}>
+                          {cat.name}
+                        </Text>
+                        {activeType === "expense" ? (
+                          <TextInput
+                            style={[
+                              styles.inlineBudgetInput,
+                              {
+                                borderColor: colors.border,
+                                color: colors.text,
+                              },
+                            ]}
+                            value={formatYenDisplay(budgetInputs[cat.id] ?? "")}
+                            onChangeText={(text) =>
+                              handleBudgetInputChange(cat.id, text)
+                            }
+                            placeholder="¥0"
+                            placeholderTextColor={colors.subText}
+                            keyboardType="number-pad"
+                            returnKeyType="done"
+                            inputAccessoryViewID={
+                              Platform.OS === "ios"
+                                ? KEYBOARD_ACCESSORY_VIEW_ID
+                                : undefined
+                            }
+                          />
+                        ) : null}
+                        <TouchableOpacity
+                          onPress={() => handleEditCategory(cat)}
+                        >
+                          <Text
+                            style={[styles.itemAction, { color: colors.tint }]}
+                          >
+                            編集
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleDeleteCategory(cat)}
+                        >
+                          <Text style={[styles.itemDelete]}>削除</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </ScrollView>
+
+                  <View
+                    style={[
+                      styles.managerForm,
+                      {
+                        borderTopColor: colors.border,
+                        backgroundColor: colors.card,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.groupLabel, { color: colors.subText }]}
+                    >
+                      カテゴリ{categoryEditingId ? "編集" : "追加"}
+                    </Text>
+                    <TextInput
+                      style={[
+                        styles.textInput,
+                        { borderColor: colors.border, color: colors.text },
+                      ]}
+                      value={categoryNameInput}
+                      onChangeText={setCategoryNameInput}
+                      placeholder="カテゴリ名"
+                      placeholderTextColor={colors.subText}
+                      maxLength={20}
+                      returnKeyType="done"
+                      blurOnSubmit
+                      onSubmitEditing={Keyboard.dismiss}
+                      inputAccessoryViewID={
+                        Platform.OS === "ios"
+                          ? KEYBOARD_ACCESSORY_VIEW_ID
+                          : undefined
+                      }
+                    />
+
+                    <View style={styles.colorGrid}>
+                      {PRESET_COLORS.map((c) => (
+                        <TouchableOpacity
+                          key={c}
+                          style={[
+                            styles.colorSwatch,
+                            { backgroundColor: c },
+                            categoryColorInput === c &&
+                              styles.colorSwatchSelected,
+                          ]}
+                          onPress={() => setCategoryColorInput(c)}
+                        />
+                      ))}
+                    </View>
+
+                    <View style={styles.formButtons}>
+                      <TouchableOpacity
                         style={[
-                          styles.categoryDot,
-                          { backgroundColor: cat.color },
+                          styles.formButton,
+                          { borderColor: colors.border },
                         ]}
-                      />
-                      <Text style={[styles.itemName, { color: colors.text }]}>
-                        {cat.name}
-                      </Text>
-                      {cat.isDefault ? (
+                        onPress={resetCategoryForm}
+                      >
                         <Text
                           style={[
-                            styles.defaultBadge,
+                            styles.formButtonText,
                             { color: colors.subText },
                           ]}
                         >
-                          デフォルト
+                          リセット
                         </Text>
-                      ) : (
-                        <>
-                          <TouchableOpacity
-                            onPress={() => handleEditCategory(cat)}
-                          >
-                            <Text
-                              style={[
-                                styles.itemAction,
-                                { color: colors.tint },
-                              ]}
-                            >
-                              編集
-                            </Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => handleDeleteCategory(cat)}
-                          >
-                            <Text style={[styles.itemDelete]}>削除</Text>
-                          </TouchableOpacity>
-                        </>
-                      )}
-                    </View>
-                  ))}
-
-                  <Text style={[styles.groupLabel, { color: colors.subText }]}>
-                    カテゴリ{categoryEditingId ? "編集" : "追加"}
-                  </Text>
-                  <TextInput
-                    style={[
-                      styles.textInput,
-                      { borderColor: colors.border, color: colors.text },
-                    ]}
-                    value={categoryNameInput}
-                    onChangeText={setCategoryNameInput}
-                    placeholder="カテゴリ名"
-                    placeholderTextColor={colors.subText}
-                    maxLength={20}
-                  />
-
-                  <View style={styles.colorGrid}>
-                    {PRESET_COLORS.map((c) => (
+                      </TouchableOpacity>
                       <TouchableOpacity
-                        key={c}
                         style={[
-                          styles.colorSwatch,
-                          { backgroundColor: c },
-                          categoryColorInput === c &&
-                            styles.colorSwatchSelected,
+                          styles.formButton,
+                          {
+                            backgroundColor: colors.tint,
+                            borderColor: colors.tint,
+                          },
                         ]}
-                        onPress={() => setCategoryColorInput(c)}
-                      />
-                    ))}
-                  </View>
-
-                  <View style={styles.formButtons}>
-                    <TouchableOpacity
-                      style={[
-                        styles.formButton,
-                        { borderColor: colors.border },
-                      ]}
-                      onPress={resetCategoryForm}
-                    >
-                      <Text
-                        style={[
-                          styles.formButtonText,
-                          { color: colors.subText },
-                        ]}
+                        onPress={handleSaveCategory}
                       >
-                        リセット
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.formButton,
-                        {
-                          backgroundColor: colors.tint,
-                          borderColor: colors.tint,
-                        },
-                      ]}
-                      onPress={handleSaveCategory}
-                    >
-                      <Text style={[styles.formButtonText, { color: "#fff" }]}>
-                        {categoryEditingId ? "更新" : "追加"}
-                      </Text>
-                    </TouchableOpacity>
+                        <Text
+                          style={[styles.formButtonText, { color: "#fff" }]}
+                        >
+                          {categoryEditingId ? "更新" : "追加"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </>
               ) : (
                 <>
-                  <Text style={[styles.groupLabel, { color: colors.subText }]}>
-                    対象カテゴリ
-                  </Text>
-                  <View style={styles.chipWrap}>
-                    {visibleCategories.map((cat) => (
-                      <TouchableOpacity
-                        key={cat.id}
-                        style={[
-                          styles.chip,
-                          { borderColor: cat.color },
-                          selectedCategoryId === cat.id && {
-                            backgroundColor: cat.color,
-                          },
-                        ]}
-                        onPress={() => {
-                          setSelectedCategoryId(cat.id);
-                          reloadBreakdowns(cat.id);
-                          resetBreakdownForm();
-                        }}
-                      >
-                        <Text
+                  <ScrollView
+                    style={styles.managerListScroll}
+                    contentContainerStyle={styles.managerListContent}
+                  >
+                    <Text
+                      style={[styles.groupLabel, { color: colors.subText }]}
+                    >
+                      対象カテゴリ
+                    </Text>
+                    <View style={styles.chipWrap}>
+                      {visibleCategories.map((cat) => (
+                        <TouchableOpacity
+                          key={cat.id}
                           style={[
-                            styles.chipText,
-                            { color: cat.color },
-                            selectedCategoryId === cat.id && { color: "#fff" },
+                            styles.chip,
+                            { borderColor: cat.color },
+                            selectedCategoryId === cat.id && {
+                              backgroundColor: cat.color,
+                            },
                           ]}
-                        >
-                          {cat.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-
-                  <Text style={[styles.groupLabel, { color: colors.subText }]}>
-                    内訳一覧
-                  </Text>
-                  {selectedCategory ? (
-                    breakdowns.length > 0 ? (
-                      breakdowns.map((item) => (
-                        <View
-                          key={item.id}
-                          style={[
-                            styles.itemRow,
-                            { borderColor: colors.border },
-                          ]}
+                          onPress={() => {
+                            setSelectedCategoryId(cat.id);
+                            reloadBreakdowns(cat.id);
+                            resetBreakdownForm();
+                          }}
                         >
                           <Text
-                            style={[styles.itemName, { color: colors.text }]}
+                            style={[
+                              styles.chipText,
+                              { color: cat.color },
+                              selectedCategoryId === cat.id && {
+                                color: "#fff",
+                              },
+                            ]}
                           >
-                            {item.name}
+                            {cat.name}
                           </Text>
-                          {item.isDefault ? (
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <Text
+                      style={[styles.groupLabel, { color: colors.subText }]}
+                    >
+                      内訳一覧
+                    </Text>
+                    {selectedCategory ? (
+                      breakdowns.length > 0 ? (
+                        breakdowns.map((item) => (
+                          <View
+                            key={item.id}
+                            style={[
+                              styles.itemRow,
+                              { borderColor: colors.border },
+                            ]}
+                          >
                             <Text
-                              style={[
-                                styles.defaultBadge,
-                                { color: colors.subText },
-                              ]}
+                              style={[styles.itemName, { color: colors.text }]}
                             >
-                              デフォルト
+                              {item.name}
                             </Text>
-                          ) : (
-                            <>
-                              <TouchableOpacity
-                                onPress={() => handleEditBreakdown(item)}
+                            <TouchableOpacity
+                              onPress={() => handleEditBreakdown(item)}
+                            >
+                              <Text
+                                style={[
+                                  styles.itemAction,
+                                  { color: colors.tint },
+                                ]}
                               >
-                                <Text
-                                  style={[
-                                    styles.itemAction,
-                                    { color: colors.tint },
-                                  ]}
-                                >
-                                  編集
-                                </Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                onPress={() => handleDeleteBreakdown(item)}
-                              >
-                                <Text style={[styles.itemDelete]}>削除</Text>
-                              </TouchableOpacity>
-                            </>
-                          )}
-                        </View>
-                      ))
+                                編集
+                              </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleDeleteBreakdown(item)}
+                            >
+                              <Text style={[styles.itemDelete]}>削除</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ))
+                      ) : (
+                        <Text
+                          style={[styles.emptyText, { color: colors.subText }]}
+                        >
+                          内訳がありません
+                        </Text>
+                      )
                     ) : (
                       <Text
                         style={[styles.emptyText, { color: colors.subText }]}
                       >
-                        内訳がありません
+                        カテゴリを選択してください
                       </Text>
-                    )
-                  ) : (
-                    <Text style={[styles.emptyText, { color: colors.subText }]}>
-                      カテゴリを選択してください
-                    </Text>
-                  )}
+                    )}
+                  </ScrollView>
 
-                  <Text style={[styles.groupLabel, { color: colors.subText }]}>
-                    内訳{breakdownEditingId ? "編集" : "追加"}
-                  </Text>
-                  <TextInput
+                  <View
                     style={[
-                      styles.textInput,
-                      { borderColor: colors.border, color: colors.text },
+                      styles.managerForm,
+                      {
+                        borderTopColor: colors.border,
+                        backgroundColor: colors.card,
+                      },
                     ]}
-                    value={breakdownNameInput}
-                    onChangeText={setBreakdownNameInput}
-                    placeholder="内訳名"
-                    placeholderTextColor={colors.subText}
-                    maxLength={30}
-                  />
+                  >
+                    <Text
+                      style={[styles.groupLabel, { color: colors.subText }]}
+                    >
+                      内訳{breakdownEditingId ? "編集" : "追加"}
+                    </Text>
+                    <TextInput
+                      style={[
+                        styles.textInput,
+                        { borderColor: colors.border, color: colors.text },
+                      ]}
+                      value={breakdownNameInput}
+                      onChangeText={setBreakdownNameInput}
+                      placeholder="内訳名"
+                      placeholderTextColor={colors.subText}
+                      maxLength={30}
+                      returnKeyType="done"
+                      blurOnSubmit
+                      onSubmitEditing={Keyboard.dismiss}
+                      inputAccessoryViewID={
+                        Platform.OS === "ios"
+                          ? KEYBOARD_ACCESSORY_VIEW_ID
+                          : undefined
+                      }
+                    />
 
-                  <View style={styles.formButtons}>
-                    <TouchableOpacity
-                      style={[
-                        styles.formButton,
-                        { borderColor: colors.border },
-                      ]}
-                      onPress={resetBreakdownForm}
-                    >
-                      <Text
+                    <View style={styles.formButtons}>
+                      <TouchableOpacity
                         style={[
-                          styles.formButtonText,
-                          { color: colors.subText },
+                          styles.formButton,
+                          { borderColor: colors.border },
                         ]}
+                        onPress={resetBreakdownForm}
                       >
-                        リセット
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.formButton,
-                        {
-                          backgroundColor: colors.tint,
-                          borderColor: colors.tint,
-                        },
-                      ]}
-                      onPress={handleSaveBreakdown}
-                    >
-                      <Text style={[styles.formButtonText, { color: "#fff" }]}>
-                        {breakdownEditingId ? "更新" : "追加"}
-                      </Text>
-                    </TouchableOpacity>
+                        <Text
+                          style={[
+                            styles.formButtonText,
+                            { color: colors.subText },
+                          ]}
+                        >
+                          リセット
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.formButton,
+                          {
+                            backgroundColor: colors.tint,
+                            borderColor: colors.tint,
+                          },
+                        ]}
+                        onPress={handleSaveBreakdown}
+                      >
+                        <Text
+                          style={[styles.formButtonText, { color: "#fff" }]}
+                        >
+                          {breakdownEditingId ? "更新" : "追加"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </>
               )}
-            </ScrollView>
+            </View>
           </View>
         </View>
       </Modal>
+
+      {Platform.OS === "ios" ? (
+        <InputAccessoryView nativeID={KEYBOARD_ACCESSORY_VIEW_ID}>
+          <View
+            style={[
+              styles.keyboardAccessory,
+              { backgroundColor: colors.card, borderTopColor: colors.border },
+            ]}
+          >
+            <TouchableOpacity onPress={Keyboard.dismiss}>
+              <Text
+                style={[styles.keyboardAccessoryDone, { color: colors.tint }]}
+              >
+                入力完了
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </InputAccessoryView>
+      ) : null}
     </ScrollView>
   );
 }
@@ -679,6 +866,14 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 14,
     alignItems: "center",
+  },
+  devResetButton: {
+    backgroundColor: "#B71C1C",
+    marginTop: 10,
+  },
+  resetDefaultButton: {
+    backgroundColor: "#EF6C00",
+    marginTop: 10,
   },
   actionButtonText: { color: "#fff", fontSize: 15, fontWeight: "600" },
   modalOverlay: {
@@ -724,7 +919,15 @@ const styles = StyleSheet.create({
   },
   typeButton: { flex: 1, paddingVertical: 10, alignItems: "center" },
   typeText: { fontSize: 14, fontWeight: "600", color: "#999" },
-  popupContent: { padding: 12, paddingBottom: 20 },
+  managerBody: { flex: 1 },
+  managerListScroll: { flex: 1 },
+  managerListContent: { padding: 12, paddingBottom: 12 },
+  managerForm: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 12,
+  },
   groupLabel: {
     fontSize: 12,
     fontWeight: "600",
@@ -742,9 +945,18 @@ const styles = StyleSheet.create({
   },
   categoryDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
   itemName: { flex: 1, fontSize: 15 },
-  defaultBadge: { fontSize: 12, marginRight: 8 },
   itemAction: { fontSize: 13, fontWeight: "600", marginRight: 10 },
   itemDelete: { fontSize: 13, color: "#C62828", fontWeight: "600" },
+  inlineBudgetInput: {
+    width: 98,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: 12,
+    textAlign: "right",
+    marginRight: 8,
+  },
   textInput: {
     borderWidth: 1,
     borderRadius: 10,
@@ -786,4 +998,11 @@ const styles = StyleSheet.create({
   },
   chipText: { fontSize: 13, fontWeight: "600" },
   emptyText: { fontSize: 13, marginBottom: 8 },
+  keyboardAccessory: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    alignItems: "flex-end",
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  keyboardAccessoryDone: { fontSize: 16, fontWeight: "600" },
 });
