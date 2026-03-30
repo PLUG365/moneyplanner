@@ -17,11 +17,10 @@ import {
 import {
   Breakdown,
   Category,
-  getAllStores,
   getStoresByCategory,
   Store,
   TransactionType,
-  upsertStore,
+  upsertStore
 } from "@/lib/database";
 
 type ThemeColors = {
@@ -130,9 +129,8 @@ export default function TransactionEditor({
   );
 
   const openStorePicker = () => {
-    setCategoryStores(
-      categoryId ? getStoresByCategory(categoryId) : getAllStores(),
-    );
+    if (!categoryId) return;
+    setCategoryStores(getStoresByCategory(categoryId));
     setStoreSearchQuery("");
     setShowStoreModal(true);
   };
@@ -356,6 +354,7 @@ export default function TransactionEditor({
               { borderColor: storeName ? colors.tint : colors.border },
             ]}
             onPress={openStorePicker}
+            disabled={!categoryId}
           >
             <Text
               style={[
@@ -363,14 +362,16 @@ export default function TransactionEditor({
                 { color: storeName ? colors.text : colors.subText },
               ]}
             >
-              {storeName || "お店を選択"}
+              {storeName || (categoryId ? "お店を選択" : "カテゴリを先に選択")}
             </Text>
             {storeName ? (
               <TouchableOpacity
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 onPress={() => onStoreChange(null, "")}
               >
-                <Text style={[styles.selectorAction, { color: colors.subText }]}>
+                <Text
+                  style={[styles.selectorAction, { color: colors.subText }]}
+                >
                   ✕
                 </Text>
               </TouchableOpacity>
@@ -529,7 +530,10 @@ export default function TransactionEditor({
           <View
             style={[
               styles.storeSearchContainer,
-              { borderBottomColor: colors.border, backgroundColor: colors.card },
+              {
+                borderBottomColor: colors.border,
+                backgroundColor: colors.card,
+              },
             ]}
           >
             <TextInput
@@ -569,9 +573,7 @@ export default function TransactionEditor({
               </TouchableOpacity>
             )}
             {filteredStores.length === 0 && storeSearchQuery.trim() === "" && (
-              <Text
-                style={[styles.storeEmptyText, { color: colors.subText }]}
-              >
+              <Text style={[styles.storeEmptyText, { color: colors.subText }]}>
                 まだお店が登録されていません
               </Text>
             )}
