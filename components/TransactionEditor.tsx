@@ -550,7 +550,7 @@ export default function TransactionEditor({
             contentContainerStyle={styles.fullModalContent}
             keyboardShouldPersistTaps="handled"
           >
-            {storeSearchQuery.trim() !== "" && !exactStoreMatchExists && categoryId && (
+            {storeSearchQuery.trim() !== "" && !exactStoreMatchExists && (
               <TouchableOpacity
                 style={[
                   styles.addStoreButton,
@@ -558,7 +558,7 @@ export default function TransactionEditor({
                 ]}
                 onPress={() => {
                   const name = storeSearchQuery.trim();
-                  const sid = upsertStore(name, categoryId!);
+                  const sid = upsertStore(name, categoryId);
                   onStoreChange(sid, name);
                   setShowStoreModal(false);
                 }}

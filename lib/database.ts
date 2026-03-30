@@ -22,7 +22,7 @@ export interface Breakdown {
 export interface Store {
   id: number;
   name: string;
-  categoryId: number;
+  categoryId: number | null;
   lastUsedAt: string;
 }
 
@@ -300,10 +300,9 @@ export function initDatabase() {
     );
     CREATE TABLE IF NOT EXISTS stores (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      category_id INTEGER NOT NULL REFERENCES categories(id),
-      last_used_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-      UNIQUE(name, category_id)
+      name TEXT NOT NULL UNIQUE,
+      category_id INTEGER REFERENCES categories(id),
+      last_used_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
     );
   `);
 
@@ -336,6 +335,27 @@ export function initDatabase() {
     db.runSync(
       "ALTER TABLE transactions ADD COLUMN store_name_snapshot TEXT NOT NULL DEFAULT ''",
     );
+  }
+
+  // stores テーブルが旧スキーマ（name+category_id でユニーク、category_id NOT NULL）の場合は
+  // 新スキーマ（name のみユニーク、category_id NULL 可）へ再作成して移行する。
+  const storesTableInfo = db.getAllSync<{ name: string; notnull: number }>(
+    "PRAGMA table_info(stores)",
+  );
+  const categoryIdCol = storesTableInfo.find((c) => c.name === "category_id");
+  if (categoryIdCol && categoryIdCol.notnull === 1) {
+    db.execSync(`
+      CREATE TABLE IF NOT EXISTS stores_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        category_id INTEGER REFERENCES categories(id),
+        last_used_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+      );
+      INSERT OR IGNORE INTO stores_new (id, name, category_id, last_used_at)
+        SELECT id, name, category_id, last_used_at FROM stores;
+      DROP TABLE stores;
+      ALTER TABLE stores_new RENAME TO stores;
+    `);
   }
 
   // 旧仕様（年+月/年無関係+月）を、カテゴリ単位の共通予算（year=0, month=0）へ統合する。
@@ -648,14 +668,21 @@ export function getAllStores(): Store[] {
   return rows.map(mapStore);
 }
 
-export function upsertStore(name: string, categoryId: number): number {
+export function upsertStore(name: string, categoryId?: number | null): number {
+  // nameでユニーク。既存レコードがあればcategory_idを更新（未設定→設定済みへの昇格）
   db.runSync(
     "INSERT OR IGNORE INTO stores (name, category_id) VALUES (?, ?)",
-    [name, categoryId],
+    [name, categoryId ?? null],
   );
+  if (categoryId != null) {
+    db.runSync(
+      "UPDATE stores SET category_id = ? WHERE name = ? AND category_id IS NULL",
+      [categoryId, name],
+    );
+  }
   const row = db.getFirstSync<{ id: number }>(
-    "SELECT id FROM stores WHERE name = ? AND category_id = ? LIMIT 1",
-    [name, categoryId],
+    "SELECT id FROM stores WHERE name = ? LIMIT 1",
+    [name],
   );
   return row!.id;
 }
