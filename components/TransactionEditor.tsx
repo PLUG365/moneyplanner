@@ -20,7 +20,7 @@ import {
   getStoresByCategory,
   Store,
   TransactionType,
-  upsertStore
+  upsertStore,
 } from "@/lib/database";
 
 type ThemeColors = {
@@ -46,6 +46,7 @@ type Props = {
   memo: string;
   incomeColor: string;
   expenseColor: string;
+  bottomInset?: number;
   submitLabel: string;
   onTypeChange: (type: TransactionType) => void;
   onAmountRawChange: (amountRaw: string) => void;
@@ -89,6 +90,7 @@ export default function TransactionEditor({
   memo,
   incomeColor,
   expenseColor,
+  bottomInset = 0,
   submitLabel,
   onTypeChange,
   onAmountRawChange,
@@ -129,293 +131,335 @@ export default function TransactionEditor({
   );
 
   const openStorePicker = () => {
-    if (!categoryId) return;
-    setCategoryStores(getStoresByCategory(categoryId));
+    setCategoryStores(getStoresByCategory(categoryId ?? null));
     setStoreSearchQuery("");
     setShowStoreModal(true);
   };
 
   return (
     <>
-      <View
-        style={[
-          styles.typeToggle,
-          { backgroundColor: colors.card, borderColor: colors.border },
-        ]}
-      >
-        <TouchableOpacity
+      <View style={styles.container}>
+        <View
           style={[
-            styles.typeButton,
-            type === "income" && { backgroundColor: incomeColor },
+            styles.fixedTop,
+            {
+              borderBottomColor: colors.border,
+              backgroundColor: colors.background,
+            },
           ]}
-          onPress={() => onTypeChange("income")}
         >
-          <Text
+          <View
             style={[
-              styles.typeButtonText,
-              type === "income" && styles.typeButtonTextActive,
+              styles.typeToggle,
+              { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            収入
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.typeButton,
-            type === "expense" && { backgroundColor: expenseColor },
-          ]}
-          onPress={() => onTypeChange("expense")}
-        >
-          <Text
-            style={[
-              styles.typeButtonText,
-              type === "expense" && styles.typeButtonTextActive,
-            ]}
-          >
-            支出
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: colors.card, borderColor: colors.border },
-        ]}
-      >
-        <Text style={[styles.label, { color: colors.subText }]}>金額</Text>
-        <View style={styles.amountRow}>
-          <Text style={[styles.yen, { color: activeColor }]}>¥</Text>
-          <TextInput
-            style={[styles.amountInput, { color: activeColor }]}
-            value={amountRaw ? formatAmount(amountRaw) : ""}
-            onChangeText={(text) =>
-              onAmountRawChange(text.replace(/[^0-9]/g, ""))
-            }
-            keyboardType="numeric"
-            placeholder="0"
-            placeholderTextColor={colors.border}
-            returnKeyType="done"
-            blurOnSubmit
-            onSubmitEditing={Keyboard.dismiss}
-            inputAccessoryViewID={
-              Platform.OS === "ios" ? keyboardAccessoryViewId : undefined
-            }
-          />
-        </View>
-      </View>
-
-      <TouchableOpacity
-        style={[
-          styles.card,
-          { backgroundColor: colors.card, borderColor: colors.border },
-        ]}
-        onPress={() => setShowDatePicker(true)}
-      >
-        <Text style={[styles.label, { color: colors.subText }]}>日付</Text>
-        <Text style={[styles.dateText, { color: colors.text }]}>
-          {displayDate(date)}
-        </Text>
-      </TouchableOpacity>
-
-      {Platform.OS === "ios" ? (
-        <Modal transparent animationType="slide" visible={showDatePicker}>
-          <View style={styles.datePickerOverlay}>
-            <View
+            <TouchableOpacity
               style={[
-                styles.datePickerContainer,
-                { backgroundColor: colors.card },
+                styles.typeButton,
+                type === "income" && { backgroundColor: incomeColor },
               ]}
+              onPress={() => onTypeChange("income")}
             >
-              <View
+              <Text
                 style={[
-                  styles.datePickerHeader,
-                  { borderBottomColor: colors.border },
+                  styles.typeButtonText,
+                  type === "income" && styles.typeButtonTextActive,
                 ]}
               >
-                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                  <Text style={[styles.datePickerDone, { color: colors.tint }]}>
-                    完了
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              <DateTimePicker
-                value={new Date(date)}
-                mode="date"
-                display="spinner"
-                locale="ja-JP"
-                onChange={(_, selected) => {
-                  if (selected) onDateChange(formatDate(selected));
-                }}
+                収入
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.typeButton,
+                type === "expense" && { backgroundColor: expenseColor },
+              ]}
+              onPress={() => onTypeChange("expense")}
+            >
+              <Text
+                style={[
+                  styles.typeButtonText,
+                  type === "expense" && styles.typeButtonTextActive,
+                ]}
+              >
+                支出
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.label, { color: colors.subText }]}>金額</Text>
+            <View style={styles.amountRow}>
+              <Text style={[styles.yen, { color: activeColor }]}>¥</Text>
+              <TextInput
+                style={[styles.amountInput, { color: activeColor }]}
+                value={amountRaw ? formatAmount(amountRaw) : ""}
+                onChangeText={(text) =>
+                  onAmountRawChange(text.replace(/[^0-9]/g, ""))
+                }
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor={colors.border}
+                returnKeyType="done"
+                blurOnSubmit
+                onSubmitEditing={Keyboard.dismiss}
+                inputAccessoryViewID={
+                  Platform.OS === "ios" ? keyboardAccessoryViewId : undefined
+                }
               />
             </View>
           </View>
-        </Modal>
-      ) : (
-        showDatePicker && (
-          <DateTimePicker
-            value={new Date(date)}
-            mode="date"
-            display="default"
-            onChange={(_, selected) => {
-              setShowDatePicker(false);
-              if (selected) onDateChange(formatDate(selected));
-            }}
-          />
-        )
-      )}
+        </View>
 
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: colors.card, borderColor: colors.border },
-        ]}
-      >
-        <Text style={[styles.label, { color: colors.subText }]}>カテゴリ</Text>
-        <TouchableOpacity
-          style={[
-            styles.selectorButton,
-            { borderColor: selectedCategory?.color || colors.border },
-          ]}
-          onPress={() => setShowCategoryModal(true)}
+        <ScrollView
+          style={styles.scrollArea}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
         >
-          <Text
+          <TouchableOpacity
             style={[
-              styles.selectorValue,
-              { color: selectedCategory?.color || colors.text },
+              styles.card,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Text style={[styles.label, { color: colors.subText }]}>日付</Text>
+            <Text style={[styles.dateText, { color: colors.text }]}>
+              {displayDate(date)}
+            </Text>
+          </TouchableOpacity>
+
+          {Platform.OS === "ios" ? (
+            <Modal transparent animationType="slide" visible={showDatePicker}>
+              <View style={styles.datePickerOverlay}>
+                <View
+                  style={[
+                    styles.datePickerContainer,
+                    { backgroundColor: colors.card },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.datePickerHeader,
+                      { borderBottomColor: colors.border },
+                    ]}
+                  >
+                    <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                      <Text
+                        style={[styles.datePickerDone, { color: colors.tint }]}
+                      >
+                        完了
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <DateTimePicker
+                    value={new Date(date)}
+                    mode="date"
+                    display="spinner"
+                    locale="ja-JP"
+                    onChange={(_, selected) => {
+                      if (selected) onDateChange(formatDate(selected));
+                    }}
+                  />
+                </View>
+              </View>
+            </Modal>
+          ) : (
+            showDatePicker && (
+              <DateTimePicker
+                value={new Date(date)}
+                mode="date"
+                display="default"
+                onChange={(_, selected) => {
+                  setShowDatePicker(false);
+                  if (selected) onDateChange(formatDate(selected));
+                }}
+              />
+            )
+          )}
+
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            {selectedCategory?.name ?? "カテゴリを選択"}
-          </Text>
-          <Text style={[styles.selectorAction, { color: colors.tint }]}>
-            選択
-          </Text>
-        </TouchableOpacity>
-
-        <Text style={[styles.label, { color: colors.subText, marginTop: 14 }]}>
-          内訳
-        </Text>
-        {breakdowns.length === 0 ? (
-          <Text style={[styles.emptyBreakdownText, { color: colors.subText }]}>
-            このカテゴリに内訳はありません
-          </Text>
-        ) : (
-          <View style={styles.categoryGrid}>
-            {breakdowns.map((item) => (
-              <TouchableOpacity
-                key={item.id}
+            <Text style={[styles.label, { color: colors.subText }]}>
+              カテゴリ
+            </Text>
+            <TouchableOpacity
+              style={[
+                styles.selectorButton,
+                { borderColor: selectedCategory?.color || colors.border },
+              ]}
+              onPress={() => setShowCategoryModal(true)}
+            >
+              <Text
                 style={[
-                  styles.categoryChip,
-                  { borderColor: selectedCategory?.color || colors.tint },
-                  breakdownId === item.id && {
-                    backgroundColor: selectedCategory?.color || colors.tint,
-                  },
+                  styles.selectorValue,
+                  { color: selectedCategory?.color || colors.text },
                 ]}
-                onPress={() =>
-                  onBreakdownChange(breakdownId === item.id ? null : item.id)
-                }
+              >
+                {selectedCategory?.name ?? "カテゴリを選択"}
+              </Text>
+              <Text style={[styles.selectorAction, { color: colors.tint }]}>
+                選択
+              </Text>
+            </TouchableOpacity>
+
+            <Text
+              style={[styles.label, { color: colors.subText, marginTop: 14 }]}
+            >
+              内訳
+            </Text>
+            {breakdowns.length === 0 ? (
+              <Text
+                style={[styles.emptyBreakdownText, { color: colors.subText }]}
+              >
+                このカテゴリに内訳はありません
+              </Text>
+            ) : (
+              <View style={styles.categoryGrid}>
+                {breakdowns.map((item) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[
+                      styles.categoryChip,
+                      { borderColor: selectedCategory?.color || colors.tint },
+                      breakdownId === item.id && {
+                        backgroundColor: selectedCategory?.color || colors.tint,
+                      },
+                    ]}
+                    onPress={() =>
+                      onBreakdownChange(
+                        breakdownId === item.id ? null : item.id,
+                      )
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.categoryChipText,
+                        { color: selectedCategory?.color || colors.tint },
+                        breakdownId === item.id && { color: "#fff" },
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {selectedBreakdown ? (
+              <Text
+                style={[
+                  styles.selectedBreakdownText,
+                  { color: colors.subText },
+                ]}
+              >
+                選択中: {selectedBreakdown.name}
+              </Text>
+            ) : null}
+          </View>
+
+          {type === "expense" && (
+            <View
+              style={[
+                styles.card,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <Text style={[styles.label, { color: colors.subText }]}>
+                お店（任意）
+              </Text>
+              <TouchableOpacity
+                style={[
+                  styles.selectorButton,
+                  { borderColor: storeName ? colors.tint : colors.border },
+                ]}
+                onPress={openStorePicker}
               >
                 <Text
                   style={[
-                    styles.categoryChipText,
-                    { color: selectedCategory?.color || colors.tint },
-                    breakdownId === item.id && { color: "#fff" },
+                    styles.selectorValue,
+                    { color: storeName ? colors.text : colors.subText },
                   ]}
                 >
-                  {item.name}
+                  {storeName || "お店を選択"}
                 </Text>
+                {storeName ? (
+                  <TouchableOpacity
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    onPress={() => onStoreChange(null, "")}
+                  >
+                    <Text
+                      style={[styles.selectorAction, { color: colors.subText }]}
+                    >
+                      ✕
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={[styles.selectorAction, { color: colors.tint }]}>
+                    選択
+                  </Text>
+                )}
               </TouchableOpacity>
-            ))}
-          </View>
-        )}
+            </View>
+          )}
 
-        {selectedBreakdown ? (
-          <Text
-            style={[styles.selectedBreakdownText, { color: colors.subText }]}
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
           >
-            選択中: {selectedBreakdown.name}
-          </Text>
-        ) : null}
-      </View>
+            <Text style={[styles.label, { color: colors.subText }]}>
+              メモ（任意）
+            </Text>
+            <TextInput
+              style={[
+                styles.memoInput,
+                { color: colors.text, borderColor: colors.border },
+              ]}
+              value={memo}
+              onChangeText={onMemoChange}
+              placeholder="メモを入力"
+              placeholderTextColor={colors.subText}
+              multiline
+              maxLength={100}
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={Keyboard.dismiss}
+              inputAccessoryViewID={
+                Platform.OS === "ios" ? keyboardAccessoryViewId : undefined
+              }
+            />
+          </View>
+        </ScrollView>
 
-      {type === "expense" && (
         <View
           style={[
-            styles.card,
-            { backgroundColor: colors.card, borderColor: colors.border },
+            styles.fixedBottom,
+            {
+              borderTopColor: colors.border,
+              backgroundColor: colors.background,
+              paddingBottom: 16 + bottomInset,
+            },
           ]}
         >
-          <Text style={[styles.label, { color: colors.subText }]}>
-            お店（任意）
-          </Text>
           <TouchableOpacity
-            style={[
-              styles.selectorButton,
-              { borderColor: storeName ? colors.tint : colors.border },
-            ]}
-            onPress={openStorePicker}
-            disabled={!categoryId}
+            style={[styles.submitButton, { backgroundColor: activeColor }]}
+            onPress={onSubmit}
           >
-            <Text
-              style={[
-                styles.selectorValue,
-                { color: storeName ? colors.text : colors.subText },
-              ]}
-            >
-              {storeName || (categoryId ? "お店を選択" : "カテゴリを先に選択")}
-            </Text>
-            {storeName ? (
-              <TouchableOpacity
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                onPress={() => onStoreChange(null, "")}
-              >
-                <Text
-                  style={[styles.selectorAction, { color: colors.subText }]}
-                >
-                  ✕
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <Text
-                style={[
-                  styles.selectorAction,
-                  { color: categoryId ? colors.tint : colors.subText },
-                ]}
-              >
-                選択
-              </Text>
-            )}
+            <Text style={styles.submitButtonText}>{submitLabel}</Text>
           </TouchableOpacity>
         </View>
-      )}
-
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: colors.card, borderColor: colors.border },
-        ]}
-      >
-        <Text style={[styles.label, { color: colors.subText }]}>
-          メモ（任意）
-        </Text>
-        <TextInput
-          style={[
-            styles.memoInput,
-            { color: colors.text, borderColor: colors.border },
-          ]}
-          value={memo}
-          onChangeText={onMemoChange}
-          placeholder="メモを入力"
-          placeholderTextColor={colors.subText}
-          multiline
-          maxLength={100}
-          returnKeyType="done"
-          blurOnSubmit
-          onSubmitEditing={Keyboard.dismiss}
-          inputAccessoryViewID={
-            Platform.OS === "ios" ? keyboardAccessoryViewId : undefined
-          }
-        />
       </View>
 
       {Platform.OS === "ios" ? (
@@ -436,13 +480,6 @@ export default function TransactionEditor({
           </View>
         </InputAccessoryView>
       ) : null}
-
-      <TouchableOpacity
-        style={[styles.submitButton, { backgroundColor: activeColor }]}
-        onPress={onSubmit}
-      >
-        <Text style={styles.submitButtonText}>{submitLabel}</Text>
-      </TouchableOpacity>
 
       <Modal visible={showCategoryModal} animationType="slide">
         <SafeAreaView
@@ -616,6 +653,24 @@ export default function TransactionEditor({
 }
 
 const styles = StyleSheet.create({
+  container: { flex: 1 },
+  fixedTop: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  scrollArea: { flex: 1 },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 20,
+  },
+  fixedBottom: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   typeToggle: {
     flexDirection: "row",
     borderRadius: 12,
@@ -692,7 +747,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: "center",
-    marginTop: 4,
   },
   submitButtonText: { color: "#fff", fontSize: 17, fontWeight: "700" },
   datePickerOverlay: {

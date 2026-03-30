@@ -69,6 +69,11 @@ export interface PlanLifeEvent {
   updatedAt: string;
 }
 
+export interface PlanProfile {
+  payloadJson: string;
+  updatedAt: string;
+}
+
 const DEFAULT_CATEGORIES: {
   name: string;
   type: TransactionType;
@@ -298,11 +303,22 @@ export function initDatabase() {
       created_at TEXT DEFAULT (datetime('now', 'localtime')),
       updated_at TEXT DEFAULT (datetime('now', 'localtime'))
     );
+    CREATE TABLE IF NOT EXISTS plan_profiles (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      payload_json TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+    );
     CREATE TABLE IF NOT EXISTS stores (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
       category_id INTEGER REFERENCES categories(id),
       last_used_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    );
+    CREATE TABLE IF NOT EXISTS store_category_usage (
+      store_id INTEGER NOT NULL REFERENCES stores(id),
+      category_id INTEGER NOT NULL REFERENCES categories(id),
+      last_used_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+      PRIMARY KEY (store_id, category_id)
     );
   `);
 
@@ -435,11 +451,13 @@ export function resetDatabaseForDevelopment() {
     DELETE FROM transactions;
     DELETE FROM budgets;
     DELETE FROM plan_life_events;
+    DELETE FROM plan_profiles;
     DELETE FROM stores;
+    DELETE FROM store_category_usage;
     DELETE FROM category_breakdowns;
     DELETE FROM categories;
     DELETE FROM sqlite_sequence
-    WHERE name IN ('transactions', 'budgets', 'plan_life_events', 'stores', 'category_breakdowns', 'categories');
+    WHERE name IN ('transactions', 'budgets', 'plan_life_events', 'plan_profiles', 'stores', 'category_breakdowns', 'categories');
   `);
 
   ensureDefaultCategories();
@@ -450,11 +468,13 @@ export function resetCategoryAndBreakdownsToDefault() {
     UPDATE transactions SET category_id = NULL, breakdown_id = NULL, store_id = NULL;
     DELETE FROM budgets;
     DELETE FROM plan_life_events;
+    DELETE FROM plan_profiles;
     DELETE FROM stores;
+    DELETE FROM store_category_usage;
     DELETE FROM category_breakdowns;
     DELETE FROM categories;
     DELETE FROM sqlite_sequence
-    WHERE name IN ('budgets', 'plan_life_events', 'stores', 'category_breakdowns', 'categories');
+    WHERE name IN ('budgets', 'plan_life_events', 'plan_profiles', 'stores', 'category_breakdowns', 'categories');
   `);
 
   ensureDefaultCategories();
@@ -574,17 +594,12 @@ export function addTransaction(
 ): number {
   const snapshot = resolveTransactionSnapshot(categoryId, breakdownId);
   const storeNameSnapshot = storeId
-    ? db.getFirstSync<{ name: string }>(
+    ? (db.getFirstSync<{ name: string }>(
         "SELECT name FROM stores WHERE id = ? LIMIT 1",
         [storeId],
-      )?.name ?? ""
+      )?.name ?? "")
     : "";
-  if (storeId) {
-    db.runSync(
-      "UPDATE stores SET last_used_at = datetime('now', 'localtime') WHERE id = ?",
-      [storeId],
-    );
-  }
+  touchStoreUsage(storeId ?? null, categoryId);
   const result = db.runSync(
     "INSERT INTO transactions (date, amount, type, category_id, breakdown_id, category_name_snapshot, category_color_snapshot, breakdown_name_snapshot, memo, store_id, store_name_snapshot) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
@@ -616,17 +631,12 @@ export function updateTransaction(
 ) {
   const snapshot = resolveTransactionSnapshot(categoryId, breakdownId);
   const storeNameSnapshot = storeId
-    ? db.getFirstSync<{ name: string }>(
+    ? (db.getFirstSync<{ name: string }>(
         "SELECT name FROM stores WHERE id = ? LIMIT 1",
         [storeId],
-      )?.name ?? ""
+      )?.name ?? "")
     : "";
-  if (storeId) {
-    db.runSync(
-      "UPDATE stores SET last_used_at = datetime('now', 'localtime') WHERE id = ?",
-      [storeId],
-    );
-  }
+  touchStoreUsage(storeId ?? null, categoryId);
   db.runSync(
     "UPDATE transactions SET date=?, amount=?, type=?, category_id=?, breakdown_id=?, category_name_snapshot=?, category_color_snapshot=?, breakdown_name_snapshot=?, memo=?, store_id=?, store_name_snapshot=? WHERE id=?",
     [
@@ -651,12 +661,52 @@ export function deleteTransaction(id: number) {
 }
 
 // Stores
-export function getStoresByCategory(categoryId: number): Store[] {
+export function getStoresByCategory(categoryId?: number | null): Store[] {
+  if (categoryId == null) {
+    const rows = db.getAllSync<any>(
+      `SELECT id, name, category_id, last_used_at
+       FROM stores
+       ORDER BY last_used_at DESC, name ASC`,
+    );
+    return rows.map(mapStore);
+  }
+
   const rows = db.getAllSync<any>(
-    "SELECT * FROM stores WHERE category_id = ? ORDER BY last_used_at DESC, name ASC",
+    `SELECT s.id, s.name, s.category_id, s.last_used_at, u.last_used_at AS category_last_used_at
+     FROM stores s
+     LEFT JOIN store_category_usage u
+       ON u.store_id = s.id AND u.category_id = ?
+     ORDER BY
+       CASE WHEN u.last_used_at IS NULL THEN 1 ELSE 0 END ASC,
+       u.last_used_at DESC,
+       s.last_used_at DESC,
+       s.name ASC`,
     [categoryId],
   );
   return rows.map(mapStore);
+}
+
+function touchStoreUsage(storeId: number | null, categoryId: number | null) {
+  if (!storeId) {
+    return;
+  }
+
+  db.runSync(
+    "UPDATE stores SET last_used_at = datetime('now', 'localtime') WHERE id = ?",
+    [storeId],
+  );
+
+  if (!categoryId) {
+    return;
+  }
+
+  db.runSync(
+    `INSERT INTO store_category_usage (store_id, category_id, last_used_at)
+     VALUES (?, ?, datetime('now', 'localtime'))
+     ON CONFLICT(store_id, category_id) DO UPDATE SET
+       last_used_at = datetime('now', 'localtime')`,
+    [storeId, categoryId],
+  );
 }
 
 export function getAllStores(): Store[] {
@@ -670,10 +720,10 @@ export function getAllStores(): Store[] {
 
 export function upsertStore(name: string, categoryId?: number | null): number {
   // nameでユニーク。既存レコードがあればcategory_idを更新（未設定→設定済みへの昇格）
-  db.runSync(
-    "INSERT OR IGNORE INTO stores (name, category_id) VALUES (?, ?)",
-    [name, categoryId ?? null],
-  );
+  db.runSync("INSERT OR IGNORE INTO stores (name, category_id) VALUES (?, ?)", [
+    name,
+    categoryId ?? null,
+  ]);
   if (categoryId != null) {
     db.runSync(
       "UPDATE stores SET category_id = ? WHERE name = ? AND category_id IS NULL",
@@ -721,6 +771,35 @@ export function getLifeEvents(): PlanLifeEvent[] {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }));
+}
+
+export function getPlanProfile(): PlanProfile | null {
+  const row = db.getFirstSync<any>(
+    `SELECT payload_json, updated_at
+     FROM plan_profiles
+     WHERE id = 1
+     LIMIT 1`,
+  );
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    payloadJson: row.payload_json,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function savePlanProfile(payloadJson: string) {
+  db.runSync(
+    `INSERT INTO plan_profiles (id, payload_json, updated_at)
+     VALUES (1, ?, datetime('now', 'localtime'))
+     ON CONFLICT(id) DO UPDATE SET
+       payload_json = excluded.payload_json,
+       updated_at = datetime('now', 'localtime')`,
+    [payloadJson],
+  );
 }
 
 export function getTransactionsByMonth(

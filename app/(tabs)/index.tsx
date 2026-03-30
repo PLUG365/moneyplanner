@@ -1,10 +1,10 @@
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Animated,
   Easing,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -36,6 +36,7 @@ type ToastVariant = "info" | "warning" | "exceeded";
 export default function RecordScreen() {
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
+  const tabBarHeight = useBottomTabBarHeight();
 
   const [type, setType] = useState<TransactionType>("expense");
   const [amountRaw, setAmountRaw] = useState("");
@@ -216,36 +217,34 @@ export default function RecordScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
-        <TransactionEditor
-          colors={colors}
-          type={type}
-          amountRaw={amountRaw}
-          date={date}
-          categories={categories}
-          categoryId={categoryId}
-          breakdowns={breakdowns}
-          breakdownId={breakdownId}
-          storeId={storeId}
-          storeName={storeName}
-          memo={memo}
-          incomeColor={incomeColor}
-          expenseColor={expenseColor}
-          submitLabel="保存する"
-          onTypeChange={handleTypeChange}
-          onAmountRawChange={setAmountRaw}
-          onDateChange={setDate}
-          onCategoryChange={handleCategoryChange}
-          onBreakdownChange={setBreakdownId}
-          onStoreChange={(id, name) => { setStoreId(id); setStoreName(name); }}
-          onMemoChange={setMemo}
-          onSubmit={handleSave}
-        />
-      </ScrollView>
+      <TransactionEditor
+        colors={colors}
+        type={type}
+        amountRaw={amountRaw}
+        date={date}
+        categories={categories}
+        categoryId={categoryId}
+        breakdowns={breakdowns}
+        breakdownId={breakdownId}
+        storeId={storeId}
+        storeName={storeName}
+        memo={memo}
+        incomeColor={incomeColor}
+        expenseColor={expenseColor}
+        bottomInset={tabBarHeight}
+        submitLabel="保存する"
+        onTypeChange={handleTypeChange}
+        onAmountRawChange={setAmountRaw}
+        onDateChange={setDate}
+        onCategoryChange={handleCategoryChange}
+        onBreakdownChange={setBreakdownId}
+        onStoreChange={(id, name) => {
+          setStoreId(id);
+          setStoreName(name);
+        }}
+        onMemoChange={setMemo}
+        onSubmit={handleSave}
+      />
 
       {toastMessage ? (
         <View style={styles.toastWrap} pointerEvents="box-none">
@@ -280,7 +279,6 @@ export default function RecordScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: 16, paddingBottom: 100 },
   toastWrap: {
     position: "absolute",
     left: 0,

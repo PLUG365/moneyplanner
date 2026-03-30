@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import TransactionEditor from "@/components/TransactionEditor";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
@@ -74,6 +75,7 @@ export default function HistoryScreen() {
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
   const bottomTabOverflow = useBottomTabOverflow();
+  const safeAreaInsets = useSafeAreaInsets();
 
   const now = new Date();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -846,7 +848,7 @@ export default function HistoryScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={styles.modalContent}>
+            <View style={styles.modalEditorContainer}>
               <TransactionEditor
                 colors={colors}
                 type={editType}
@@ -861,17 +863,21 @@ export default function HistoryScreen() {
                 memo={editMemo}
                 incomeColor={incomeColor}
                 expenseColor={expenseColor}
+                bottomInset={safeAreaInsets.bottom + 8}
                 submitLabel="更新する"
                 onTypeChange={handleEditTypeChange}
                 onAmountRawChange={setEditAmountRaw}
                 onDateChange={setEditDate}
                 onCategoryChange={handleEditCategoryChange}
                 onBreakdownChange={setEditBreakdownId}
-                onStoreChange={(id, name) => { setEditStoreId(id); setEditStoreName(name); }}
+                onStoreChange={(id, name) => {
+                  setEditStoreId(id);
+                  setEditStoreName(name);
+                }}
                 onMemoChange={setEditMemo}
                 onSubmit={handleUpdate}
               />
-            </ScrollView>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1139,7 +1145,7 @@ const styles = StyleSheet.create({
   modalSheet: {
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
-    maxHeight: "90%",
+    height: "90%",
   },
   modalHeader: {
     paddingHorizontal: 16,
@@ -1151,7 +1157,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 17, fontWeight: "700" },
   modalClose: { fontSize: 14, fontWeight: "600" },
-  modalContent: { padding: 16, paddingBottom: 28 },
+  modalEditorContainer: { flex: 1, minHeight: 0 },
   typeToggle: {
     flexDirection: "row",
     borderWidth: 1,

@@ -2,7 +2,13 @@ import DateTimePicker, {
   type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Alert,
   Linking,
@@ -22,7 +28,9 @@ import {
   addLifeEvent,
   deleteLifeEvent,
   getLifeEvents,
+  getPlanProfile,
   getYearMonthlyTotals,
+  savePlanProfile,
   updateLifeEvent,
   type PlanLifeEvent,
 } from "@/lib/database";
@@ -31,6 +39,9 @@ import {
   ASSUMPTION_DEFINITIONS,
   DEFAULT_ASSUMPTIONS,
   EDUCATION_STAGE_DEFINITIONS,
+  getPublicDefaultsUpdatedLabel,
+  isPublicDefaultsUpdateDue,
+  PUBLIC_DEFAULTS_VERSION,
   type AssumptionKey,
   type EducationStageKey,
   type SchoolKind,
@@ -42,6 +53,11 @@ import {
   type ChildEducationEvent,
   type HousingPurchaseEvent,
 } from "@/lib/simulation/events";
+import {
+  defaultPlanProfile,
+  normalizePlanProfilePayload,
+  type PlanProfilePayload,
+} from "@/lib/simulation/planProfile";
 
 function formatAmount(value: number): string {
   return Math.round(value).toLocaleString("ja-JP");
@@ -419,6 +435,17 @@ export default function PlanScreen() {
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
   const currentYear = new Date().getFullYear();
+  const publicDefaultsUpdatedLabel = useMemo(
+    () => getPublicDefaultsUpdatedLabel("ja-JP"),
+    [],
+  );
+  const isPublicDefaultsDue = useMemo(() => isPublicDefaultsUpdateDue(), []);
+  const defaultProfile = useMemo(
+    () => defaultPlanProfile(currentYear),
+    [currentYear],
+  );
+  const hasLoadedProfileRef = useRef(false);
+  const isHydratingProfileRef = useRef(false);
 
   const [startYear, setStartYear] = useState(String(currentYear));
   const [years, setYears] = useState("20");
@@ -493,6 +520,77 @@ export default function PlanScreen() {
       resetEventInputForms();
     }, [resetEventInputForms]),
   );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (hasLoadedProfileRef.current) {
+        return;
+      }
+
+      const stored = getPlanProfile();
+      hasLoadedProfileRef.current = true;
+      if (!stored) {
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(stored.payloadJson) as unknown;
+        const normalized = normalizePlanProfilePayload(parsed, defaultProfile);
+        isHydratingProfileRef.current = true;
+        setStartYear(normalized.startYear);
+        setYears(normalized.years);
+        setInitialBalance(normalized.initialBalance);
+        setAnnualIncome(normalized.annualIncome);
+        setAnnualExpense(normalized.annualExpense);
+        setChildren(normalized.children);
+        setAssumptionRates(normalized.assumptionRates);
+        setIsInputSectionOpen(normalized.isInputSectionOpen);
+        setIsEducationSectionOpen(normalized.isEducationSectionOpen);
+        setIsCarSectionOpen(normalized.isCarSectionOpen);
+        setIsHousingSectionOpen(normalized.isHousingSectionOpen);
+      } catch {
+        // noop
+      } finally {
+        setTimeout(() => {
+          isHydratingProfileRef.current = false;
+        }, 0);
+      }
+    }, [defaultProfile]),
+  );
+
+  useEffect(() => {
+    if (!hasLoadedProfileRef.current || isHydratingProfileRef.current) {
+      return;
+    }
+
+    const payload: PlanProfilePayload = {
+      startYear,
+      years,
+      initialBalance,
+      annualIncome,
+      annualExpense,
+      children,
+      assumptionRates,
+      isInputSectionOpen,
+      isEducationSectionOpen,
+      isCarSectionOpen,
+      isHousingSectionOpen,
+    };
+
+    savePlanProfile(JSON.stringify(payload));
+  }, [
+    annualExpense,
+    annualIncome,
+    assumptionRates,
+    children,
+    initialBalance,
+    isCarSectionOpen,
+    isEducationSectionOpen,
+    isHousingSectionOpen,
+    isInputSectionOpen,
+    startYear,
+    years,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1391,6 +1489,13 @@ export default function PlanScreen() {
                   </Text>
                 </TouchableOpacity>
               </View>
+              <Text
+                style={[styles.assumptionMetaText, { color: colors.subText }]}
+              >
+                公的データ同梱版: v{PUBLIC_DEFAULTS_VERSION} / 最終更新:{" "}
+                {publicDefaultsUpdatedLabel}
+                {isPublicDefaultsDue ? "（更新推奨）" : ""}
+              </Text>
 
               {ASSUMPTION_DEFINITIONS.map((item) => (
                 <View key={item.key} style={styles.assumptionRow}>
@@ -2161,6 +2266,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   resetText: { fontSize: 12, fontWeight: "600" },
+  assumptionMetaText: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 18,
+  },
   assumptionRow: {
     flexDirection: "row",
     alignItems: "center",
