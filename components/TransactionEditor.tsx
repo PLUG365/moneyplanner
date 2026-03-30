@@ -17,6 +17,7 @@ import {
 import {
   Breakdown,
   Category,
+  getAllStores,
   getStoresByCategory,
   Store,
   TransactionType,
@@ -129,8 +130,9 @@ export default function TransactionEditor({
   );
 
   const openStorePicker = () => {
-    if (!categoryId) return;
-    setCategoryStores(getStoresByCategory(categoryId));
+    setCategoryStores(
+      categoryId ? getStoresByCategory(categoryId) : getAllStores(),
+    );
     setStoreSearchQuery("");
     setShowStoreModal(true);
   };
@@ -354,7 +356,6 @@ export default function TransactionEditor({
               { borderColor: storeName ? colors.tint : colors.border },
             ]}
             onPress={openStorePicker}
-            disabled={!categoryId}
           >
             <Text
               style={[
@@ -362,7 +363,7 @@ export default function TransactionEditor({
                 { color: storeName ? colors.text : colors.subText },
               ]}
             >
-              {storeName || (categoryId ? "お店を選択" : "カテゴリを先に選択")}
+              {storeName || "お店を選択"}
             </Text>
             {storeName ? (
               <TouchableOpacity
@@ -549,7 +550,7 @@ export default function TransactionEditor({
             contentContainerStyle={styles.fullModalContent}
             keyboardShouldPersistTaps="handled"
           >
-            {storeSearchQuery.trim() !== "" && !exactStoreMatchExists && (
+            {storeSearchQuery.trim() !== "" && !exactStoreMatchExists && categoryId && (
               <TouchableOpacity
                 style={[
                   styles.addStoreButton,

@@ -639,6 +639,15 @@ export function getStoresByCategory(categoryId: number): Store[] {
   return rows.map(mapStore);
 }
 
+export function getAllStores(): Store[] {
+  const rows = db.getAllSync<any>(
+    `SELECT id, name, category_id, last_used_at
+     FROM stores
+     ORDER BY last_used_at DESC, name ASC`,
+  );
+  return rows.map(mapStore);
+}
+
 export function upsertStore(name: string, categoryId: number): number {
   db.runSync(
     "INSERT OR IGNORE INTO stores (name, category_id) VALUES (?, ?)",
