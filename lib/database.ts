@@ -1,6 +1,14 @@
 import { openDatabaseSync } from "expo-sqlite";
 
+import {
+  buildBalanceAdjustmentsForCreate,
+  buildBalanceAdjustmentsForDelete,
+  buildBalanceAdjustmentsForUpdate,
+} from "@/lib/accountBalance";
+
 const db = openDatabaseSync("moneyplanner.db");
+export const DEFAULT_ACCOUNT_ID = 1;
+export const DEFAULT_ACCOUNT_NAME = "家計";
 
 export type TransactionType = "income" | "expense";
 
@@ -24,6 +32,15 @@ export interface Store {
   name: string;
   categoryId: number | null;
   lastUsedAt: string;
+}
+
+export interface Account {
+  id: number;
+  name: string;
+  balance: number;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface MonthlyBudget {
@@ -50,6 +67,8 @@ export interface Transaction {
   date: string; // YYYY-MM-DD
   amount: number;
   type: TransactionType;
+  accountId: number;
+  accountName: string;
   categoryId: number | null;
   categoryName: string;
   categoryColor: string;
@@ -258,6 +277,17 @@ function ensureDefaultCategories() {
   }
 }
 
+function applyBalanceAdjustments(
+  adjustments: { accountId: number; delta: number }[],
+) {
+  for (const adjustment of adjustments) {
+    db.runSync("UPDATE accounts SET balance = balance + ? WHERE id = ?", [
+      adjustment.delta,
+      adjustment.accountId,
+    ]);
+  }
+}
+
 export function initDatabase() {
   db.execSync(`
     CREATE TABLE IF NOT EXISTS categories (
@@ -272,8 +302,10 @@ export function initDatabase() {
       date TEXT NOT NULL,
       amount INTEGER NOT NULL,
       type TEXT NOT NULL,
+      account_id INTEGER REFERENCES accounts(id),
       category_id INTEGER REFERENCES categories(id),
       breakdown_id INTEGER REFERENCES category_breakdowns(id),
+      account_name_snapshot TEXT NOT NULL DEFAULT '',
       category_name_snapshot TEXT NOT NULL DEFAULT '',
       category_color_snapshot TEXT NOT NULL DEFAULT '#666666',
       breakdown_name_snapshot TEXT NOT NULL DEFAULT '',
@@ -314,6 +346,14 @@ export function initDatabase() {
       category_id INTEGER REFERENCES categories(id),
       last_used_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
     );
+    CREATE TABLE IF NOT EXISTS accounts (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      balance INTEGER NOT NULL DEFAULT 0,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+    );
     CREATE TABLE IF NOT EXISTS store_category_usage (
       store_id INTEGER NOT NULL REFERENCES stores(id),
       category_id INTEGER NOT NULL REFERENCES categories(id),
@@ -325,6 +365,16 @@ export function initDatabase() {
   if (!columnExists("transactions", "breakdown_id")) {
     db.runSync(
       "ALTER TABLE transactions ADD COLUMN breakdown_id INTEGER REFERENCES category_breakdowns(id)",
+    );
+  }
+  if (!columnExists("transactions", "account_id")) {
+    db.runSync(
+      "ALTER TABLE transactions ADD COLUMN account_id INTEGER REFERENCES accounts(id)",
+    );
+  }
+  if (!columnExists("transactions", "account_name_snapshot")) {
+    db.runSync(
+      "ALTER TABLE transactions ADD COLUMN account_name_snapshot TEXT NOT NULL DEFAULT ''",
     );
   }
   if (!columnExists("transactions", "category_name_snapshot")) {
@@ -395,6 +445,20 @@ export function initDatabase() {
 
   ensureDefaultCategories();
 
+  db.runSync(
+    `INSERT INTO accounts (id, name, balance, is_default, updated_at)
+     VALUES (?, ?, 0, 1, datetime('now', 'localtime'))
+     ON CONFLICT(id) DO UPDATE SET
+       is_default = 1,
+       updated_at = datetime('now', 'localtime')`,
+    [DEFAULT_ACCOUNT_ID, DEFAULT_ACCOUNT_NAME],
+  );
+
+  db.runSync(
+    "UPDATE transactions SET account_id = ? WHERE account_id IS NULL",
+    [DEFAULT_ACCOUNT_ID],
+  );
+
   const incomeCount = db.getFirstSync<{ count: number }>(
     "SELECT COUNT(*) as count FROM categories WHERE type = ?",
     ["income"],
@@ -424,6 +488,11 @@ export function initDatabase() {
        (SELECT name FROM categories WHERE categories.id = transactions.category_id),
        '未分類'
      ),
+     account_name_snapshot = COALESCE(
+       NULLIF(account_name_snapshot, ''),
+       (SELECT name FROM accounts WHERE accounts.id = transactions.account_id),
+       ?
+     ),
      category_color_snapshot = COALESCE(
        NULLIF(category_color_snapshot, ''),
        (SELECT color FROM categories WHERE categories.id = transactions.category_id),
@@ -439,6 +508,7 @@ export function initDatabase() {
        (SELECT name FROM stores WHERE stores.id = transactions.store_id),
        ''
      )`,
+    [DEFAULT_ACCOUNT_NAME],
   );
 }
 
@@ -449,6 +519,7 @@ export function resetDatabaseForDevelopment() {
 
   db.execSync(`
     DELETE FROM transactions;
+    DELETE FROM accounts;
     DELETE FROM budgets;
     DELETE FROM plan_life_events;
     DELETE FROM plan_profiles;
@@ -457,10 +528,14 @@ export function resetDatabaseForDevelopment() {
     DELETE FROM category_breakdowns;
     DELETE FROM categories;
     DELETE FROM sqlite_sequence
-    WHERE name IN ('transactions', 'budgets', 'plan_life_events', 'plan_profiles', 'stores', 'category_breakdowns', 'categories');
+    WHERE name IN ('transactions', 'accounts', 'budgets', 'plan_life_events', 'plan_profiles', 'stores', 'category_breakdowns', 'categories');
   `);
 
   ensureDefaultCategories();
+  db.runSync(
+    "INSERT INTO accounts (id, name, balance, is_default) VALUES (?, ?, 0, 1)",
+    [DEFAULT_ACCOUNT_ID, DEFAULT_ACCOUNT_NAME],
+  );
 }
 
 export function resetCategoryAndBreakdownsToDefault() {
@@ -588,11 +663,17 @@ export function addTransaction(
   amount: number,
   type: TransactionType,
   categoryId: number,
+  accountId: number,
   memo: string,
   breakdownId?: number | null,
   storeId?: number | null,
 ): number {
   const snapshot = resolveTransactionSnapshot(categoryId, breakdownId);
+  const accountNameSnapshot =
+    db.getFirstSync<{ name: string }>(
+      "SELECT name FROM accounts WHERE id = ? LIMIT 1",
+      [accountId],
+    )?.name ?? DEFAULT_ACCOUNT_NAME;
   const storeNameSnapshot = storeId
     ? (db.getFirstSync<{ name: string }>(
         "SELECT name FROM stores WHERE id = ? LIMIT 1",
@@ -601,13 +682,15 @@ export function addTransaction(
     : "";
   touchStoreUsage(storeId ?? null, categoryId);
   const result = db.runSync(
-    "INSERT INTO transactions (date, amount, type, category_id, breakdown_id, category_name_snapshot, category_color_snapshot, breakdown_name_snapshot, memo, store_id, store_name_snapshot) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO transactions (date, amount, type, account_id, category_id, breakdown_id, account_name_snapshot, category_name_snapshot, category_color_snapshot, breakdown_name_snapshot, memo, store_id, store_name_snapshot) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
       date,
       amount,
       type,
+      accountId,
       categoryId,
       breakdownId ?? null,
+      accountNameSnapshot,
       snapshot.categoryName,
       snapshot.categoryColor,
       snapshot.breakdownName,
@@ -615,6 +698,9 @@ export function addTransaction(
       storeId ?? null,
       storeNameSnapshot,
     ],
+  );
+  applyBalanceAdjustments(
+    buildBalanceAdjustmentsForCreate({ accountId, type, amount }),
   );
   return result.lastInsertRowId;
 }
@@ -625,11 +711,27 @@ export function updateTransaction(
   amount: number,
   type: TransactionType,
   categoryId: number,
+  accountId: number,
   memo: string,
   breakdownId?: number | null,
   storeId?: number | null,
 ) {
+  const before = db.getFirstSync<{
+    amount: number;
+    type: TransactionType;
+    account_id: number | null;
+  }>("SELECT amount, type, account_id FROM transactions WHERE id = ? LIMIT 1", [
+    id,
+  ]);
+  if (!before) {
+    return;
+  }
   const snapshot = resolveTransactionSnapshot(categoryId, breakdownId);
+  const accountNameSnapshot =
+    db.getFirstSync<{ name: string }>(
+      "SELECT name FROM accounts WHERE id = ? LIMIT 1",
+      [accountId],
+    )?.name ?? DEFAULT_ACCOUNT_NAME;
   const storeNameSnapshot = storeId
     ? (db.getFirstSync<{ name: string }>(
         "SELECT name FROM stores WHERE id = ? LIMIT 1",
@@ -638,13 +740,15 @@ export function updateTransaction(
     : "";
   touchStoreUsage(storeId ?? null, categoryId);
   db.runSync(
-    "UPDATE transactions SET date=?, amount=?, type=?, category_id=?, breakdown_id=?, category_name_snapshot=?, category_color_snapshot=?, breakdown_name_snapshot=?, memo=?, store_id=?, store_name_snapshot=? WHERE id=?",
+    "UPDATE transactions SET date=?, amount=?, type=?, account_id=?, category_id=?, breakdown_id=?, account_name_snapshot=?, category_name_snapshot=?, category_color_snapshot=?, breakdown_name_snapshot=?, memo=?, store_id=?, store_name_snapshot=? WHERE id=?",
     [
       date,
       amount,
       type,
+      accountId,
       categoryId,
       breakdownId ?? null,
+      accountNameSnapshot,
       snapshot.categoryName,
       snapshot.categoryColor,
       snapshot.breakdownName,
@@ -654,10 +758,111 @@ export function updateTransaction(
       id,
     ],
   );
+  applyBalanceAdjustments(
+    buildBalanceAdjustmentsForUpdate(
+      {
+        accountId: before.account_id ?? DEFAULT_ACCOUNT_ID,
+        type: before.type,
+        amount: before.amount,
+      },
+      { accountId, type, amount },
+    ),
+  );
 }
 
 export function deleteTransaction(id: number) {
+  const tx = db.getFirstSync<{
+    amount: number;
+    type: TransactionType;
+    account_id: number | null;
+  }>("SELECT amount, type, account_id FROM transactions WHERE id = ? LIMIT 1", [
+    id,
+  ]);
   db.runSync("DELETE FROM transactions WHERE id = ?", [id]);
+  if (!tx) {
+    return;
+  }
+  applyBalanceAdjustments(
+    buildBalanceAdjustmentsForDelete({
+      accountId: tx.account_id ?? DEFAULT_ACCOUNT_ID,
+      type: tx.type,
+      amount: tx.amount,
+    }),
+  );
+}
+
+// Accounts
+export function getAccounts(): Account[] {
+  const rows = db.getAllSync<any>(
+    "SELECT * FROM accounts ORDER BY is_default DESC, id ASC",
+  );
+  return rows.map(mapAccount);
+}
+
+export function addAccount(name: string, balance: number): number {
+  const result = db.runSync(
+    `INSERT INTO accounts (name, balance, is_default, updated_at)
+     VALUES (?, ?, 0, datetime('now', 'localtime'))`,
+    [name, balance],
+  );
+  return result.lastInsertRowId;
+}
+
+export function updateAccountName(id: number, name: string) {
+  db.runSync(
+    "UPDATE accounts SET name = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+    [name, id],
+  );
+  db.runSync(
+    "UPDATE transactions SET account_name_snapshot = ? WHERE account_id = ?",
+    [name, id],
+  );
+}
+
+export function updateAccountBalance(id: number, balance: number) {
+  db.runSync(
+    "UPDATE accounts SET balance = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
+    [balance, id],
+  );
+}
+
+export function deleteAccountAndMoveToDefault(id: number) {
+  if (id === DEFAULT_ACCOUNT_ID) {
+    throw new Error("既定口座は削除できません");
+  }
+  const exists = db.getFirstSync<{ id: number }>(
+    "SELECT id FROM accounts WHERE id = ? LIMIT 1",
+    [id],
+  );
+  if (!exists) {
+    return;
+  }
+
+  const defaultAccountName =
+    db.getFirstSync<{ name: string }>(
+      "SELECT name FROM accounts WHERE id = ? LIMIT 1",
+      [DEFAULT_ACCOUNT_ID],
+    )?.name ?? DEFAULT_ACCOUNT_NAME;
+
+  // 削除口座に紐づく取引の収支 net delta を算出（削除口座の残高は反映しない）
+  const netRow = db.getFirstSync<{ net: number | null }>(
+    `SELECT SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END) AS net
+     FROM transactions WHERE account_id = ?`,
+    [id],
+  );
+  const net = netRow?.net ?? 0;
+
+  if (net !== 0) {
+    db.runSync("UPDATE accounts SET balance = balance + ? WHERE id = ?", [
+      net,
+      DEFAULT_ACCOUNT_ID,
+    ]);
+  }
+  db.runSync(
+    "UPDATE transactions SET account_id = ?, account_name_snapshot = ? WHERE account_id = ?",
+    [DEFAULT_ACCOUNT_ID, defaultAccountName, id],
+  );
+  db.runSync("DELETE FROM accounts WHERE id = ?", [id]);
 }
 
 // Stores
@@ -1127,6 +1332,8 @@ function mapTransaction(r: any): Transaction {
     date: r.date,
     amount: r.amount,
     type: r.type as TransactionType,
+    accountId: r.account_id ?? DEFAULT_ACCOUNT_ID,
+    accountName: r.account_name_snapshot || DEFAULT_ACCOUNT_NAME,
     categoryId: r.category_id ?? null,
     categoryName: r.category_name_snapshot || r.category_name || "未分類",
     categoryColor: r.category_color_snapshot || r.category_color || "#666666",
@@ -1136,6 +1343,17 @@ function mapTransaction(r: any): Transaction {
     storeName: r.store_name_snapshot || "",
     memo: r.memo || "",
     createdAt: r.created_at,
+  };
+}
+
+function mapAccount(r: any): Account {
+  return {
+    id: r.id,
+    name: r.name,
+    balance: r.balance,
+    isDefault: r.is_default === 1,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
   };
 }
 

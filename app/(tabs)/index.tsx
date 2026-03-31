@@ -15,9 +15,12 @@ import TransactionEditor from "@/components/TransactionEditor";
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import {
+  Account,
   addTransaction,
   Breakdown,
   Category,
+  DEFAULT_ACCOUNT_ID,
+  getAccounts,
   getBreakdownsByCategory,
   getBudgetStatusForDate,
   getCategories,
@@ -42,6 +45,8 @@ export default function RecordScreen() {
   const [amountRaw, setAmountRaw] = useState("");
   const [date, setDate] = useState(formatDate(new Date()));
   const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountId, setAccountId] = useState<number | null>(null);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [breakdowns, setBreakdowns] = useState<Breakdown[]>([]);
   const [breakdownId, setBreakdownId] = useState<number | null>(null);
@@ -55,6 +60,18 @@ export default function RecordScreen() {
   const toastOpacity = useRef(new Animated.Value(0)).current;
 
   const resetSelectionState = useCallback((targetType: TransactionType) => {
+    const loadedAccounts = getAccounts();
+    setAccounts(loadedAccounts);
+    setAccountId((prev) => {
+      if (prev && loadedAccounts.some((a) => a.id === prev)) {
+        return prev;
+      }
+      const defaultAccount =
+        loadedAccounts.find((a) => a.id === DEFAULT_ACCOUNT_ID) ??
+        loadedAccounts[0] ??
+        null;
+      return defaultAccount?.id ?? null;
+    });
     setCategories(getCategories(targetType));
     setCategoryId(null);
     setBreakdowns([]);
@@ -161,8 +178,21 @@ export default function RecordScreen() {
       Alert.alert("エラー", "カテゴリを選択してください");
       return;
     }
+    if (!accountId) {
+      Alert.alert("エラー", "口座を選択してください");
+      return;
+    }
 
-    addTransaction(date, amount, type, categoryId, memo, breakdownId, storeId);
+    addTransaction(
+      date,
+      amount,
+      type,
+      categoryId,
+      accountId,
+      memo,
+      breakdownId,
+      storeId,
+    );
 
     const afterStatus =
       type === "expense" ? getBudgetStatusForDate(date, categoryId) : null;
@@ -223,6 +253,8 @@ export default function RecordScreen() {
         amountRaw={amountRaw}
         date={date}
         categories={categories}
+        accounts={accounts}
+        accountId={accountId}
         categoryId={categoryId}
         breakdowns={breakdowns}
         breakdownId={breakdownId}
@@ -236,6 +268,7 @@ export default function RecordScreen() {
         onTypeChange={handleTypeChange}
         onAmountRawChange={setAmountRaw}
         onDateChange={setDate}
+        onAccountChange={setAccountId}
         onCategoryChange={handleCategoryChange}
         onBreakdownChange={setBreakdownId}
         onStoreChange={(id, name) => {
