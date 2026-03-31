@@ -18,10 +18,13 @@ import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import {
+  Account,
   addTransaction,
   Breakdown,
   Category,
+  DEFAULT_ACCOUNT_ID,
   deleteTransaction,
+  getAccounts,
   getBreakdownsByCategory,
   getCategories,
   getDatesWithTransactions,
@@ -90,6 +93,8 @@ export default function HistoryScreen() {
   const [editDate, setEditDate] = useState("");
   const [editAmountRaw, setEditAmountRaw] = useState("");
   const [editType, setEditType] = useState<TransactionType>("expense");
+  const [editAccounts, setEditAccounts] = useState<Account[]>([]);
+  const [editAccountId, setEditAccountId] = useState<number | null>(null);
   const [editCategoryId, setEditCategoryId] = useState<number | null>(null);
   const [editBreakdownId, setEditBreakdownId] = useState<number | null>(null);
   const [editMemo, setEditMemo] = useState("");
@@ -206,6 +211,7 @@ export default function HistoryScreen() {
     const sourceMap = new Map(transactions.map((tx) => [tx.id, tx]));
     const incomeCategories = getCategories("income");
     const expenseCategories = getCategories("expense");
+    const accounts = getAccounts();
 
     const normalize = (value: string) => value.trim().toLowerCase();
 
@@ -254,6 +260,21 @@ export default function HistoryScreen() {
       return matched?.id ?? null;
     };
 
+    const resolveAccountIdForCopy = (tx: Transaction): number => {
+      if (accounts.some((a) => a.id === tx.accountId)) {
+        return tx.accountId;
+      }
+      const byName = accounts.find((a) => a.name === tx.accountName);
+      if (byName) {
+        return byName.id;
+      }
+      return (
+        accounts.find((a) => a.id === DEFAULT_ACCOUNT_ID)?.id ??
+        accounts[0]?.id ??
+        DEFAULT_ACCOUNT_ID
+      );
+    };
+
     selectedTxIds.forEach((id) => {
       const tx = sourceMap.get(id);
       if (!tx) {
@@ -282,6 +303,7 @@ export default function HistoryScreen() {
         tx.amount,
         tx.type,
         targetCategoryId,
+        resolveAccountIdForCopy(tx),
         tx.memo ?? "",
         targetBreakdownId,
       );
@@ -347,10 +369,19 @@ export default function HistoryScreen() {
   };
 
   const openEditModal = (tx: Transaction) => {
+    const accounts = getAccounts();
+    setEditAccounts(accounts);
     setEditingTxId(tx.id);
     setEditDate(tx.date);
     setEditAmountRaw(String(tx.amount));
     setEditType(tx.type);
+    setEditAccountId(
+      accounts.some((a) => a.id === tx.accountId)
+        ? tx.accountId
+        : (accounts.find((a) => a.id === DEFAULT_ACCOUNT_ID)?.id ??
+            accounts[0]?.id ??
+            null),
+    );
     setEditMemo(tx.memo || "");
     setEditStoreId(tx.storeId);
     setEditStoreName(tx.storeName);
@@ -386,6 +417,10 @@ export default function HistoryScreen() {
       Alert.alert("エラー", "カテゴリを選択してください");
       return;
     }
+    if (!editAccountId) {
+      Alert.alert("エラー", "口座を選択してください");
+      return;
+    }
 
     updateTransaction(
       editingTxId,
@@ -393,6 +428,7 @@ export default function HistoryScreen() {
       amount,
       editType,
       editCategoryId,
+      editAccountId,
       editMemo,
       editBreakdownId,
       editStoreId,
@@ -477,6 +513,14 @@ export default function HistoryScreen() {
                 numberOfLines={1}
               >
                 🏪 {tx.storeName}
+              </Text>
+            ) : null}
+            {tx.accountName ? (
+              <Text
+                style={[styles.txMemo, { color: colors.subText }]}
+                numberOfLines={1}
+              >
+                口座: {tx.accountName}
               </Text>
             ) : null}
             {tx.memo ? (
@@ -855,6 +899,8 @@ export default function HistoryScreen() {
                 amountRaw={editAmountRaw}
                 date={editDate}
                 categories={editCategories}
+                accounts={editAccounts}
+                accountId={editAccountId}
                 categoryId={editCategoryId}
                 breakdowns={editBreakdowns}
                 breakdownId={editBreakdownId}
@@ -868,6 +914,7 @@ export default function HistoryScreen() {
                 onTypeChange={handleEditTypeChange}
                 onAmountRawChange={setEditAmountRaw}
                 onDateChange={setEditDate}
+                onAccountChange={setEditAccountId}
                 onCategoryChange={handleEditCategoryChange}
                 onBreakdownChange={setEditBreakdownId}
                 onStoreChange={(id, name) => {

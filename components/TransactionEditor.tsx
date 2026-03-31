@@ -15,6 +15,7 @@ import {
 } from "react-native";
 
 import {
+  Account,
   Breakdown,
   Category,
   getStoresByCategory,
@@ -38,6 +39,8 @@ type Props = {
   amountRaw: string;
   date: string;
   categories: Category[];
+  accounts: Account[];
+  accountId: number | null;
   categoryId: number | null;
   breakdowns: Breakdown[];
   breakdownId: number | null;
@@ -51,6 +54,7 @@ type Props = {
   onTypeChange: (type: TransactionType) => void;
   onAmountRawChange: (amountRaw: string) => void;
   onDateChange: (date: string) => void;
+  onAccountChange: (accountId: number) => void;
   onCategoryChange: (categoryId: number) => void;
   onBreakdownChange: (breakdownId: number | null) => void;
   onStoreChange: (storeId: number | null, storeName: string) => void;
@@ -82,6 +86,8 @@ export default function TransactionEditor({
   amountRaw,
   date,
   categories,
+  accounts,
+  accountId,
   categoryId,
   breakdowns,
   breakdownId,
@@ -95,6 +101,7 @@ export default function TransactionEditor({
   onTypeChange,
   onAmountRawChange,
   onDateChange,
+  onAccountChange,
   onCategoryChange,
   onBreakdownChange,
   onStoreChange,
@@ -102,6 +109,7 @@ export default function TransactionEditor({
   onSubmit,
 }: Props) {
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showStoreModal, setShowStoreModal] = useState(false);
   const [storeSearchQuery, setStoreSearchQuery] = useState("");
@@ -112,6 +120,10 @@ export default function TransactionEditor({
   const selectedCategory = useMemo(
     () => categories.find((c) => c.id === categoryId) ?? null,
     [categories, categoryId],
+  );
+  const selectedAccount = useMemo(
+    () => accounts.find((a) => a.id === accountId) ?? null,
+    [accounts, accountId],
   );
   const selectedBreakdown = useMemo(
     () => breakdowns.find((b) => b.id === breakdownId) ?? null,
@@ -215,6 +227,25 @@ export default function TransactionEditor({
               />
             </View>
           </View>
+
+          <TextInput
+            style={[
+              styles.memoInput,
+              { color: colors.text, borderColor: colors.border },
+            ]}
+            value={memo}
+            onChangeText={onMemoChange}
+            placeholder="メモを入力（任意）"
+            placeholderTextColor={colors.subText}
+            multiline
+            maxLength={100}
+            returnKeyType="done"
+            blurOnSubmit
+            onSubmitEditing={Keyboard.dismiss}
+            inputAccessoryViewID={
+              Platform.OS === "ios" ? keyboardAccessoryViewId : undefined
+            }
+          />
         </View>
 
         <ScrollView
@@ -234,6 +265,34 @@ export default function TransactionEditor({
               {displayDate(date)}
             </Text>
           </TouchableOpacity>
+
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.label, { color: colors.subText }]}>口座</Text>
+            <TouchableOpacity
+              style={[
+                styles.selectorButton,
+                { borderColor: selectedAccount ? colors.tint : colors.border },
+              ]}
+              onPress={() => setShowAccountModal(true)}
+            >
+              <Text
+                style={[
+                  styles.selectorValue,
+                  { color: selectedAccount ? colors.text : colors.subText },
+                ]}
+              >
+                {selectedAccount?.name ?? "口座を選択"}
+              </Text>
+              <Text style={[styles.selectorAction, { color: colors.tint }]}>
+                選択
+              </Text>
+            </TouchableOpacity>
+          </View>
 
           {Platform.OS === "ios" ? (
             <Modal transparent animationType="slide" visible={showDatePicker}>
@@ -412,35 +471,6 @@ export default function TransactionEditor({
               </TouchableOpacity>
             </View>
           )}
-
-          <View
-            style={[
-              styles.card,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <Text style={[styles.label, { color: colors.subText }]}>
-              メモ（任意）
-            </Text>
-            <TextInput
-              style={[
-                styles.memoInput,
-                { color: colors.text, borderColor: colors.border },
-              ]}
-              value={memo}
-              onChangeText={onMemoChange}
-              placeholder="メモを入力"
-              placeholderTextColor={colors.subText}
-              multiline
-              maxLength={100}
-              returnKeyType="done"
-              blurOnSubmit
-              onSubmitEditing={Keyboard.dismiss}
-              inputAccessoryViewID={
-                Platform.OS === "ios" ? keyboardAccessoryViewId : undefined
-              }
-            />
-          </View>
         </ScrollView>
 
         <View
@@ -536,6 +566,62 @@ export default function TransactionEditor({
                     選択中
                   </Text>
                 ) : null}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      <Modal visible={showAccountModal} animationType="slide">
+        <SafeAreaView
+          style={[
+            styles.fullModalContainer,
+            { backgroundColor: colors.background },
+          ]}
+        >
+          <View
+            style={[
+              styles.fullModalHeader,
+              { borderBottomColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.fullModalTitle, { color: colors.text }]}>
+              口座を選択
+            </Text>
+            <TouchableOpacity onPress={() => setShowAccountModal(false)}>
+              <Text style={[styles.fullModalClose, { color: colors.tint }]}>
+                閉じる
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={styles.fullModalContent}>
+            {accounts.map((account) => (
+              <TouchableOpacity
+                key={account.id}
+                style={[
+                  styles.fullCategoryRow,
+                  { borderColor: colors.border, backgroundColor: colors.card },
+                  accountId === account.id && {
+                    borderColor: colors.tint,
+                    borderWidth: 2,
+                  },
+                ]}
+                onPress={() => {
+                  onAccountChange(account.id);
+                  setShowAccountModal(false);
+                }}
+              >
+                <Text style={[styles.fullCategoryName, { color: colors.text }]}>
+                  {account.name}
+                </Text>
+                <Text
+                  style={[
+                    styles.fullCategorySelected,
+                    { color: colors.subText },
+                  ]}
+                >
+                  ¥{account.balance.toLocaleString("ja-JP")}
+                </Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -732,9 +818,11 @@ const styles = StyleSheet.create({
   memoInput: {
     borderWidth: 1,
     borderRadius: 8,
-    padding: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     fontSize: 15,
-    minHeight: 60,
+    minHeight: 44,
+    marginTop: 8,
   },
   keyboardAccessory: {
     paddingHorizontal: 14,
