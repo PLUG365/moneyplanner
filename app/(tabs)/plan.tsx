@@ -1,62 +1,62 @@
 import DateTimePicker, {
-  type DateTimePickerEvent,
+    type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "expo-router";
 import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
 } from "react";
 import {
-  Alert,
-  Linking,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Linking,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import {
-  addLifeEvent,
-  deleteLifeEvent,
-  getLifeEvents,
-  getPlanProfile,
-  getYearMonthlyTotals,
-  savePlanProfile,
-  updateLifeEvent,
-  type PlanLifeEvent,
+    addLifeEvent,
+    deleteLifeEvent,
+    getLifeEvents,
+    getPlanProfile,
+    getYearMonthlyTotals,
+    savePlanProfile,
+    updateLifeEvent,
+    type PlanLifeEvent,
 } from "@/lib/database";
 import {
-  ADDITIONAL_CHILD_COST_DEFINITIONS,
-  ASSUMPTION_DEFINITIONS,
-  DEFAULT_ASSUMPTIONS,
-  EDUCATION_STAGE_DEFINITIONS,
-  getPublicDefaultsUpdatedLabel,
-  isPublicDefaultsUpdateDue,
-  PUBLIC_DEFAULTS_VERSION,
-  type AssumptionKey,
-  type EducationStageKey,
-  type SchoolKind,
+    ADDITIONAL_CHILD_COST_DEFINITIONS,
+    ASSUMPTION_DEFINITIONS,
+    DEFAULT_ASSUMPTIONS,
+    EDUCATION_STAGE_DEFINITIONS,
+    getPublicDefaultsUpdatedLabel,
+    isPublicDefaultsUpdateDue,
+    PUBLIC_DEFAULTS_VERSION,
+    type AssumptionKey,
+    type EducationStageKey,
+    type SchoolKind,
 } from "@/lib/simulation/assumptions";
 import { runSimulation } from "@/lib/simulation/engine";
 import {
-  expandLifeEventsByYear,
-  type CarPurchaseEvent,
-  type ChildEducationEvent,
-  type HousingPurchaseEvent,
+    expandLifeEventsByYear,
+    type CarPurchaseEvent,
+    type ChildEducationEvent,
+    type HousingPurchaseEvent,
 } from "@/lib/simulation/events";
 import {
-  defaultPlanProfile,
-  normalizePlanProfilePayload,
-  type PlanProfilePayload,
+    defaultPlanProfile,
+    normalizePlanProfilePayload,
+    type PlanProfilePayload,
 } from "@/lib/simulation/planProfile";
 
 function formatAmount(value: number): string {
@@ -446,6 +446,8 @@ export default function PlanScreen() {
   );
   const hasLoadedProfileRef = useRef(false);
   const isHydratingProfileRef = useRef(false);
+  const annualIncomeTouchedRef = useRef(false);
+  const annualExpenseTouchedRef = useRef(false);
 
   const [startYear, setStartYear] = useState(String(currentYear));
   const [years, setYears] = useState("20");
@@ -541,7 +543,11 @@ export default function PlanScreen() {
         setYears(normalized.years);
         setInitialBalance(normalized.initialBalance);
         setAnnualIncome(normalized.annualIncome);
+        if (toInt(normalized.annualIncome, 0) !== 0)
+          annualIncomeTouchedRef.current = true;
         setAnnualExpense(normalized.annualExpense);
+        if (toInt(normalized.annualExpense, 0) !== 0)
+          annualExpenseTouchedRef.current = true;
         setChildren(normalized.children);
         setAssumptionRates(normalized.assumptionRates);
         setIsInputSectionOpen(normalized.isInputSectionOpen);
@@ -597,10 +603,18 @@ export default function PlanScreen() {
       const totals = getYearMonthlyTotals(currentYear);
       const incomeTotal = totals.reduce((sum, row) => sum + row.income, 0);
       const expenseTotal = totals.reduce((sum, row) => sum + row.expense, 0);
-      if (incomeTotal > 0 && toInt(annualIncome, 0) === 0) {
+      if (
+        incomeTotal > 0 &&
+        toInt(annualIncome, 0) === 0 &&
+        !annualIncomeTouchedRef.current
+      ) {
         setAnnualIncome(String(Math.round(incomeTotal)));
       }
-      if (expenseTotal > 0 && toInt(annualExpense, 0) === 0) {
+      if (
+        expenseTotal > 0 &&
+        toInt(annualExpense, 0) === 0 &&
+        !annualExpenseTouchedRef.current
+      ) {
         setAnnualExpense(String(Math.round(expenseTotal)));
       }
 
@@ -1196,9 +1210,10 @@ export default function PlanScreen() {
                   { color: colors.text, borderColor: colors.border },
                 ]}
                 value={annualIncome ? formatAmount(toInt(annualIncome, 0)) : ""}
-                onChangeText={(text) =>
-                  setAnnualIncome(text.replace(/[^0-9]/g, ""))
-                }
+                onChangeText={(text) => {
+                  annualIncomeTouchedRef.current = true;
+                  setAnnualIncome(text.replace(/[^0-9]/g, ""));
+                }}
                 keyboardType="number-pad"
               />
 
@@ -1213,9 +1228,10 @@ export default function PlanScreen() {
                 value={
                   annualExpense ? formatAmount(toInt(annualExpense, 0)) : ""
                 }
-                onChangeText={(text) =>
-                  setAnnualExpense(text.replace(/[^0-9]/g, ""))
-                }
+                onChangeText={(text) => {
+                  annualExpenseTouchedRef.current = true;
+                  setAnnualExpense(text.replace(/[^0-9]/g, ""));
+                }}
                 keyboardType="number-pad"
               />
 
