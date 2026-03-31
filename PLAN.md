@@ -165,8 +165,24 @@
 
 ### 🔲 Phase 3 — 家族共有
 
-- [ ] iCloud Drive経由でのデータ同期
-- [ ] 世帯単位の共有設計
+#### Phase 3 調査実行（Copilot CLI /research）
+
+- [ ] 調査1: Expo での iCloud Drive 統合
+  - /research Best practices for iCloud Drive file sync in React Native / Expo SDK 54
+- [ ] 調査2: SQLite ファイルの iCloud 同期
+  - /research expo-file-system iCloud Drive sync SQLite database between iOS devices
+- [ ] （任意）調査3: iCloud 連携ライブラリ比較
+  - /research react-native-cloud-store vs expo iCloud integration for shared SQLite
+- [ ] （任意）調査4: マルチデバイス SQLite 同期戦略
+  - /research Multi-device SQLite sync strategies for iOS household apps using iCloud
+
+#### Phase 3 実装チケット（調査後に詳細化）
+
+- [ ] Ticket A: iCloud Drive 対応ビルド設定（EAS Build 必須か確認）
+- [ ] Ticket B: SQLite ファイルの iCloud コンテナへのエクスポート/インポート
+- [ ] Ticket C: 設定タブに「共有」セクション追加（バックアップ・復元 UI）
+- [ ] Ticket D: 競合検出と上書き確認フロー
+- [ ] Ticket E: 世帯単位の共有設計（共有 iCloud コンテナ or ファイル共有）
 
 ### 🔲 Phase 4 — App Store配布
 
