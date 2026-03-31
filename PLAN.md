@@ -165,8 +165,75 @@
 
 ### 🔲 Phase 3 — 家族共有
 
-- [ ] iCloud Drive経由でのデータ同期
-- [ ] 世帯単位の共有設計
+#### Phase 3 調査実行（Copilot CLI /research）
+
+- [x] 調査1: Expo での iCloud Drive 統合
+  - /research Best practices for iCloud Drive file sync in React Native / Expo SDK 54
+- [x] 調査2: SQLite ファイルの iCloud 同期
+  - /research expo-file-system iCloud Drive sync SQLite database between iOS devices
+- [x] 調査3: iCloud 連携ライブラリ比較
+  - /research react-native-cloud-store vs expo iCloud integration for shared SQLite
+- [x] 調査4: マルチデバイス SQLite 同期戦略
+  - /research Multi-device SQLite sync strategies for iOS household apps using iCloud
+
+#### 調査メモ（参考URL）
+
+- 調査1 Gist: [research-best-practices-for-icloud-drive-file-sync-in-react-native-expo-sdk-54](https://gist.github.com/minoru365/cbf8f0f758f6d5f7f4901feea1fc02f7)
+- 調査2 Gist: [research-expo-file-system-icloud-drive-sync-sqlite-database-between-ios-devices](https://gist.github.com/minoru365/eb30301530a16af66eaaaaa3db7f8336)
+- 調査3 Gist: [research-react-native-cloud-store-vs-expo-icloud-integration-for-shared-sqlite](https://gist.github.com/minoru365/b5cb4e81c5e4fa7d96604ee569713daa)
+- 調査4 Gist: [research-multi-device-sqlite-sync-strategies-for-ios-household-apps-using-icloud](https://gist.github.com/minoru365/3772951aba2e05e98a27f737aa3474fa)
+
+#### 調査結果サマリー
+
+- **expo-file-system 単体では iCloud 同期不可**。`Paths.appleSharedContainers` はパスアクセスのみで upload/download 制御 API を持たない。
+- **SQLite ファイルを iCloud ubiquity container に直接配置するのは Apple ガイドライン違反**（データ破損リスク）。CSV エクスポート経由か CloudKit Records を使う。
+- **実用的な選択肢は `react-native-cloud-store`（XHMM）のみ**。pre-stable (v0.12.0)、ソロメンテナー、最終更新 Apr 2024 だが Expo config-plugin 付きで最も機能が揃っている。
+- **iCloud 対応には Expo Go が使えなくなる**（expo-dev-client への移行が必要）。
+- **WAL チェックポイントが必須**。アップロード前に `PRAGMA wal_checkpoint(FULL)` を実行し、`-wal`/`-shm` も含めて同期する。
+- **同期戦略**：家族 2〜3 台程度なら「フルファイル置換（タイムスタンプ比較）+ last-write-wins」で十分。競合は稀かつ許容範囲。
+- **MVP 方針（Phase 3-A）**：まず CSV + expo-sharing による手動バックアップ/復元 UI を実装（Expo Go のまま動作）。自動同期（react-native-cloud-store）は Phase 3-B 以降。
+
+#### 調査1反映: iCloud 統合ビルド方針
+
+- [ ] Phase 3-A（手動バックアップ）は追加エンタイトルメント・ライブラリ不要
+  - 既存の `lib/csvExport.ts` + `expo-sharing` で iCloud Drive へ手動保存
+  - `expo-document-picker` で CSV を読み込んでインポート
+- [ ] Phase 3-B（自動同期）は expo-dev-client + react-native-cloud-store が必要
+  - `app.json` に `ios.entitlements` で iCloud コンテナ設定
+  - `plugins/withICloud.js` Config Plugin を追加
+  - Container ID を Apple Developer Portal で手動登録（初回のみ）
+  - EAS Build（development）でプロビジョニングプロファイルを再生成
+
+#### 調査3反映: ライブラリ選定方針
+
+- [x] Phase 3-A（手動バックアップ）: `expo-sharing` + `expo-document-picker`（公式・安定）
+- [x] Phase 3-B（自動同期）: `react-native-cloud-store`（XHMM v0.12.0）を採用
+  - 理由: upload/download の明示的制御が可能な唯一の選択肢
+  - リスク: pre-stable・ソロメンテナー → 代替として VACUUM INTO + expo-sharing を常に維持する
+
+#### 調査4反映: 同期戦略方針
+
+- [x] 採用戦略: フルファイル置換（Full File Replace）+ タイムスタンプ比較
+  - 家族 2〜3 台・低書き込み頻度には過剰な CRDT/CloudKit Records は不要
+  - `kvStorage.setString('lastSyncAt', ...)` でデバイス間のタイムスタンプを共有
+  - アプリ起動時（foreground）に download → タイムスタンプ比較 → 必要なら上書き
+  - アプリバックグラウンド時に upload（`AppState` で検知）
+- [x] 競合発生時は「新しい方を優先（last-write-wins）」+ ユーザー確認ダイアログ
+- [x] オフライン時はローカル DB をそのまま使用し、再接続時にアップロード
+
+#### Phase 3 実装チケット
+
+- [ ] Ticket A: CSV バックアップ/復元 UI（設定タブに「データ共有」セクション）
+  - 内容: エクスポート（CSV 生成 + expo-sharing）、インポート（expo-document-picker + CSV パース → DB INSERT）
+  - 前提: Expo Go のまま動作可能、追加ライブラリ不要
+- [ ] Ticket B: expo-dev-client ビルド対応
+  - 内容: `app.json` エンタイトルメント設定、`plugins/withICloud.js` 作成、Apple Developer Portal iCloud Container 登録、`eas.json` development プロファイル設定
+- [ ] Ticket C: react-native-cloud-store による自動バックアップ
+  - 内容: `lib/icloudSync.ts` 実装（`exportDbToICloud`, `importDbFromICloud`）、WAL チェックポイント処理、`AppState` フック連携
+- [ ] Ticket D: 設定タブに自動同期 ON/OFF とステータス表示
+  - 内容: 最終同期日時表示、iCloud アカウント未サインイン時の graceful degradation
+- [ ] Ticket E: 競合検出と上書き確認フロー
+  - 内容: タイムスタンプ比較、「デバイス A の方が新しい / クラウドの方が新しい」確認ダイアログ
 
 ### 🔲 Phase 4 — App Store配布
 
