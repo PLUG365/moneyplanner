@@ -42,16 +42,18 @@ npx expo start
 - expo-sqlite v16（同期API: `openDatabaseSync`）→ Phase 3 で Cloud Firestore に完全置換予定
 - expo-file-system/legacy + expo-sharing（CSV出力）
 - @react-native-community/datetimepicker
-- Phase 3で追加予定: @react-native-firebase/*, expo-dev-client, expo-apple-authentication
+- Phase 3で追加予定: @react-native-firebase/\*, expo-dev-client, expo-apple-authentication
 
 ## DBについて
 
 ### 現行（Phase 2まで）
+
 - `lib/database.ts` のモジュールロード時に `initDatabase()` が自動実行される
 - `app/_layout.tsx` では `import '@/lib/database'` で副作用importのみ行う
 - useEffect内でinitDatabase()を呼ばないこと（タイミング競合の原因になる）
 
 ### Phase 3 移行後
+
 - Cloud Firestore に完全置換（`lib/firestore.ts`）
 - Apple Sign-In + Firebase Auth で認証
 - 世帯（household）単位でデータ分離
