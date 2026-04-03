@@ -3,18 +3,26 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ── ヘルパー関数 ──
+    // 現在のユーザーが所属する世帯IDを取得
+    function userHouseholdId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId;
+    }
+
     // ユーザードキュメント: 本人のみ読み書き可
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // 世帯ドキュメント: 認証済みユーザーのみ（本番化時に世帯メンバー制限を追加）
+    // 世帯ドキュメント: 自世帯メンバーのみアクセス可
     match /households/{householdId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if request.auth != null
+        && userHouseholdId() == householdId;
 
-      // 世帯配下の全サブコレクション: 認証済みユーザーのみ
+      // 世帯配下の全サブコレクション: 自世帯メンバーのみ
       match /{subcollection}/{docId} {
-        allow read, write: if request.auth != null;
+        allow read, write: if request.auth != null
+          && userHouseholdId() == householdId;
       }
     }
   }
