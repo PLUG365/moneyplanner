@@ -54,13 +54,13 @@ graph LR
     classDef active fill:#1565C0,color:#fff
 ```
 
-| タブ | ファイル | 主な機能 |
-|---|---|---|
-| 記録 | `app/(tabs)/index.tsx` | 収支入力フォーム・カテゴリ選択・日付入力 |
-| 履歴 | `app/(tabs)/history.tsx` | リスト表示・カレンダービュー |
-| 集計 | `app/(tabs)/summary.tsx` | 月次・年次・カテゴリ別集計 |
-| 計画 | `app/(tabs)/plan.tsx` | ライフプラン（Phase 2） |
-| 設定 | `app/(tabs)/settings.tsx` | カテゴリ管理・CSV出力 |
+| タブ | ファイル                  | 主な機能                                 |
+| ---- | ------------------------- | ---------------------------------------- |
+| 記録 | `app/(tabs)/index.tsx`    | 収支入力フォーム・カテゴリ選択・日付入力 |
+| 履歴 | `app/(tabs)/history.tsx`  | リスト表示・カレンダービュー             |
+| 集計 | `app/(tabs)/summary.tsx`  | 月次・年次・カテゴリ別集計               |
+| 計画 | `app/(tabs)/plan.tsx`     | ライフプラン（Phase 2）                  |
+| 設定 | `app/(tabs)/settings.tsx` | カテゴリ管理・CSV出力                    |
 
 ---
 
@@ -91,9 +91,9 @@ erDiagram
 
 ### デフォルトカテゴリ
 
-| 種別 | カテゴリ |
-|---|---|
-| 収入 | 給与・副業・その他収入 |
+| 種別 | カテゴリ                                                                                 |
+| ---- | ---------------------------------------------------------------------------------------- |
+| 収入 | 給与・副業・その他収入                                                                   |
 | 支出 | 食費・住居費・光熱費・通信費・交通費・医療費・娯楽費・衣服費・教育費・保険料・その他支出 |
 
 ---
@@ -146,25 +146,27 @@ sequenceDiagram
 
 ---
 
-## Phase 3: iCloud同期（予定）
+## Phase 3: Firebase同期（計画中）
 
 ```mermaid
 sequenceDiagram
     participant A as デバイスA（夫）
-    participant iCloud as iCloud Drive
+    participant Firestore as Cloud Firestore
     participant B as デバイスB（妻）
 
-    A->>A: 収支を記録
-    A->>iCloud: SQLiteファイルを自動アップロード
-    Note over iCloud: APNsでデバイスBに通知
-    iCloud->>B: バックグラウンドでダウンロード
-    B->>B: フォアグラウンド復帰時にDB再読み込み
-    B-->>B: 最新データを表示
+    A->>Firestore: 収支を記録（addDoc）
+    Note over Firestore: serverTimestamp()でupdatedAt付与
+    Firestore-->>B: onSnapshotリスナーでリアルタイム通知
+    B-->>B: UI自動更新
+    Note over A,B: 同一レコード同時更新時はlast-write-wins
 ```
 
-- **同期方式**: iCloud DriveにSQLiteファイルを直接配置
-- **競合リスク**: 同一レコードを同時編集しない限り発生しない
-- **実装要件**: EAS Build + ネイティブモジュール（Swift数十行）
+- **同期方式**: Cloud Firestoreリアルタイムリスナー（`onSnapshot`）
+- **オフライン**: Firestore内蔵のオフライン永続化で自動対応
+- **認証**: Apple Sign-In + Firebase Auth
+- **世帯共有**: 招待コード方式、6桁コードで家族が同一世帯に参加
+- **競合解決**: `serverTimestamp()` による last-write-wins
+- **実装要件**: expo-dev-client + React Native Firebase + EAS Build
 
 ---
 
@@ -211,14 +213,16 @@ moneyplanner/
 
 ## 技術スタック
 
-| 用途 | パッケージ | バージョン |
-|---|---|---|
-| フレームワーク | Expo | ~54.0.0 |
-| UI | React Native | 0.81.5 |
-| ルーティング | expo-router | ~6.0.23 |
-| ローカルDB | expo-sqlite | ~16.0.10 |
-| CSV出力 | expo-file-system/legacy | ~19.0.21 |
-| 共有 | expo-sharing | ~14.0.8 |
-| 日付入力 | @react-native-community/datetimepicker | 8.4.4 |
-| アニメーション | react-native-reanimated | ~4.1.1 |
-| OCR（Phase 2予定） | Claude API | claude-opus-4-6 |
+| 用途           | パッケージ                             | バージョン                        |
+| -------------- | -------------------------------------- | --------------------------------- |
+| フレームワーク | Expo                                   | ~54.0.0                           |
+| UI             | React Native                           | 0.81.5                            |
+| ルーティング   | expo-router                            | ~6.0.23                           |
+| DB             | Cloud Firestore                        | Phase 3で移行                     |
+| 認証           | Apple Sign-In + Firebase Auth          | Phase 3で追加                     |
+| Firebase       | @react-native-firebase/\*              | Phase 3で追加                     |
+| ~~旧DB~~       | ~~expo-sqlite~~                        | ~~~16.0.10~~（Phase 3で削除予定） |
+| CSV出力        | expo-file-system/legacy                | ~19.0.21                          |
+| 共有           | expo-sharing                           | ~14.0.8                           |
+| 日付入力       | @react-native-community/datetimepicker | 8.4.4                             |
+| アニメーション | react-native-reanimated                | ~4.1.1                            |
