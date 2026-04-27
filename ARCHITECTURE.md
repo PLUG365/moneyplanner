@@ -4,9 +4,9 @@
 
 ```mermaid
 graph TD
-    subgraph iPhone
-        subgraph TestFlight / dev-client ビルド
-            subgraph expo-router
+    subgraph iPhone["iPhone"]
+        subgraph NativeBuild["TestFlight / dev-client ビルド"]
+            subgraph ExpoRouter["expo-router"]
                 Layout[app/_layout.tsx<br/>ルートレイアウト]
                 Auth[auth.tsx<br/>ログイン]
                 Household[household.tsx<br/>世帯作成・参加]
@@ -18,7 +18,7 @@ graph TD
                 Settings[設定タブ<br/>settings.tsx]
             end
 
-            subgraph lib
+            subgraph Lib["lib"]
                 AuthLib[auth.ts<br/>Firebase Auth]
                 HouseholdLib[household.ts<br/>世帯管理]
                 DB[firestore.ts<br/>Firestore CRUD]
@@ -28,7 +28,7 @@ graph TD
         end
     end
 
-    subgraph Firebase
+    subgraph Firebase["Firebase"]
         FirebaseAuth[(Firebase Auth<br/>Apple Sign-In)]
         Firestore[(Cloud Firestore<br/>households / users / inviteCodes)]
         AppCheckService[(Firebase App Check)]
@@ -39,15 +39,22 @@ graph TD
     Layout -->|世帯ID確認| HouseholdLib
     Auth --> AuthLib
     Household --> HouseholdLib
-    Tabs --> Index & History & Summary & Plan & Settings
-    Index & History & Summary & Settings -->|CRUD| DB
+    Tabs --> Index
+    Tabs --> History
+    Tabs --> Summary
+    Tabs --> Plan
+    Tabs --> Settings
+    Index -->|CRUD| DB
+    History -->|CRUD| DB
+    Summary -->|CRUD| DB
+    Settings -->|CRUD| DB
     Plan -->|ライフイベント/プロフィール| DB
     Settings -->|exportCSV| CSV
     CSV -->|読み取り| DB
-    CSV -->|writeAsStringAsync / shareAsync| Share[共有シート]
+    CSV -->|writeAsStringAsync + shareAsync| Share[共有シート]
     AuthLib --> FirebaseAuth
     HouseholdLib --> Firestore
-    DB -->|onSnapshot / batch / transaction| Firestore
+    DB -->|onSnapshot + batch + transaction| Firestore
     AppCheck --> AppCheckService
 ```
 
