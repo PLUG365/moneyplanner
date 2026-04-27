@@ -1,9 +1,28 @@
-import type {
-    Account,
-    Breakdown,
-    Category,
-    TransactionType,
-} from "@/lib/database";
+type TransactionType = "income" | "expense";
+
+type Category = {
+  id?: string | number;
+  name: string;
+  color: string;
+  type?: TransactionType;
+  isDefault?: boolean;
+};
+
+type Breakdown = {
+  id?: string | number;
+  categoryId?: string | number;
+  name: string;
+  isDefault?: boolean;
+};
+
+type Account = {
+  id?: string | number;
+  name: string;
+  balance: number;
+  isDefault?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
 
 export type SettingsManagerTab = "category" | "breakdown" | "account";
 

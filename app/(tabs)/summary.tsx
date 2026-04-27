@@ -1,5 +1,4 @@
-import { useFocusEffect } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -10,14 +9,25 @@ import {
 
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import {
+  BudgetDefinition,
   BudgetStatus,
-  getMonthBudgetStatuses,
-  getMonthCategorySummary,
-  getYearMonthlyTotals,
+  Category,
+  householdCollection,
+  mapBudgetDefinition,
+  mapCategory,
+  mapTransaction,
   MonthlyCategorySummary,
   MonthlyTotal,
-} from "@/lib/database";
+  Transaction,
+} from "@/lib/firestore";
+import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
+import {
+  buildBudgetStatusesFromData,
+  buildMonthCategorySummaryFromTransactions,
+  buildYearMonthlyTotalsFromTransactions,
+} from "@/lib/summaryAggregation";
 
 type ViewMode = "monthly" | "yearly";
 
@@ -43,27 +53,79 @@ const MONTH_LABELS = [
 export default function SummaryScreen() {
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
+  const householdId = useHouseholdId();
 
   const now = new Date();
   const [viewMode, setViewMode] = useState<ViewMode>("monthly");
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [categorySummary, setCategorySummary] = useState<
-    MonthlyCategorySummary[]
-  >([]);
-  const [yearlyData, setYearlyData] = useState<MonthlyTotal[]>([]);
-  const [budgetStatuses, setBudgetStatuses] = useState<BudgetStatus[]>([]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (viewMode === "monthly") {
-        setCategorySummary(getMonthCategorySummary(year, month));
-        setBudgetStatuses(getMonthBudgetStatuses(year, month));
-      } else {
-        setYearlyData(getYearMonthlyTotals(year));
-      }
-    }, [viewMode, year, month]),
+  const yearScope = String(year);
+  const transactionSubscription = useCollection<Transaction>(
+    buildFirestoreQueryKey(householdId, "transactions", yearScope),
+    () =>
+      householdId
+        ? householdCollection(householdId, "transactions")
+            .where("date", ">=", `${year}-01-01`)
+            .where("date", "<=", `${year}-12-31`)
+        : null,
+    mapTransaction,
   );
+  const budgetSubscription = useCollection<BudgetDefinition>(
+    buildFirestoreQueryKey(householdId, "budgets"),
+    () => (householdId ? householdCollection(householdId, "budgets") : null),
+    mapBudgetDefinition,
+  );
+  const categorySubscription = useCollection<Category>(
+    buildFirestoreQueryKey(householdId, "categories", "expense"),
+    () =>
+      householdId
+        ? householdCollection(householdId, "categories").where(
+            "type",
+            "==",
+            "expense",
+          )
+        : null,
+    mapCategory,
+  );
+
+  const categorySummary: MonthlyCategorySummary[] = useMemo(
+    () =>
+      buildMonthCategorySummaryFromTransactions(
+        transactionSubscription.data,
+        year,
+        month,
+      ),
+    [month, transactionSubscription.data, year],
+  );
+  const budgetStatuses: BudgetStatus[] = useMemo(
+    () =>
+      buildBudgetStatusesFromData({
+        year,
+        month,
+        transactions: transactionSubscription.data,
+        budgets: budgetSubscription.data,
+        categories: categorySubscription.data,
+      }),
+    [
+      budgetSubscription.data,
+      categorySubscription.data,
+      month,
+      transactionSubscription.data,
+      year,
+    ],
+  );
+  const yearlyData: MonthlyTotal[] = useMemo(
+    () =>
+      buildYearMonthlyTotalsFromTransactions(
+        transactionSubscription.data,
+        year,
+      ),
+    [transactionSubscription.data, year],
+  );
+  const loading =
+    transactionSubscription.loading ||
+    budgetSubscription.loading ||
+    categorySubscription.loading;
 
   const prevPeriod = () => {
     if (viewMode === "monthly") {
@@ -196,6 +258,11 @@ export default function SummaryScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {loading && (
+          <Text style={[styles.loadingText, { color: colors.subText }]}>
+            読み込み中...
+          </Text>
+        )}
         {viewMode === "monthly" ? (
           <>
             {/* サマリーカード */}
@@ -682,6 +749,7 @@ const styles = StyleSheet.create({
   monthTitle: { fontSize: 17, fontWeight: "700" },
   scrollContent: { paddingHorizontal: 12, paddingBottom: 100 },
   emptyText: { textAlign: "center", marginTop: 48, fontSize: 15 },
+  loadingText: { textAlign: "center", marginBottom: 8, fontSize: 13 },
   summaryCard: {
     borderRadius: 12,
     borderWidth: 1,

@@ -6,23 +6,49 @@ import { useEffect, useState } from "react";
  * Apple Sign-In でログイン
  */
 export async function signInWithApple(): Promise<FirebaseAuthTypes.UserCredential> {
+  const appleCredential = await createAppleAuthCredential();
+
+  return auth().signInWithCredential(appleCredential);
+}
+
+async function createAppleAuthCredential(): Promise<FirebaseAuthTypes.AuthCredential> {
   const credential = await AppleAuthentication.signInAsync({
-    requestedScopes: [
-      AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-      AppleAuthentication.AppleAuthenticationScope.EMAIL,
-    ],
+    requestedScopes: [],
   });
 
   if (!credential.identityToken) {
     throw new Error("Apple Sign-In: identityToken が取得できませんでした");
   }
 
-  const appleCredential = auth.AppleAuthProvider.credential(
+  return auth.AppleAuthProvider.credential(
     credential.identityToken,
     credential.authorizationCode ?? undefined,
   );
+}
 
-  return auth().signInWithCredential(appleCredential);
+/**
+ * 現在のユーザーをApple Sign-Inで再認証する
+ */
+export async function reauthenticateCurrentUserWithApple(): Promise<void> {
+  const user = auth().currentUser;
+  if (!user) {
+    throw new Error("ログインしていません");
+  }
+
+  const appleCredential = await createAppleAuthCredential();
+  await user.reauthenticateWithCredential(appleCredential);
+}
+
+/**
+ * 現在のFirebase Authアカウントを削除する
+ */
+export async function deleteCurrentUserAccount(): Promise<void> {
+  const user = auth().currentUser;
+  if (!user) {
+    throw new Error("ログインしていません");
+  }
+
+  await user.delete();
 }
 
 /**

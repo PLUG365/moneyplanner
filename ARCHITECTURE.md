@@ -5,10 +5,12 @@
 ```mermaid
 graph TD
     subgraph iPhone
-        subgraph Expo Go / ビルド済みアプリ
+        subgraph TestFlight / dev-client ビルド
             subgraph expo-router
                 Layout[app/_layout.tsx<br/>ルートレイアウト]
-                Tabs[app/tabs/_layout.tsx<br/>タブナビゲーション]
+                Auth[auth.tsx<br/>ログイン]
+                Household[household.tsx<br/>世帯作成・参加]
+                Tabs[app/(tabs)/_layout.tsx<br/>タブナビゲーション]
                 Index[記録タブ<br/>index.tsx]
                 History[履歴タブ<br/>history.tsx]
                 Summary[集計タブ<br/>summary.tsx]
@@ -17,26 +19,36 @@ graph TD
             end
 
             subgraph lib
-                DB[database.ts<br/>SQLite操作]
+                AuthLib[auth.ts<br/>Firebase Auth]
+                HouseholdLib[household.ts<br/>世帯管理]
+                DB[firestore.ts<br/>Firestore CRUD]
                 CSV[csvExport.ts<br/>CSV生成・共有]
-            end
-
-            subgraph ストレージ
-                SQLite[(moneyplanner.db<br/>SQLite)]
+                AppCheck[appCheck.ts<br/>App Check初期化]
             end
         end
-
-        iCloud[(iCloud Drive<br/>Phase 3)]
     end
 
-    Layout -->|副作用import| DB
-    DB -->|openDatabaseSync| SQLite
+    subgraph Firebase
+        FirebaseAuth[(Firebase Auth<br/>Apple Sign-In)]
+        Firestore[(Cloud Firestore<br/>households / users / inviteCodes)]
+        AppCheckService[(Firebase App Check)]
+    end
+
+    Layout -->|App Check readiness| AppCheck
+    Layout -->|認証状態監視| AuthLib
+    Layout -->|世帯ID確認| HouseholdLib
+    Auth --> AuthLib
+    Household --> HouseholdLib
     Tabs --> Index & History & Summary & Plan & Settings
     Index & History & Summary & Settings -->|CRUD| DB
+    Plan -->|ライフイベント/プロフィール| DB
     Settings -->|exportCSV| CSV
     CSV -->|読み取り| DB
-    CSV -->|writeAsStringAsync| iCloud
-    SQLite -.->|自動同期 Phase 3| iCloud
+    CSV -->|writeAsStringAsync / shareAsync| Share[共有シート]
+    AuthLib --> FirebaseAuth
+    HouseholdLib --> Firestore
+    DB -->|onSnapshot / batch / transaction| Firestore
+    AppCheck --> AppCheckService
 ```
 
 ---
@@ -60,7 +72,7 @@ graph LR
 | 履歴 | `app/(tabs)/history.tsx`  | リスト表示・カレンダービュー             |
 | 集計 | `app/(tabs)/summary.tsx`  | 月次・年次・カテゴリ別集計               |
 | 計画 | `app/(tabs)/plan.tsx`     | ライフプラン（Phase 2）                  |
-| 設定 | `app/(tabs)/settings.tsx` | カテゴリ管理・CSV出力                    |
+| 設定 | `app/(tabs)/settings.tsx` | カテゴリ管理・CSV出力・世帯管理          |
 
 ---
 
@@ -68,58 +80,119 @@ graph LR
 
 ```mermaid
 erDiagram
-    categories {
-        INTEGER id PK
-        TEXT name
-        TEXT type "income / expense"
-        TEXT color "HEXカラー"
-        INTEGER is_default "1=デフォルト（削除不可）"
+    users {
+        string uid PK
+        string householdId
+        string displayName
+        Timestamp createdAt
+    }
+
+    households {
+        string id PK
+        string createdBy
+        string inviteCode
+        Timestamp createdAt
+    }
+
+    members {
+        string uid PK
+        string displayName
+        Timestamp joinedAt
+        Timestamp removedAt
     }
 
     transactions {
-        INTEGER id PK
-        TEXT date "YYYY-MM-DD"
-        INTEGER amount
-        TEXT type "income / expense"
-        INTEGER category_id FK
-        TEXT memo
-        TEXT created_at
+        string id PK
+        string date "YYYY-MM-DD"
+        number amount
+        string type "income / expense"
+        string accountId FK
+        string categoryId FK
+        string breakdownId FK
+        string storeId FK
+        string memo
+        Timestamp createdAt
+        Timestamp updatedAt
     }
 
-    categories ||--o{ transactions : "category_id"
+    categories {
+        string id PK
+        string name
+        string type "income / expense"
+        string color
+        boolean isDefault
+    }
+
+    breakdowns {
+        string id PK
+        string categoryId FK
+        string name
+        boolean isDefault
+    }
+
+    accounts {
+        string id PK
+        string name
+        number balance
+        boolean isDefault
+    }
+
+    budgets {
+        string categoryId PK
+        number amount
+    }
+
+    users }o--|| households : "householdId"
+    households ||--o{ members : "members"
+    households ||--o{ transactions : "transactions"
+    households ||--o{ categories : "categories"
+    categories ||--o{ breakdowns : "categoryId"
+    categories ||--o{ budgets : "categoryId"
+    categories ||--o{ transactions : "categoryId"
+    accounts ||--o{ transactions : "accountId"
 ```
 
 ### デフォルトカテゴリ
 
-| 種別 | カテゴリ                                                                                 |
-| ---- | ---------------------------------------------------------------------------------------- |
-| 収入 | 給与・副業・その他収入                                                                   |
-| 支出 | 食費・住居費・光熱費・通信費・交通費・医療費・娯楽費・衣服費・教育費・保険料・その他支出 |
+| 種別 | カテゴリ                                                                     |
+| ---- | ---------------------------------------------------------------------------- |
+| 収入 | 給与所得・賞与・臨時収入・配当金                                             |
+| 支出 | 食費・日用雑貨・住まい・通信・交通・教育・クルマ・税金・大型出費・その他など |
 
 ---
 
-## DB初期化フロー
+## Firestore初期化フロー
 
 ```mermaid
 sequenceDiagram
     participant OS as iOS
     participant Layout as app/_layout.tsx
-    participant DB as lib/database.ts
-    participant SQLite as SQLite
+    participant AppCheck as lib/appCheck.ts
+    participant Auth as Firebase Auth
+    participant Household as lib/household.ts
+    participant DB as lib/firestore.ts
+    participant Firestore as Cloud Firestore
 
     OS->>Layout: アプリ起動
-    Layout->>DB: import（副作用）
-    DB->>SQLite: openDatabaseSync('moneyplanner.db')
-    DB->>SQLite: CREATE TABLE IF NOT EXISTS categories
-    DB->>SQLite: CREATE TABLE IF NOT EXISTS transactions
-    DB->>SQLite: カテゴリ件数チェック
-    alt 0件（初回起動）
-        DB->>SQLite: デフォルトカテゴリ14件INSERT
+    Layout->>AppCheck: initAppCheck()
+    AppCheck-->>Layout: 成功/失敗にかかわらず起動継続
+    Layout->>Auth: onAuthStateChanged
+    alt 未ログイン
+        Layout-->>OS: /auth へ遷移
+    else ログイン済み
+        Layout->>Household: getHouseholdId()
+        Household->>Firestore: users/{uid} と members/{uid} を確認
+        alt 世帯未所属/解除済み
+            Layout-->>OS: /household へ遷移
+        else 有効な世帯メンバー
+            Layout->>DB: initFirestore()
+            DB->>Firestore: デフォルトカテゴリ・内訳・口座を冪等作成
+            Layout-->>OS: /(tabs) へ遷移
+        end
     end
-    Layout-->>OS: 描画開始
 ```
 
-> **重要**: `initDatabase()` はモジュールロード時に自動実行される。`useEffect`内で呼ばない（タイミング競合の原因）。
+> **重要**: `lib/database.ts` / `expo-sqlite` は撤去済み。Firestore初期化は認証・世帯確認後に `initFirestore()` で行う。
 
 ---
 
@@ -130,7 +203,7 @@ sequenceDiagram
     participant User as ユーザー
     participant Settings as settings.tsx
     participant CSV as csvExport.ts
-    participant DB as database.ts
+    participant DB as firestore.ts
     participant FS as expo-file-system
     participant Share as expo-sharing
 
@@ -146,7 +219,7 @@ sequenceDiagram
 
 ---
 
-## Phase 3: Firebase同期（計画中）
+## Phase 3: Firebase同期
 
 ```mermaid
 sequenceDiagram
@@ -172,11 +245,13 @@ sequenceDiagram
 
 ## ファイルツリー
 
-```
+```text
 moneyplanner/
 ├── app/
-│   ├── _layout.tsx          # ルートレイアウト・DB import
+│   ├── _layout.tsx          # ルートレイアウト・認証ガード
 │   ├── +not-found.tsx
+│   ├── auth.tsx             # Apple Sign-Inログイン
+│   ├── household.tsx        # 世帯作成・招待コード参加
 │   └── (tabs)/
 │       ├── _layout.tsx      # タブ定義
 │       ├── index.tsx        # 記録
@@ -185,7 +260,12 @@ moneyplanner/
 │       ├── plan.tsx         # 計画
 │       └── settings.tsx     # 設定
 ├── lib/
-│   ├── database.ts          # SQLite操作・型定義
+│   ├── firestore.ts         # Firestore操作・型定義
+│   ├── auth.ts              # Firebase Auth / Apple Sign-In
+│   ├── household.ts         # 世帯作成・参加・メンバー管理
+│   ├── appCheck.ts          # Firebase App Check初期化
+│   ├── summaryAggregation.ts # 集計ロジック
+│   ├── transactionBalance.ts # 取引更新時の口座残高調整
 │   └── csvExport.ts         # CSV生成・共有
 ├── components/
 │   ├── HapticTab.tsx
@@ -199,11 +279,17 @@ moneyplanner/
 ├── constants/
 │   └── Colors.ts
 ├── hooks/
+│   ├── useFirestore.ts      # Firestoreリアルタイムリスナー
 │   ├── useColorScheme.ts
 │   └── useThemeColor.ts
 ├── assets/
 │   ├── fonts/SpaceMono-Regular.ttf
 │   └── images/（アイコン類）
+├── firestore.rules          # Firestore Security Rules
+├── firestore.rules.test.ts  # Rulesエミュレータテスト
+├── firebase.json            # Firestore Emulator設定
+├── app.config.js            # EAS secretのGoogleService plist注入
+├── eas.json                 # EAS Build設定
 ├── CLAUDE.md                # 開発ガイドライン
 ├── PLAN.md                  # 開発ロードマップ
 └── ARCHITECTURE.md          # このファイル
@@ -213,16 +299,16 @@ moneyplanner/
 
 ## 技術スタック
 
-| 用途           | パッケージ                             | バージョン                        |
-| -------------- | -------------------------------------- | --------------------------------- |
-| フレームワーク | Expo                                   | ~54.0.0                           |
-| UI             | React Native                           | 0.81.5                            |
-| ルーティング   | expo-router                            | ~6.0.23                           |
-| DB             | Cloud Firestore                        | Phase 3で移行                     |
-| 認証           | Apple Sign-In + Firebase Auth          | Phase 3で追加                     |
-| Firebase       | @react-native-firebase/\*              | Phase 3で追加                     |
-| ~~旧DB~~       | ~~expo-sqlite~~                        | ~~~16.0.10~~（Phase 3で削除予定） |
-| CSV出力        | expo-file-system/legacy                | ~19.0.21                          |
-| 共有           | expo-sharing                           | ~14.0.8                           |
-| 日付入力       | @react-native-community/datetimepicker | 8.4.4                             |
-| アニメーション | react-native-reanimated                | ~4.1.1                            |
+| 用途           | パッケージ                                          | バージョン                 |
+| -------------- | --------------------------------------------------- | -------------------------- |
+| フレームワーク | Expo                                                | ~54.0.0                    |
+| UI             | React Native                                        | 0.81.5                     |
+| ルーティング   | expo-router                                         | ~6.0.23                    |
+| DB             | Cloud Firestore                                     | 世帯単位のリアルタイム同期 |
+| 認証           | Apple Sign-In + Firebase Auth                       | 世帯共有                   |
+| Firebase       | @react-native-firebase/app/auth/firestore/app-check | ネイティブSDK              |
+| ビルド         | expo-dev-client + EAS Build / TestFlight            | iOS実機検証                |
+| CSV出力        | expo-file-system/legacy                             | ~19.0.21                   |
+| 共有           | expo-sharing                                        | ~14.0.8                    |
+| 日付入力       | @react-native-community/datetimepicker              | 8.4.4                      |
+| アニメーション | react-native-reanimated                             | ~4.1.1                     |

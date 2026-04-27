@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
-import { FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
 import { getHouseholdId } from "@/lib/household";
+import { FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * 世帯IDを取得・キャッシュするフック。
@@ -34,10 +34,7 @@ export function useHouseholdId(): string | null {
 export function useCollection<T>(
   queryKey: string | null,
   queryFactory: () => FirebaseFirestoreTypes.Query | null,
-  mapFn: (
-    id: string,
-    data: FirebaseFirestoreTypes.DocumentData,
-  ) => T,
+  mapFn: (id: string, data: FirebaseFirestoreTypes.DocumentData) => T,
 ): { data: T[]; loading: boolean; error: Error | null } {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,9 +62,7 @@ export function useCollection<T>(
 
     const unsub = query.onSnapshot(
       (snap) => {
-        setData(
-          snap.docs.map((doc) => mapFnRef.current(doc.id, doc.data())),
-        );
+        setData(snap.docs.map((doc) => mapFnRef.current(doc.id, doc.data())));
         setLoading(false);
         setError(null);
       },
@@ -93,10 +88,7 @@ export function useCollection<T>(
 export function useDocument<T>(
   docKey: string | null,
   docFactory: () => FirebaseFirestoreTypes.DocumentReference | null,
-  mapFn: (
-    id: string,
-    data: FirebaseFirestoreTypes.DocumentData,
-  ) => T,
+  mapFn: (id: string, data: FirebaseFirestoreTypes.DocumentData) => T,
 ): { data: T | null; loading: boolean; error: Error | null } {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);

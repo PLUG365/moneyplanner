@@ -1,28 +1,48 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
 import React, { useMemo, useState } from "react";
 import {
-  InputAccessoryView,
-  Keyboard,
-  Modal,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    InputAccessoryView,
+    Keyboard,
+    Modal,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 import {
-  Account,
-  Breakdown,
-  Category,
-  getStoresByCategory,
-  Store,
-  TransactionType,
-  upsertStore,
-} from "@/lib/database";
+    getStoresByCategory,
+    TransactionType,
+    upsertStore,
+} from "@/lib/firestore";
+
+type EditorId = string | number;
+
+type Account = {
+  id: EditorId;
+  name: string;
+  balance: number;
+};
+
+type Category = {
+  id: EditorId;
+  name: string;
+  color: string;
+};
+
+type Breakdown = {
+  id: EditorId;
+  name: string;
+};
+
+type Store = {
+  id: EditorId;
+  name: string;
+};
 
 type ThemeColors = {
   text: string;
@@ -40,11 +60,11 @@ type Props = {
   date: string;
   categories: Category[];
   accounts: Account[];
-  accountId: number | null;
-  categoryId: number | null;
+  accountId: EditorId | null;
+  categoryId: EditorId | null;
   breakdowns: Breakdown[];
-  breakdownId: number | null;
-  storeId: number | null;
+  breakdownId: EditorId | null;
+  storeId: EditorId | null;
   storeName: string;
   memo: string;
   incomeColor: string;
@@ -54,10 +74,10 @@ type Props = {
   onTypeChange: (type: TransactionType) => void;
   onAmountRawChange: (amountRaw: string) => void;
   onDateChange: (date: string) => void;
-  onAccountChange: (accountId: number) => void;
-  onCategoryChange: (categoryId: number) => void;
-  onBreakdownChange: (breakdownId: number | null) => void;
-  onStoreChange: (storeId: number | null, storeName: string) => void;
+  onAccountChange: (accountId: any) => void;
+  onCategoryChange: (categoryId: any) => void;
+  onBreakdownChange: (breakdownId: any) => void;
+  onStoreChange: (storeId: any, storeName: string) => void;
   onMemoChange: (memo: string) => void;
   onSubmit: () => void;
 };
@@ -142,8 +162,12 @@ export default function TransactionEditor({
     [categoryStores, storeSearchQuery],
   );
 
-  const openStorePicker = () => {
-    setCategoryStores(getStoresByCategory(categoryId ?? null));
+  const openStorePicker = async () => {
+    setCategoryStores(
+      await getStoresByCategory(
+        typeof categoryId === "string" ? categoryId : null,
+      ),
+    );
     setStoreSearchQuery("");
     setShowStoreModal(true);
   };
@@ -683,9 +707,12 @@ export default function TransactionEditor({
                   styles.addStoreButton,
                   { backgroundColor: colors.tint },
                 ]}
-                onPress={() => {
+                onPress={async () => {
                   const name = storeSearchQuery.trim();
-                  const sid = upsertStore(name, categoryId);
+                  const sid = await upsertStore(
+                    name,
+                    typeof categoryId === "string" ? categoryId : null,
+                  );
                   onStoreChange(sid, name);
                   setShowStoreModal(false);
                 }}

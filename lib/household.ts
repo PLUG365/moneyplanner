@@ -1,20 +1,17 @@
 import firestore from "@react-native-firebase/firestore";
 import { getCurrentUser } from "./auth";
-
-const INVITE_CODE_LENGTH = 6;
-
-function generateInviteCode(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 紛らわしい文字を除外
-  let code = "";
-  for (let i = 0; i < INVITE_CODE_LENGTH; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
-}
+import { getSnapshotDataOrNull } from "./firestoreSnapshot";
+import {
+    isActiveHouseholdMember,
+    mapHouseholdMember,
+} from "./householdMembership";
+import { createReplacementInviteCode } from "./inviteCode";
+import { createStoredMemberProfile } from "./memberProfile";
 
 export interface HouseholdMember {
   uid: string;
   displayName: string;
+  removed?: boolean;
 }
 
 /**
@@ -24,7 +21,8 @@ export async function createHousehold(): Promise<string> {
   const user = getCurrentUser();
   if (!user) throw new Error("未ログインです");
 
-  const inviteCode = generateInviteCode();
+  const inviteCode = createReplacementInviteCode();
+  const memberProfile = createStoredMemberProfile(user);
 
   const householdRef = firestore().collection("households").doc();
   const householdId = householdRef.id;
@@ -37,10 +35,21 @@ export async function createHousehold(): Promise<string> {
     createdAt: firestore.FieldValue.serverTimestamp(),
   });
 
+  batch.set(firestore().collection("inviteCodes").doc(inviteCode), {
+    householdId,
+    createdBy: user.uid,
+    createdAt: firestore.FieldValue.serverTimestamp(),
+  });
+
   batch.set(firestore().collection("users").doc(user.uid), {
     householdId,
-    displayName: user.displayName || "メンバー",
+    displayName: memberProfile.displayName,
     createdAt: firestore.FieldValue.serverTimestamp(),
+  });
+
+  batch.set(householdRef.collection("members").doc(user.uid), {
+    displayName: memberProfile.displayName,
+    joinedAt: firestore.FieldValue.serverTimestamp(),
   });
 
   await batch.commit();
@@ -57,26 +66,36 @@ export async function joinHousehold(inviteCode: string): Promise<void> {
 
   const code = inviteCode.trim().toUpperCase();
 
-  const snapshot = await firestore()
-    .collection("households")
-    .where("inviteCode", "==", code)
-    .limit(1)
-    .get();
+  const inviteDoc = await firestore().collection("inviteCodes").doc(code).get();
+  const inviteData = getSnapshotDataOrNull(inviteDoc);
+  const householdId = inviteData?.householdId;
 
-  if (snapshot.empty) {
+  if (!householdId) {
     throw new Error("招待コードが見つかりません");
   }
 
-  const householdId = snapshot.docs[0].id;
+  const householdRef = firestore().collection("households").doc(householdId);
+  const memberProfile = createStoredMemberProfile(user);
 
-  await firestore()
-    .collection("users")
-    .doc(user.uid)
-    .set({
-      householdId,
-      displayName: user.displayName || "メンバー",
-      createdAt: firestore.FieldValue.serverTimestamp(),
-    });
+  const batch = firestore().batch();
+
+  batch.set(firestore().collection("users").doc(user.uid), {
+    householdId,
+    displayName: memberProfile.displayName,
+    createdAt: firestore.FieldValue.serverTimestamp(),
+  });
+
+  batch.set(
+    householdRef.collection("members").doc(user.uid),
+    {
+      displayName: memberProfile.displayName,
+      joinedAt: firestore.FieldValue.serverTimestamp(),
+      removedAt: firestore.FieldValue.delete(),
+    },
+    { merge: true },
+  );
+
+  await batch.commit();
 }
 
 /**
@@ -87,9 +106,30 @@ export async function getHouseholdId(): Promise<string | null> {
   if (!user) return null;
 
   const doc = await firestore().collection("users").doc(user.uid).get();
-  if (!doc.exists) return null;
+  const userData = getSnapshotDataOrNull(doc);
+  if (!userData) return null;
 
-  return (doc.data() as { householdId?: string })?.householdId ?? null;
+  const householdId = userData.householdId;
+  if (!householdId) return null;
+
+  const memberDoc = await firestore()
+    .collection("households")
+    .doc(householdId)
+    .collection("members")
+    .doc(user.uid)
+    .get();
+
+  if (!isActiveHouseholdMember(memberDoc.data())) {
+    await firestore().collection("users").doc(user.uid).set(
+      {
+        householdId: firestore.FieldValue.delete(),
+      },
+      { merge: true },
+    );
+    return null;
+  }
+
+  return householdId;
 }
 
 /**
@@ -99,9 +139,47 @@ export async function getInviteCode(
   householdId: string,
 ): Promise<string | null> {
   const doc = await firestore().collection("households").doc(householdId).get();
-  if (!doc.exists) return null;
+  const data = getSnapshotDataOrNull(doc);
+  if (!data) return null;
 
-  return (doc.data() as { inviteCode?: string })?.inviteCode ?? null;
+  return data.inviteCode ?? null;
+}
+
+/**
+ * 世帯の招待コードを再発行する
+ */
+export async function regenerateInviteCode(
+  householdId: string,
+): Promise<string> {
+  const user = getCurrentUser();
+  if (!user) throw new Error("未ログインです");
+
+  const householdRef = firestore().collection("households").doc(householdId);
+  const householdSnap = await householdRef.get();
+  const householdData = getSnapshotDataOrNull(householdSnap);
+  if (!householdData) {
+    throw new Error("世帯が見つかりません");
+  }
+
+  const oldInviteCode = householdData.inviteCode;
+  const nextInviteCode = createReplacementInviteCode(oldInviteCode);
+
+  const batch = firestore().batch();
+  batch.update(householdRef, {
+    inviteCode: nextInviteCode,
+    inviteCodeUpdatedAt: firestore.FieldValue.serverTimestamp(),
+  });
+  if (oldInviteCode) {
+    batch.delete(firestore().collection("inviteCodes").doc(oldInviteCode));
+  }
+  batch.set(firestore().collection("inviteCodes").doc(nextInviteCode), {
+    householdId,
+    createdBy: user.uid,
+    createdAt: firestore.FieldValue.serverTimestamp(),
+  });
+
+  await batch.commit();
+  return nextInviteCode;
 }
 
 /**
@@ -111,13 +189,32 @@ export async function getHouseholdMembers(
   householdId: string,
 ): Promise<HouseholdMember[]> {
   const snapshot = await firestore()
-    .collection("users")
-    .where("householdId", "==", householdId)
+    .collection("households")
+    .doc(householdId)
+    .collection("members")
     .get();
 
-  return snapshot.docs.map((doc) => ({
-    uid: doc.id,
-    displayName:
-      (doc.data() as { displayName?: string }).displayName || "メンバー",
-  }));
+  return snapshot.docs
+    .map((doc) => mapHouseholdMember(doc.id, doc.data()))
+    .filter((member) => !member.removed);
+}
+
+/**
+ * 世帯メンバーを解除する
+ */
+export async function removeHouseholdMember(
+  householdId: string,
+  userId: string,
+): Promise<void> {
+  await firestore()
+    .collection("households")
+    .doc(householdId)
+    .collection("members")
+    .doc(userId)
+    .set(
+      {
+        removedAt: firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
 }

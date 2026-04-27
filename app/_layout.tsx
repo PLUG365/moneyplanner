@@ -1,58 +1,98 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack, router, useSegments } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
+import {
+  DarkTheme,
+  DefaultTheme,
+  ThemeProvider,
+} from "@react-navigation/native";
+import { useFonts } from "expo-font";
+import { Stack, router, useSegments, type Href } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { useEffect, useRef, useState } from "react";
+import "react-native-reanimated";
 
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { useAuth } from '@/lib/auth';
-import { getHouseholdId } from '@/lib/household';
-import '@/lib/database'; // モジュールロード時にinitDatabase()が自動実行される（Phase 3完了まで維持）
+import { useColorScheme } from "@/hooks/useColorScheme";
+import { initAppCheck } from "@/lib/appCheck";
+import { waitForAppCheckReadiness } from "@/lib/appCheckReadiness";
+import { useAuth } from "@/lib/auth";
+import { clearHouseholdCache, initFirestore } from "@/lib/firestore";
+import { getHouseholdId } from "@/lib/household";
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
   });
   const { user, loading: authLoading } = useAuth();
+  const [appCheckReady, setAppCheckReady] = useState(false);
   const segments = useSegments();
+  const initializedHouseholdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (authLoading || !loaded) return;
+    waitForAppCheckReadiness(initAppCheck).then(({ error }) => {
+      if (error) {
+        console.warn("Firebase App Check initialization failed", error);
+      }
+      setAppCheckReady(true);
+    });
+  }, []);
 
-    const inAuthScreen = segments[0] === 'auth';
-    const inHouseholdScreen = segments[0] === 'household';
+  useEffect(() => {
+    if (authLoading || !loaded || !appCheckReady) return;
+
+    const firstSegment = segments[0] as string | undefined;
+    const inAuthScreen = firstSegment === "auth";
+    const inHouseholdScreen = firstSegment === "household";
 
     if (!user) {
+      clearHouseholdCache();
+      initializedHouseholdRef.current = null;
       // 未ログイン → 認証画面へ
       if (!inAuthScreen) {
-        router.replace('/auth');
+        router.replace("/auth" as Href);
       }
     } else {
       // ログイン済み → 世帯チェック
-      getHouseholdId().then((householdId) => {
-        if (!householdId) {
-          // 世帯未設定 → 世帯画面へ
-          if (!inHouseholdScreen) {
-            router.replace('/household');
+      getHouseholdId()
+        .then((householdId) => {
+          if (!householdId) {
+            clearHouseholdCache();
+            initializedHouseholdRef.current = null;
+            // 世帯未設定 → 世帯画面へ
+            if (!inHouseholdScreen) {
+              router.replace("/household" as Href);
+            }
+            return;
           }
-        } else {
-          // 世帯設定済み → メイン画面へ
-          if (inAuthScreen || inHouseholdScreen) {
-            router.replace('/(tabs)');
-          }
-        }
-      });
-    }
-  }, [user, authLoading, loaded, segments]);
 
-  if (!loaded || authLoading) {
+          const initialize =
+            initializedHouseholdRef.current === householdId
+              ? Promise.resolve()
+              : initFirestore().then(() => {
+                  initializedHouseholdRef.current = householdId;
+                });
+
+          return initialize.then(() => {
+            // 世帯設定済み → メイン画面へ
+            if (inAuthScreen || inHouseholdScreen) {
+              router.replace("/(tabs)");
+            }
+          });
+        })
+        .catch(() => {
+          clearHouseholdCache();
+          initializedHouseholdRef.current = null;
+          if (!inHouseholdScreen) {
+            router.replace("/household" as Href);
+          }
+        });
+    }
+  }, [user, authLoading, loaded, appCheckReady, segments]);
+
+  if (!loaded || authLoading || !appCheckReady) {
     return null;
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="auth" options={{ headerShown: false }} />
         <Stack.Screen name="household" options={{ headerShown: false }} />

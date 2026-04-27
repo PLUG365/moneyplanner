@@ -1,8 +1,20 @@
 import firestore, {
-  FirebaseFirestoreTypes,
+    FirebaseFirestoreTypes,
 } from "@react-native-firebase/firestore";
-import { getHouseholdId } from "./household";
+import { getHouseholdDeletionCollectionNames } from "./accountDeletion";
 import { getCurrentUser } from "./auth";
+import { getSnapshotDataOrNull, snapshotExists } from "./firestoreSnapshot";
+import { getHouseholdId } from "./household";
+import {
+    buildBudgetStatusesFromData,
+    buildMonthCategorySummaryFromTransactions,
+    buildYearMonthlyTotalsFromTransactions,
+} from "./summaryAggregation";
+import {
+    buildBalanceAdjustmentsForCreate,
+    buildBalanceAdjustmentsForDelete,
+    buildBalanceAdjustmentsForUpdate,
+} from "./transactionBalance";
 
 // ── 定数 ──────────────────────────────────────────────
 export const DEFAULT_ACCOUNT_ID = "default";
@@ -46,6 +58,11 @@ export interface MonthlyBudget {
   categoryId: string;
   categoryName: string;
   categoryColor: string;
+  amount: number;
+}
+
+export interface BudgetDefinition {
+  categoryId: string;
   amount: number;
 }
 
@@ -133,6 +150,16 @@ async function householdDoc() {
   return firestore().collection("households").doc(hid);
 }
 
+export function householdCollection(
+  householdId: string,
+  collectionName: string,
+): FirebaseFirestoreTypes.CollectionReference {
+  return firestore()
+    .collection("households")
+    .doc(householdId)
+    .collection(collectionName);
+}
+
 function toISOString(
   ts: FirebaseFirestoreTypes.Timestamp | null | undefined,
 ): string {
@@ -163,15 +190,26 @@ async function deleteCollectionDocs(
   await commitBatchOps(ops);
 }
 
+async function deleteHouseholdDocAndMembers(
+  hDoc: FirebaseFirestoreTypes.DocumentReference,
+): Promise<void> {
+  const membersSnap = await hDoc.collection("members").get();
+  const batch = firestore().batch();
+  batch.delete(hDoc);
+  membersSnap.docs.forEach((doc) => batch.delete(doc.ref));
+  await batch.commit();
+}
+
 async function resolveTransactionSnapshot(
   hDoc: FirebaseFirestoreTypes.DocumentReference,
   categoryId: string,
   breakdownId?: string | null,
-): Promise<{ categoryName: string; categoryColor: string; breakdownName: string }> {
-  const categoryPromise = hDoc
-    .collection("categories")
-    .doc(categoryId)
-    .get();
+): Promise<{
+  categoryName: string;
+  categoryColor: string;
+  breakdownName: string;
+}> {
+  const categoryPromise = hDoc.collection("categories").doc(categoryId).get();
   const breakdownPromise = breakdownId
     ? hDoc.collection("breakdowns").doc(breakdownId).get()
     : Promise.resolve(null);
@@ -206,7 +244,7 @@ async function resolveStoreName(
 }
 
 // ── マッピング ───────────────────────────────────────
-function mapCategory(
+export function mapCategory(
   id: string,
   data: FirebaseFirestoreTypes.DocumentData,
 ): Category {
@@ -219,7 +257,7 @@ function mapCategory(
   };
 }
 
-function mapBreakdown(
+export function mapBreakdown(
   id: string,
   data: FirebaseFirestoreTypes.DocumentData,
 ): Breakdown {
@@ -231,7 +269,7 @@ function mapBreakdown(
   };
 }
 
-function mapTransaction(
+export function mapTransaction(
   id: string,
   data: FirebaseFirestoreTypes.DocumentData,
 ): Transaction {
@@ -254,7 +292,7 @@ function mapTransaction(
   };
 }
 
-function mapAccount(
+export function mapAccount(
   id: string,
   data: FirebaseFirestoreTypes.DocumentData,
 ): Account {
@@ -265,6 +303,16 @@ function mapAccount(
     isDefault: !!data.isDefault,
     createdAt: toISOString(data.createdAt),
     updatedAt: toISOString(data.updatedAt),
+  };
+}
+
+export function mapBudgetDefinition(
+  id: string,
+  data: FirebaseFirestoreTypes.DocumentData,
+): BudgetDefinition {
+  return {
+    categoryId: data.categoryId ?? id,
+    amount: data.amount ?? 0,
   };
 }
 
@@ -525,6 +573,31 @@ export async function resetFirestoreForDevelopment(): Promise<void> {
   await batch.commit();
 }
 
+export async function deleteHouseholdDataAndCurrentUserProfile(): Promise<void> {
+  const user = getCurrentUser();
+  if (!user) {
+    throw new Error("ログインしていません");
+  }
+
+  const householdId = await ensureHouseholdId();
+  const hDoc = firestore().collection("households").doc(householdId);
+  const householdSnap = await hDoc.get();
+  const inviteCode = householdSnap.data()?.inviteCode as string | undefined;
+
+  if (inviteCode) {
+    await firestore().collection("inviteCodes").doc(inviteCode).delete();
+  }
+
+  const collectionNames = getHouseholdDeletionCollectionNames();
+  for (const name of collectionNames.filter((item) => item !== "members")) {
+    await deleteCollectionDocs(hDoc.collection(name));
+  }
+
+  await deleteHouseholdDocAndMembers(hDoc);
+  await firestore().collection("users").doc(user.uid).delete();
+  clearHouseholdCache();
+}
+
 export async function resetCategoryAndBreakdownsToDefault(): Promise<void> {
   const hDoc = await householdDoc();
 
@@ -633,9 +706,7 @@ export async function deleteCategory(id: string): Promise<void> {
   }
 
   // 予算削除
-  ops.push((batch) =>
-    batch.delete(hDoc.collection("budgets").doc(id)),
-  );
+  ops.push((batch) => batch.delete(hDoc.collection("budgets").doc(id)));
 
   // 内訳削除
   const bdSnap = await hDoc
@@ -647,9 +718,7 @@ export async function deleteCategory(id: string): Promise<void> {
   }
 
   // カテゴリ削除
-  ops.push((batch) =>
-    batch.delete(hDoc.collection("categories").doc(id)),
-  );
+  ops.push((batch) => batch.delete(hDoc.collection("categories").doc(id)));
 
   await commitBatchOps(ops);
 }
@@ -667,13 +736,12 @@ export async function updateCategory(
   });
 }
 
-export async function getCategoryById(
-  id: string,
-): Promise<Category | null> {
+export async function getCategoryById(id: string): Promise<Category | null> {
   const hDoc = await householdDoc();
   const snap = await hDoc.collection("categories").doc(id).get();
-  if (!snap.exists) return null;
-  return mapCategory(snap.id, snap.data()!);
+  const data = getSnapshotDataOrNull(snap);
+  if (!data) return null;
+  return mapCategory(snap.id, data);
 }
 
 // ── Breakdowns ───────────────────────────────────────
@@ -708,10 +776,7 @@ export async function addBreakdown(
   return ref.id;
 }
 
-export async function updateBreakdown(
-  id: string,
-  name: string,
-): Promise<void> {
+export async function updateBreakdown(id: string, name: string): Promise<void> {
   const hDoc = await householdDoc();
   await hDoc.collection("breakdowns").doc(id).update({
     name,
@@ -737,9 +802,7 @@ export async function deleteBreakdown(id: string): Promise<void> {
     );
   }
 
-  ops.push((batch) =>
-    batch.delete(hDoc.collection("breakdowns").doc(id)),
-  );
+  ops.push((batch) => batch.delete(hDoc.collection("breakdowns").doc(id)));
 
   await commitBatchOps(ops);
 }
@@ -786,12 +849,16 @@ export async function addTransaction(
     createdBy: getCurrentUser()?.uid ?? "",
   });
 
-  // 口座残高更新
-  const delta = type === "income" ? amount : -amount;
-  batch.update(hDoc.collection("accounts").doc(accountId), {
-    balance: firestore.FieldValue.increment(delta),
-    updatedAt: firestore.FieldValue.serverTimestamp(),
-  });
+  for (const adjustment of buildBalanceAdjustmentsForCreate({
+    accountId,
+    type,
+    amount,
+  })) {
+    batch.update(hDoc.collection("accounts").doc(adjustment.accountId), {
+      balance: firestore.FieldValue.increment(adjustment.delta),
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+  }
 
   // 店舗使用履歴
   if (storeId) {
@@ -800,9 +867,7 @@ export async function addTransaction(
     });
     if (categoryId) {
       batch.set(
-        hDoc
-          .collection("storeCategoryUsage")
-          .doc(`${storeId}_${categoryId}`),
+        hDoc.collection("storeCategoryUsage").doc(`${storeId}_${categoryId}`),
         {
           storeId,
           categoryId,
@@ -830,10 +895,6 @@ export async function updateTransaction(
 ): Promise<void> {
   const hDoc = await householdDoc();
   const txRef = hDoc.collection("transactions").doc(id);
-  const txSnap = await txRef.get();
-  if (!txSnap.exists) return;
-
-  const before = txSnap.data()!;
 
   const [snapshot, accountName, storeName] = await Promise.all([
     resolveTransactionSnapshot(hDoc, categoryId, breakdownId),
@@ -841,88 +902,88 @@ export async function updateTransaction(
     resolveStoreName(hDoc, storeId),
   ]);
 
-  const batch = firestore().batch();
+  await firestore().runTransaction(async (transaction) => {
+    const currentSnap = await transaction.get(txRef);
+    if (!snapshotExists(currentSnap)) return;
+    const current = currentSnap.data()!;
 
-  batch.update(txRef, {
-    date,
-    amount,
-    type,
-    accountId,
-    categoryId,
-    breakdownId: breakdownId ?? null,
-    storeId: storeId ?? null,
-    accountNameSnapshot: accountName,
-    categoryNameSnapshot: snapshot.categoryName,
-    categoryColorSnapshot: snapshot.categoryColor,
-    breakdownNameSnapshot: snapshot.breakdownName,
-    storeNameSnapshot: storeName,
-    memo,
-    updatedAt: firestore.FieldValue.serverTimestamp(),
-  });
-
-  // 残高調整（同一口座の場合はデルタを合算）
-  const oldAccountId = before.accountId || DEFAULT_ACCOUNT_ID;
-  const adjustments = new Map<string, number>();
-  const oldDelta = before.type === "income" ? -before.amount : before.amount;
-  const newDelta = type === "income" ? amount : -amount;
-  adjustments.set(
-    oldAccountId,
-    (adjustments.get(oldAccountId) ?? 0) + oldDelta,
-  );
-  adjustments.set(accountId, (adjustments.get(accountId) ?? 0) + newDelta);
-
-  for (const [accId, d] of adjustments) {
-    if (d !== 0) {
-      batch.update(hDoc.collection("accounts").doc(accId), {
-        balance: firestore.FieldValue.increment(d),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      });
-    }
-  }
-
-  // 店舗使用履歴
-  if (storeId) {
-    batch.update(hDoc.collection("stores").doc(storeId), {
-      lastUsedAt: firestore.FieldValue.serverTimestamp(),
+    transaction.update(txRef, {
+      date,
+      amount,
+      type,
+      accountId,
+      categoryId,
+      breakdownId: breakdownId ?? null,
+      storeId: storeId ?? null,
+      accountNameSnapshot: accountName,
+      categoryNameSnapshot: snapshot.categoryName,
+      categoryColorSnapshot: snapshot.categoryColor,
+      breakdownNameSnapshot: snapshot.breakdownName,
+      storeNameSnapshot: storeName,
+      memo,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
     });
-    if (categoryId) {
-      batch.set(
-        hDoc
-          .collection("storeCategoryUsage")
-          .doc(`${storeId}_${categoryId}`),
+
+    for (const adjustment of buildBalanceAdjustmentsForUpdate(
+      {
+        accountId: current.accountId || DEFAULT_ACCOUNT_ID,
+        type: current.type as TransactionType,
+        amount: current.amount,
+      },
+      { accountId, type, amount },
+    )) {
+      transaction.update(
+        hDoc.collection("accounts").doc(adjustment.accountId),
         {
-          storeId,
-          categoryId,
-          lastUsedAt: firestore.FieldValue.serverTimestamp(),
+          balance: firestore.FieldValue.increment(adjustment.delta),
+          updatedAt: firestore.FieldValue.serverTimestamp(),
         },
-        { merge: true },
       );
     }
-  }
 
-  await batch.commit();
+    if (storeId) {
+      transaction.update(hDoc.collection("stores").doc(storeId), {
+        lastUsedAt: firestore.FieldValue.serverTimestamp(),
+      });
+      if (categoryId) {
+        transaction.set(
+          hDoc.collection("storeCategoryUsage").doc(`${storeId}_${categoryId}`),
+          {
+            storeId,
+            categoryId,
+            lastUsedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+      }
+    }
+  });
 }
 
 export async function deleteTransaction(id: string): Promise<void> {
   const hDoc = await householdDoc();
   const txRef = hDoc.collection("transactions").doc(id);
-  const txSnap = await txRef.get();
-  if (!txSnap.exists) return;
 
-  const data = txSnap.data()!;
-  const batch = firestore().batch();
+  await firestore().runTransaction(async (transaction) => {
+    const currentSnap = await transaction.get(txRef);
+    if (!snapshotExists(currentSnap)) return;
+    const current = currentSnap.data()!;
 
-  batch.delete(txRef);
-
-  // 残高戻し
-  const accountId = data.accountId || DEFAULT_ACCOUNT_ID;
-  const delta = data.type === "income" ? -data.amount : data.amount;
-  batch.update(hDoc.collection("accounts").doc(accountId), {
-    balance: firestore.FieldValue.increment(delta),
-    updatedAt: firestore.FieldValue.serverTimestamp(),
+    transaction.delete(txRef);
+    for (const adjustment of buildBalanceAdjustmentsForDelete({
+      accountId: current.accountId || DEFAULT_ACCOUNT_ID,
+      type: current.type as TransactionType,
+      amount: current.amount,
+    })) {
+      transaction.update(
+        hDoc.collection("accounts").doc(adjustment.accountId),
+        {
+          balance: firestore.FieldValue.increment(adjustment.delta),
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+        },
+      );
+    }
   });
-
-  await batch.commit();
 }
 
 // ── Accounts ─────────────────────────────────────────
@@ -995,9 +1056,7 @@ export async function updateAccountBalance(
   });
 }
 
-export async function deleteAccountAndMoveToDefault(
-  id: string,
-): Promise<void> {
+export async function deleteAccountAndMoveToDefault(id: string): Promise<void> {
   if (id === DEFAULT_ACCOUNT_ID) {
     throw new Error("既定口座は削除できません");
   }
@@ -1005,7 +1064,7 @@ export async function deleteAccountAndMoveToDefault(
   const hDoc = await householdDoc();
   const accountRef = hDoc.collection("accounts").doc(id);
   const accountSnap = await accountRef.get();
-  if (!accountSnap.exists) return;
+  if (!snapshotExists(accountSnap)) return;
 
   // 既定口座名を取得
   const defaultAccountSnap = await hDoc
@@ -1179,8 +1238,8 @@ export async function getLifeEvents(): Promise<PlanLifeEvent[]> {
 export async function getPlanProfile(): Promise<PlanProfile | null> {
   const hDoc = await householdDoc();
   const snap = await hDoc.collection("planProfile").doc("default").get();
-  if (!snap.exists) return null;
-  const data = snap.data()!;
+  const data = getSnapshotDataOrNull(snap);
+  if (!data) return null;
   return {
     payloadJson: data.payloadJson,
     updatedAt: toISOString(data.updatedAt),
@@ -1278,29 +1337,11 @@ export async function getMonthCategorySummary(
     .where("date", "<=", to)
     .get();
 
-  const summaryMap = new Map<string, MonthlyCategorySummary>();
-
-  for (const doc of snap.docs) {
-    const data = doc.data();
-    const key = `${data.type}_${data.categoryId || ""}`;
-    const existing = summaryMap.get(key);
-    if (existing) {
-      existing.total += data.amount;
-    } else {
-      summaryMap.set(key, {
-        type: data.type as TransactionType,
-        categoryId: data.categoryId || "",
-        categoryName: data.categoryNameSnapshot || "未分類",
-        categoryColor: data.categoryColorSnapshot || "#666666",
-        total: data.amount,
-      });
-    }
-  }
-
-  return Array.from(summaryMap.values()).sort((a, b) => {
-    if (a.type !== b.type) return a.type.localeCompare(b.type);
-    return b.total - a.total;
-  });
+  return buildMonthCategorySummaryFromTransactions(
+    snap.docs.map((doc) => mapTransaction(doc.id, doc.data())),
+    year,
+    month,
+  );
 }
 
 export async function setMonthlyBudget(
@@ -1318,9 +1359,7 @@ export async function setMonthlyBudget(
   );
 }
 
-export async function deleteMonthlyBudget(
-  categoryId: string,
-): Promise<void> {
+export async function deleteMonthlyBudget(categoryId: string): Promise<void> {
   const hDoc = await householdDoc();
   await hDoc.collection("budgets").doc(categoryId).delete();
 }
@@ -1377,47 +1416,17 @@ export async function getMonthBudgetStatuses(
       .get(),
   ]);
 
-  const categoryMap = new Map<string, { name: string; color: string }>();
-  for (const doc of categoriesSnap.docs) {
-    const data = doc.data();
-    categoryMap.set(doc.id, { name: data.name, color: data.color });
-  }
-
-  // 支出をカテゴリ別に集計
-  const spendingMap = new Map<string, number>();
-  for (const doc of txSnap.docs) {
-    const data = doc.data();
-    if (data.type !== "expense") continue;
-    const catId = data.categoryId || "";
-    spendingMap.set(catId, (spendingMap.get(catId) ?? 0) + data.amount);
-  }
-
-  const results: BudgetStatus[] = [];
-  for (const doc of budgetsSnap.docs) {
-    const data = doc.data();
-    if (data.amount <= 0) continue;
-
-    const catId = doc.id;
-    const cat = categoryMap.get(catId);
-    if (!cat) continue;
-
-    const spentAmount = spendingMap.get(catId) ?? 0;
-    const usageRate = spentAmount / data.amount;
-    const level: BudgetAlertLevel =
-      usageRate >= 1 ? "exceeded" : usageRate >= 0.8 ? "warning" : "none";
-
-    results.push({
-      categoryId: catId,
-      categoryName: cat.name,
-      categoryColor: cat.color,
-      budgetAmount: data.amount,
-      spentAmount,
-      usageRate,
-      level,
-    });
-  }
-
-  return results.sort((a, b) => b.usageRate - a.usageRate);
+  return buildBudgetStatusesFromData({
+    year,
+    month,
+    transactions: txSnap.docs.map((doc) => mapTransaction(doc.id, doc.data())),
+    budgets: budgetsSnap.docs.map((doc) =>
+      mapBudgetDefinition(doc.id, doc.data()),
+    ),
+    categories: categoriesSnap.docs.map((doc) =>
+      mapCategory(doc.id, doc.data()),
+    ),
+  });
 }
 
 export async function getBudgetStatusForDate(
@@ -1435,16 +1444,14 @@ export async function getBudgetStatusForDate(
     .collection("categories")
     .doc(categoryId)
     .get();
-  if (!categorySnap.exists) return null;
-  const catData = categorySnap.data()!;
+  const catData = getSnapshotDataOrNull(categorySnap);
+  if (!catData) return null;
   if (catData.type !== "expense") return null;
 
-  const budgetSnap = await hDoc
-    .collection("budgets")
-    .doc(categoryId)
-    .get();
-  if (!budgetSnap.exists) return null;
-  const budgetAmount = budgetSnap.data()!.amount;
+  const budgetSnap = await hDoc.collection("budgets").doc(categoryId).get();
+  const budgetData = getSnapshotDataOrNull(budgetSnap);
+  if (!budgetData) return null;
+  const budgetAmount = budgetData.amount;
   if (budgetAmount <= 0) return null;
 
   const from = `${year}-${String(month).padStart(2, "0")}-01`;
@@ -1488,22 +1495,10 @@ export async function getYearMonthlyTotals(
     .where("date", "<=", `${year}-12-31`)
     .get();
 
-  const map: Record<number, MonthlyTotal> = {};
-  for (let m = 1; m <= 12; m++) {
-    map[m] = { month: m, income: 0, expense: 0 };
-  }
-
-  for (const doc of snap.docs) {
-    const data = doc.data();
-    const month = parseInt(data.date.split("-")[1], 10);
-    if (data.type === "income") {
-      map[month].income += data.amount;
-    } else {
-      map[month].expense += data.amount;
-    }
-  }
-
-  return Object.values(map);
+  return buildYearMonthlyTotalsFromTransactions(
+    snap.docs.map((doc) => mapTransaction(doc.id, doc.data())),
+    year,
+  );
 }
 
 export async function getDatesWithTransactions(

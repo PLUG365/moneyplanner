@@ -4,5 +4,6 @@
     "source.organizeImports": "explicit",
     "source.sortMembers": "explicit"
   },
-  "sarif-viewer.connectToGithubCodeScanning": "off"
+  "sarif-viewer.connectToGithubCodeScanning": "off",
+  "typescript.tsdk": "node_modules/typescript/lib"
 }

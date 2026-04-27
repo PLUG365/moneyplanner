@@ -1,20 +1,13 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 
+import { buildCsvRowsFromTransactions } from "./csvExportRows";
 import { buildCsvUtf8Base64 } from "./csvFormat";
-import { getAllTransactions, Transaction } from "./database";
+import { getAllTransactions, Transaction } from "./firestore";
 
 export async function exportCSV(transactions?: Transaction[]) {
-  const data = transactions ?? getAllTransactions();
-  const csvRows = data.map((t) => ({
-    date: t.date,
-    type: t.type,
-    accountName: t.accountName ?? "",
-    categoryName: t.categoryName ?? "",
-    breakdownName: t.breakdownName ?? "",
-    amount: t.amount,
-    memo: t.memo ?? "",
-  }));
+  const data = transactions ?? (await getAllTransactions());
+  const csvRows = buildCsvRowsFromTransactions(data);
   const csvBase64 = buildCsvUtf8Base64(csvRows);
   const dateStr = new Date().toISOString().split("T")[0];
   const filename = `moneyplanner_${dateStr}.csv`;
