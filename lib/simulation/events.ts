@@ -1,5 +1,5 @@
 export type ChildEducationEvent = {
-  id: number;
+  id: string;
   eventType: "child_education";
   childId?: number;
   childName: string;
@@ -10,7 +10,7 @@ export type ChildEducationEvent = {
 };
 
 export type CarPurchaseEvent = {
-  id: number;
+  id: string;
   eventType: "car_purchase";
   carName: string;
   purchaseYear: number;
@@ -19,7 +19,7 @@ export type CarPurchaseEvent = {
 };
 
 export type HousingPurchaseEvent = {
-  id: number;
+  id: string;
   eventType: "housing_purchase";
   homeName: string;
   purchaseYear: number;

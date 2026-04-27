@@ -13,17 +13,17 @@
 
 - **previewサーバーを自動起動しない** — ユーザーが自分のターミナルで `npx expo start` を実行する
 - コードを編集しても `preview_start` を呼ばない
-- iOSでの動作確認はユーザーExpo GoでQRコードをスキャンして行う（Phase 3以降はexpo-dev-clientビルド）
-- Webプレビュー（localhost:8081）はexpo-sqliteのwa-sqlite.wasmエラーが出るが、iOS動作には無関係なので無視でよい
+- iOSでの動作確認はTestFlightまたはexpo-dev-clientビルドで行う
+- React Native Firebaseのネイティブモジュールを使うため、WebプレビューではFirebase/Authの実動作確認をしない
 
 ### ユーザーが動作確認する手順
 
-```
+```powershell
 cd C:\Users\rnmgy\dev\moneyplanner
 npx expo start
 ```
 
-→ iPhoneのカメラでQRコードをスキャン → Expo Goで開く
+→ iPhoneのdev-clientビルドで開く。TestFlight検証中のビルド情報は `PLAN.md` を参照
 
 ## AIガイドラインの管理
 
@@ -39,39 +39,32 @@ npx expo start
 
 - Expo SDK 54 / React Native 0.81.5
 - expo-router v6
-- expo-sqlite v16（同期API: `openDatabaseSync`）→ Phase 3 で Cloud Firestore に完全置換予定
+- Cloud Firestore（世帯単位のリアルタイム同期）
+- Apple Sign-In + Firebase Auth
+- React Native Firebase + expo-dev-client
 - expo-file-system/legacy + expo-sharing（CSV出力）
 - @react-native-community/datetimepicker
-- Phase 3で追加予定: @react-native-firebase/\*, expo-dev-client, expo-apple-authentication
 
 ## DBについて
 
-### 現行（Phase 2まで）
-
-- `lib/database.ts` のモジュールロード時に `initDatabase()` が自動実行される
-- `app/_layout.tsx` では `import '@/lib/database'` で副作用importのみ行う
-- useEffect内でinitDatabase()を呼ばないこと（タイミング競合の原因になる）
-
-### Phase 3 移行後
-
-- Cloud Firestore に完全置換（`lib/firestore.ts`）
+- Cloud Firestore に完全置換済み（`lib/firestore.ts`）
 - Apple Sign-In + Firebase Auth で認証
 - 世帯（household）単位でデータ分離
 - リアルタイムリスナー（`onSnapshot`）で家族間同期
 - 同一レコードの同時更新は `serverTimestamp()` による last-write-wins
+- `lib/database.ts` / `expo-sqlite` は撤去済み。新規実装でSQLite APIを追加しないこと
 
 ## ファイル構成
 
-```
+```text
 lib/
-  database.ts      # SQLite操作・初期化（Phase 3でfirestore.tsに置換予定）
-  firestore.ts     # Firestore CRUD（Phase 3で新規作成予定）
-  auth.ts          # 認証ロジック（Phase 3で新規作成予定）
-  household.ts     # 世帯管理（Phase 3で新規作成予定）
+  firestore.ts     # Firestore CRUD
+  auth.ts          # 認証ロジック
+  household.ts     # 世帯管理
   csvExport.ts     # CSV生成・共有（expo-file-system/legacyを使用）
 app/
-  auth.tsx         # ログイン画面（Phase 3で新規作成予定）
-  household.tsx    # 世帯作成/参加画面（Phase 3で新規作成予定）
+  auth.tsx         # ログイン画面
+  household.tsx    # 世帯作成/参加画面
 app/(tabs)/
   index.tsx        # 記録タブ（初期画面）
   history.tsx      # 履歴タブ

@@ -1,6 +1,12 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Alert,
   Animated,
@@ -14,18 +20,21 @@ import {
 import TransactionEditor from "@/components/TransactionEditor";
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import {
   Account,
   addTransaction,
   Breakdown,
   Category,
   DEFAULT_ACCOUNT_ID,
-  getAccounts,
-  getBreakdownsByCategory,
   getBudgetStatusForDate,
-  getCategories,
+  householdCollection,
+  mapAccount,
+  mapBreakdown,
+  mapCategory,
   TransactionType,
-} from "@/lib/database";
+} from "@/lib/firestore";
+import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
 
 function formatDate(date: Date): string {
   const y = date.getFullYear();
@@ -40,60 +49,118 @@ export default function RecordScreen() {
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
   const tabBarHeight = useBottomTabBarHeight();
+  const householdId = useHouseholdId();
 
   const [type, setType] = useState<TransactionType>("expense");
   const [amountRaw, setAmountRaw] = useState("");
   const [date, setDate] = useState(formatDate(new Date()));
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [accountId, setAccountId] = useState<number | null>(null);
-  const [categoryId, setCategoryId] = useState<number | null>(null);
-  const [breakdowns, setBreakdowns] = useState<Breakdown[]>([]);
-  const [breakdownId, setBreakdownId] = useState<number | null>(null);
-  const [storeId, setStoreId] = useState<number | null>(null);
+  const [accountId, setAccountId] = useState<string | null>(null);
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [breakdownId, setBreakdownId] = useState<string | null>(null);
+  const [storeId, setStoreId] = useState<string | null>(null);
   const [storeName, setStoreName] = useState("");
   const [memo, setMemo] = useState("");
+  const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [toastVariant, setToastVariant] = useState<ToastVariant>("info");
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastSlideX = useRef(new Animated.Value(72)).current;
   const toastOpacity = useRef(new Animated.Value(0)).current;
 
-  const resetSelectionState = useCallback((targetType: TransactionType) => {
-    const loadedAccounts = getAccounts();
-    setAccounts(loadedAccounts);
+  const accountSubscription = useCollection<Account>(
+    buildFirestoreQueryKey(householdId, "accounts"),
+    () => (householdId ? householdCollection(householdId, "accounts") : null),
+    mapAccount,
+  );
+  const categorySubscription = useCollection<Category>(
+    buildFirestoreQueryKey(householdId, "categories", type),
+    () =>
+      householdId
+        ? householdCollection(householdId, "categories").where(
+            "type",
+            "==",
+            type,
+          )
+        : null,
+    mapCategory,
+  );
+  const breakdownSubscription = useCollection<Breakdown>(
+    buildFirestoreQueryKey(householdId, "breakdowns", categoryId ?? "none"),
+    () =>
+      householdId && categoryId
+        ? householdCollection(householdId, "breakdowns").where(
+            "categoryId",
+            "==",
+            categoryId,
+          )
+        : null,
+    mapBreakdown,
+  );
+
+  const accounts = useMemo(
+    () =>
+      [...accountSubscription.data].sort((a, b) => {
+        if (a.isDefault !== b.isDefault) return b.isDefault ? 1 : -1;
+        return a.id.localeCompare(b.id);
+      }),
+    [accountSubscription.data],
+  );
+  const categories = useMemo(
+    () =>
+      [...categorySubscription.data].sort((a, b) => {
+        if (a.isDefault !== b.isDefault) return b.isDefault ? 1 : -1;
+        return a.name.localeCompare(b.name);
+      }),
+    [categorySubscription.data],
+  );
+  const breakdowns = useMemo(
+    () =>
+      [...breakdownSubscription.data].sort((a, b) => {
+        if (a.isDefault !== b.isDefault) return b.isDefault ? 1 : -1;
+        return a.name.localeCompare(b.name);
+      }),
+    [breakdownSubscription.data],
+  );
+
+  useEffect(() => {
     setAccountId((prev) => {
-      if (prev && loadedAccounts.some((a) => a.id === prev)) {
-        return prev;
-      }
+      if (prev && accounts.some((account) => account.id === prev)) return prev;
       const defaultAccount =
-        loadedAccounts.find((a) => a.id === DEFAULT_ACCOUNT_ID) ??
-        loadedAccounts[0] ??
+        accounts.find((account) => account.id === DEFAULT_ACCOUNT_ID) ??
+        accounts[0] ??
         null;
       return defaultAccount?.id ?? null;
     });
-    setCategories(getCategories(targetType));
+  }, [accounts]);
+
+  useEffect(() => {
+    setCategoryId((prev) =>
+      prev && categories.some((category) => category.id === prev) ? prev : null,
+    );
+  }, [categories]);
+
+  useEffect(() => {
+    setBreakdownId((prev) =>
+      prev && breakdowns.some((breakdown) => breakdown.id === prev)
+        ? prev
+        : null,
+    );
+  }, [breakdowns]);
+
+  const resetForm = useCallback(() => {
+    setAmountRaw("");
+    setMemo("");
+    setDate(formatDate(new Date()));
+    setStoreId(null);
+    setStoreName("");
     setCategoryId(null);
-    setBreakdowns([]);
     setBreakdownId(null);
   }, []);
 
-  const resetForm = useCallback(
-    (targetType: TransactionType) => {
-      setAmountRaw("");
-      setMemo("");
-      setDate(formatDate(new Date()));
-      setStoreId(null);
-      setStoreName("");
-      resetSelectionState(targetType);
-    },
-    [resetSelectionState],
-  );
-
   useFocusEffect(
     useCallback(() => {
-      resetForm(type);
-    }, [type, resetForm]),
+      resetForm();
+    }, [resetForm]),
   );
 
   useEffect(() => {
@@ -156,19 +223,21 @@ export default function RecordScreen() {
 
   const handleTypeChange = (newType: TransactionType) => {
     setType(newType);
-    resetSelectionState(newType);
-  };
-
-  const handleCategoryChange = (nextCategoryId: number) => {
-    setCategoryId(nextCategoryId);
-    const bds = getBreakdownsByCategory(nextCategoryId);
-    setBreakdowns(bds);
+    setCategoryId(null);
     setBreakdownId(null);
     setStoreId(null);
     setStoreName("");
   };
 
-  const handleSave = () => {
+  const handleCategoryChange = (nextCategoryId: string) => {
+    setCategoryId(nextCategoryId);
+    setBreakdownId(null);
+    setStoreId(null);
+    setStoreName("");
+  };
+
+  const handleSave = async () => {
+    if (saving) return;
     const amount = parseInt(amountRaw.replace(/,/g, ""), 10);
     if (!amountRaw || isNaN(amount) || amount < 0) {
       Alert.alert("エラー", "金額を入力してください");
@@ -183,36 +252,48 @@ export default function RecordScreen() {
       return;
     }
 
-    addTransaction(
-      date,
-      amount,
-      type,
-      categoryId,
-      accountId,
-      memo,
-      breakdownId,
-      storeId,
-    );
+    setSaving(true);
+    try {
+      await addTransaction(
+        date,
+        amount,
+        type,
+        categoryId,
+        accountId,
+        memo,
+        breakdownId,
+        storeId,
+      );
 
-    const afterStatus =
-      type === "expense" ? getBudgetStatusForDate(date, categoryId) : null;
-    let nextToastMessage = "保存しました";
-    let nextToastVariant: ToastVariant = "info";
-    if (
-      afterStatus &&
-      (afterStatus.level === "warning" || afterStatus.level === "exceeded")
-    ) {
-      const percent = Math.round(afterStatus.usageRate * 100);
-      nextToastMessage =
-        afterStatus.level === "exceeded"
-          ? `予算超過: ${afterStatus.categoryName} (${percent}%)`
-          : `予算注意: ${afterStatus.categoryName} (${percent}%)`;
-      nextToastVariant =
-        afterStatus.level === "exceeded" ? "exceeded" : "warning";
+      const afterStatus =
+        type === "expense"
+          ? await getBudgetStatusForDate(date, categoryId)
+          : null;
+      let nextToastMessage = "保存しました";
+      let nextToastVariant: ToastVariant = "info";
+      if (
+        afterStatus &&
+        (afterStatus.level === "warning" || afterStatus.level === "exceeded")
+      ) {
+        const percent = Math.round(afterStatus.usageRate * 100);
+        nextToastMessage =
+          afterStatus.level === "exceeded"
+            ? `予算超過: ${afterStatus.categoryName} (${percent}%)`
+            : `予算注意: ${afterStatus.categoryName} (${percent}%)`;
+        nextToastVariant =
+          afterStatus.level === "exceeded" ? "exceeded" : "warning";
+      }
+
+      resetForm();
+      showToast(nextToastMessage, nextToastVariant);
+    } catch (error) {
+      Alert.alert(
+        "エラー",
+        error instanceof Error ? error.message : "保存に失敗しました",
+      );
+    } finally {
+      setSaving(false);
     }
-
-    resetForm(type);
-    showToast(nextToastMessage, nextToastVariant);
   };
 
   const incomeColor = colorScheme === "dark" ? "#42A5F5" : "#1565C0";
@@ -264,7 +345,7 @@ export default function RecordScreen() {
         incomeColor={incomeColor}
         expenseColor={expenseColor}
         bottomInset={tabBarHeight}
-        submitLabel="保存する"
+        submitLabel={saving ? "保存中..." : "保存する"}
         onTypeChange={handleTypeChange}
         onAmountRawChange={setAmountRaw}
         onDateChange={setDate}

@@ -4,25 +4,72 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ── ヘルパー関数 ──
+    function signedIn() {
+      return request.auth != null;
+    }
+
     // 現在のユーザーが所属する世帯IDを取得
     function userHouseholdId() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId;
     }
 
+    function notRemoved(memberData) {
+      return !("removedAt" in memberData) || memberData.removedAt == null;
+    }
+
+    function activeMember(householdId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/households/$(householdId))
+        && userHouseholdId() == householdId
+        && exists(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid))
+        && notRemoved(get(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid)).data);
+    }
+
+    function createsOwnHouseholdInvite(householdId) {
+      return existsAfter(/databases/$(database)/documents/households/$(householdId))
+        && getAfter(/databases/$(database)/documents/households/$(householdId)).data.createdBy == request.auth.uid
+        && existsAfter(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid))
+        && notRemoved(getAfter(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid)).data);
+    }
+
     // ユーザードキュメント: 本人のみ読み書き可
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if signedIn() && request.auth.uid == userId;
+    }
+
+    // 招待コード: コードを知っている認証済みユーザーのみ直接参照する
+    match /inviteCodes/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.householdId is string
+        && (
+          activeMember(request.resource.data.householdId)
+          || createsOwnHouseholdInvite(request.resource.data.householdId)
+        );
+      allow update, delete: if signedIn()
+        && activeMember(resource.data.householdId);
     }
 
     // 世帯ドキュメント: 自世帯メンバーのみアクセス可
     match /households/{householdId} {
-      allow read, write: if request.auth != null
-        && userHouseholdId() == householdId;
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid;
+      allow read, update, delete: if activeMember(householdId);
+
+      match /members/{userId} {
+        allow read: if activeMember(householdId);
+        allow create: if signedIn()
+          && request.auth.uid == userId
+          && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId == householdId;
+        allow update: if activeMember(householdId);
+        allow delete: if activeMember(householdId);
+      }
 
       // 世帯配下の全サブコレクション: 自世帯メンバーのみ
       match /{subcollection}/{docId} {
-        allow read, write: if request.auth != null
-          && userHouseholdId() == householdId;
+        allow read, write: if activeMember(householdId);
       }
     }
   }

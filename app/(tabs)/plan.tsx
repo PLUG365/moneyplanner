@@ -1,62 +1,62 @@
 import DateTimePicker, {
-    type DateTimePickerEvent,
+  type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "expo-router";
 import React, {
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 import {
-    Alert,
-    Linking,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Linking,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import {
-    addLifeEvent,
-    deleteLifeEvent,
-    getLifeEvents,
-    getPlanProfile,
-    getYearMonthlyTotals,
-    savePlanProfile,
-    updateLifeEvent,
-    type PlanLifeEvent,
-} from "@/lib/database";
+  addLifeEvent,
+  deleteLifeEvent,
+  getLifeEvents,
+  getPlanProfile,
+  getYearMonthlyTotals,
+  savePlanProfile,
+  updateLifeEvent,
+  type PlanLifeEvent,
+} from "@/lib/firestore";
 import {
-    ADDITIONAL_CHILD_COST_DEFINITIONS,
-    ASSUMPTION_DEFINITIONS,
-    DEFAULT_ASSUMPTIONS,
-    EDUCATION_STAGE_DEFINITIONS,
-    getPublicDefaultsUpdatedLabel,
-    isPublicDefaultsUpdateDue,
-    PUBLIC_DEFAULTS_VERSION,
-    type AssumptionKey,
-    type EducationStageKey,
-    type SchoolKind,
+  ADDITIONAL_CHILD_COST_DEFINITIONS,
+  ASSUMPTION_DEFINITIONS,
+  DEFAULT_ASSUMPTIONS,
+  EDUCATION_STAGE_DEFINITIONS,
+  getPublicDefaultsUpdatedLabel,
+  isPublicDefaultsUpdateDue,
+  PUBLIC_DEFAULTS_VERSION,
+  type AssumptionKey,
+  type EducationStageKey,
+  type SchoolKind,
 } from "@/lib/simulation/assumptions";
 import { runSimulation } from "@/lib/simulation/engine";
 import {
-    expandLifeEventsByYear,
-    type CarPurchaseEvent,
-    type ChildEducationEvent,
-    type HousingPurchaseEvent,
+  expandLifeEventsByYear,
+  type CarPurchaseEvent,
+  type ChildEducationEvent,
+  type HousingPurchaseEvent,
 } from "@/lib/simulation/events";
 import {
-    defaultPlanProfile,
-    normalizePlanProfilePayload,
-    type PlanProfilePayload,
+  defaultPlanProfile,
+  normalizePlanProfilePayload,
+  type PlanProfilePayload,
 } from "@/lib/simulation/planProfile";
 
 function formatAmount(value: number): string {
@@ -529,38 +529,46 @@ export default function PlanScreen() {
         return;
       }
 
-      const stored = getPlanProfile();
       hasLoadedProfileRef.current = true;
-      if (!stored) {
-        return;
-      }
 
-      try {
-        const parsed = JSON.parse(stored.payloadJson) as unknown;
-        const normalized = normalizePlanProfilePayload(parsed, defaultProfile);
-        isHydratingProfileRef.current = true;
-        setStartYear(normalized.startYear);
-        setYears(normalized.years);
-        setInitialBalance(normalized.initialBalance);
-        setAnnualIncome(normalized.annualIncome);
-        if (toInt(normalized.annualIncome, 0) !== 0)
-          annualIncomeTouchedRef.current = true;
-        setAnnualExpense(normalized.annualExpense);
-        if (toInt(normalized.annualExpense, 0) !== 0)
-          annualExpenseTouchedRef.current = true;
-        setChildren(normalized.children);
-        setAssumptionRates(normalized.assumptionRates);
-        setIsInputSectionOpen(normalized.isInputSectionOpen);
-        setIsEducationSectionOpen(normalized.isEducationSectionOpen);
-        setIsCarSectionOpen(normalized.isCarSectionOpen);
-        setIsHousingSectionOpen(normalized.isHousingSectionOpen);
-      } catch {
-        // noop
-      } finally {
-        setTimeout(() => {
-          isHydratingProfileRef.current = false;
-        }, 0);
-      }
+      const loadProfile = async () => {
+        const stored = await getPlanProfile();
+        if (!stored) {
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(stored.payloadJson) as unknown;
+          const normalized = normalizePlanProfilePayload(
+            parsed,
+            defaultProfile,
+          );
+          isHydratingProfileRef.current = true;
+          setStartYear(normalized.startYear);
+          setYears(normalized.years);
+          setInitialBalance(normalized.initialBalance);
+          setAnnualIncome(normalized.annualIncome);
+          if (toInt(normalized.annualIncome, 0) !== 0)
+            annualIncomeTouchedRef.current = true;
+          setAnnualExpense(normalized.annualExpense);
+          if (toInt(normalized.annualExpense, 0) !== 0)
+            annualExpenseTouchedRef.current = true;
+          setChildren(normalized.children);
+          setAssumptionRates(normalized.assumptionRates);
+          setIsInputSectionOpen(normalized.isInputSectionOpen);
+          setIsEducationSectionOpen(normalized.isEducationSectionOpen);
+          setIsCarSectionOpen(normalized.isCarSectionOpen);
+          setIsHousingSectionOpen(normalized.isHousingSectionOpen);
+        } catch {
+          // noop
+        } finally {
+          setTimeout(() => {
+            isHydratingProfileRef.current = false;
+          }, 0);
+        }
+      };
+
+      void loadProfile();
     }, [defaultProfile]),
   );
 
@@ -583,7 +591,7 @@ export default function PlanScreen() {
       isHousingSectionOpen,
     };
 
-    savePlanProfile(JSON.stringify(payload));
+    void savePlanProfile(JSON.stringify(payload));
   }, [
     annualExpense,
     annualIncome,
@@ -598,69 +606,76 @@ export default function PlanScreen() {
     years,
   ]);
 
+  const loadLifeEvents = useCallback(async () => {
+    let rows = await getLifeEvents();
+    const legacyHousingIds = rows
+      .filter(
+        (row) =>
+          row.eventType === "housing_purchase" &&
+          isLegacyHousingParams(row.paramsJson),
+      )
+      .map((row) => row.id);
+
+    if (legacyHousingIds.length > 0) {
+      await Promise.all(legacyHousingIds.map((id) => deleteLifeEvent(id)));
+      rows = await getLifeEvents();
+    }
+
+    const legacyCarIds = rows
+      .filter(
+        (row) =>
+          row.eventType === "car_purchase" && isLegacyCarParams(row.paramsJson),
+      )
+      .map((row) => row.id);
+
+    if (legacyCarIds.length > 0) {
+      await Promise.all(legacyCarIds.map((id) => deleteLifeEvent(id)));
+      rows = await getLifeEvents();
+    }
+
+    setEducationEvents(
+      rows
+        .map(parseChildEducationEvent)
+        .filter((e): e is ChildEducationEvent => e !== null),
+    );
+    setCarEvents(
+      rows
+        .map(parseCarPurchaseEvent)
+        .filter((e): e is CarPurchaseEvent => e !== null),
+    );
+    setHousingEvents(
+      rows
+        .map(parseHousingPurchaseEvent)
+        .filter((e): e is HousingPurchaseEvent => e !== null),
+    );
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      const totals = getYearMonthlyTotals(currentYear);
-      const incomeTotal = totals.reduce((sum, row) => sum + row.income, 0);
-      const expenseTotal = totals.reduce((sum, row) => sum + row.expense, 0);
-      if (
-        incomeTotal > 0 &&
-        toInt(annualIncome, 0) === 0 &&
-        !annualIncomeTouchedRef.current
-      ) {
-        setAnnualIncome(String(Math.round(incomeTotal)));
-      }
-      if (
-        expenseTotal > 0 &&
-        toInt(annualExpense, 0) === 0 &&
-        !annualExpenseTouchedRef.current
-      ) {
-        setAnnualExpense(String(Math.round(expenseTotal)));
-      }
+      const loadTotalsAndEvents = async () => {
+        const totals = await getYearMonthlyTotals(currentYear);
+        const incomeTotal = totals.reduce((sum, row) => sum + row.income, 0);
+        const expenseTotal = totals.reduce((sum, row) => sum + row.expense, 0);
+        if (
+          incomeTotal > 0 &&
+          toInt(annualIncome, 0) === 0 &&
+          !annualIncomeTouchedRef.current
+        ) {
+          setAnnualIncome(String(Math.round(incomeTotal)));
+        }
+        if (
+          expenseTotal > 0 &&
+          toInt(annualExpense, 0) === 0 &&
+          !annualExpenseTouchedRef.current
+        ) {
+          setAnnualExpense(String(Math.round(expenseTotal)));
+        }
 
-      let rows = getLifeEvents();
-      const legacyHousingIds = rows
-        .filter(
-          (row) =>
-            row.eventType === "housing_purchase" &&
-            isLegacyHousingParams(row.paramsJson),
-        )
-        .map((row) => row.id);
+        await loadLifeEvents();
+      };
 
-      if (legacyHousingIds.length > 0) {
-        legacyHousingIds.forEach((id) => deleteLifeEvent(id));
-        rows = getLifeEvents();
-      }
-
-      const legacyCarIds = rows
-        .filter(
-          (row) =>
-            row.eventType === "car_purchase" &&
-            isLegacyCarParams(row.paramsJson),
-        )
-        .map((row) => row.id);
-
-      if (legacyCarIds.length > 0) {
-        legacyCarIds.forEach((id) => deleteLifeEvent(id));
-        rows = getLifeEvents();
-      }
-
-      setEducationEvents(
-        rows
-          .map(parseChildEducationEvent)
-          .filter((e): e is ChildEducationEvent => e !== null),
-      );
-      setCarEvents(
-        rows
-          .map(parseCarPurchaseEvent)
-          .filter((e): e is CarPurchaseEvent => e !== null),
-      );
-      setHousingEvents(
-        rows
-          .map(parseHousingPurchaseEvent)
-          .filter((e): e is HousingPurchaseEvent => e !== null),
-      );
-    }, [annualExpense, annualIncome, currentYear]),
+      void loadTotalsAndEvents();
+    }, [annualExpense, annualIncome, currentYear, loadLifeEvents]),
   );
 
   const educationSuggestions = useMemo(
@@ -736,7 +751,7 @@ export default function PlanScreen() {
     });
   };
 
-  const handleAddEducationEvent = () => {
+  const handleAddEducationEvent = async () => {
     if (
       eventChildId === null ||
       !eventEducationType ||
@@ -756,7 +771,7 @@ export default function PlanScreen() {
     }
     const childName = selectedChild.name.trim() || `子ども${selectedChild.id}`;
 
-    addLifeEvent(
+    await addLifeEvent(
       "child_education",
       JSON.stringify({
         childId: selectedChild.id,
@@ -768,10 +783,7 @@ export default function PlanScreen() {
       }),
     );
 
-    const events = getLifeEvents()
-      .map(parseChildEducationEvent)
-      .filter((e): e is ChildEducationEvent => e !== null);
-    setEducationEvents(events);
+    await loadLifeEvents();
 
     setEventChildId(null);
     setEventEducationType("");
@@ -780,12 +792,12 @@ export default function PlanScreen() {
     setEventAnnualCost("");
   };
 
-  const handleDeleteEducationEvent = (id: number) => {
-    deleteLifeEvent(id);
+  const handleDeleteEducationEvent = async (id: string) => {
+    await deleteLifeEvent(id);
     setEducationEvents((prev) => prev.filter((event) => event.id !== id));
   };
 
-  const handleAddCarEvent = () => {
+  const handleAddCarEvent = async () => {
     if (!carName.trim() || !carPurchaseYear || !carExpenseType || !carAmount) {
       return;
     }
@@ -794,7 +806,7 @@ export default function PlanScreen() {
     const amount = Math.max(0, toInt(carAmount, 0));
     const nextCarName = carName.trim() || `クルマ${carEvents.length + 1}`;
 
-    addLifeEvent(
+    await addLifeEvent(
       "car_purchase",
       JSON.stringify({
         carName: nextCarName,
@@ -804,10 +816,7 @@ export default function PlanScreen() {
       }),
     );
 
-    const events = getLifeEvents()
-      .map(parseCarPurchaseEvent)
-      .filter((e): e is CarPurchaseEvent => e !== null);
-    setCarEvents(events);
+    await loadLifeEvents();
 
     setCarName("");
     setCarPurchaseYear("");
@@ -815,12 +824,12 @@ export default function PlanScreen() {
     setCarAmount("");
   };
 
-  const handleDeleteCarEvent = (id: number) => {
-    deleteLifeEvent(id);
+  const handleDeleteCarEvent = async (id: string) => {
+    await deleteLifeEvent(id);
     setCarEvents((prev) => prev.filter((event) => event.id !== id));
   };
 
-  const handleAddHousingEvent = () => {
+  const handleAddHousingEvent = async () => {
     if (
       !homeName.trim() ||
       !homePurchaseYear ||
@@ -834,7 +843,7 @@ export default function PlanScreen() {
     const amount = Math.max(0, toInt(homeAmount, 0));
     const nextHomeName = homeName.trim() || `住まい${housingEvents.length + 1}`;
 
-    addLifeEvent(
+    await addLifeEvent(
       "housing_purchase",
       JSON.stringify({
         homeName: nextHomeName,
@@ -844,10 +853,7 @@ export default function PlanScreen() {
       }),
     );
 
-    const events = getLifeEvents()
-      .map(parseHousingPurchaseEvent)
-      .filter((e): e is HousingPurchaseEvent => e !== null);
-    setHousingEvents(events);
+    await loadLifeEvents();
 
     setHomeName("");
     setHomePurchaseYear("");
@@ -855,8 +861,8 @@ export default function PlanScreen() {
     setHomeAmount("");
   };
 
-  const handleDeleteHousingEvent = (id: number) => {
-    deleteLifeEvent(id);
+  const handleDeleteHousingEvent = async (id: string) => {
+    await deleteLifeEvent(id);
     setHousingEvents((prev) => prev.filter((event) => event.id !== id));
   };
 
@@ -871,42 +877,44 @@ export default function PlanScreen() {
     // new child starts collapsed
   };
 
-  const syncEducationEventChildName = (
+  const syncEducationEventChildName = async (
     childId: number,
     oldName: string,
     newName: string,
-  ): void => {
+  ): Promise<void> => {
     if (oldName === newName) {
       return;
     }
 
-    const rows = getLifeEvents().filter(
+    const rows = (await getLifeEvents()).filter(
       (row) => row.eventType === "child_education",
     );
-    rows.forEach((row) => {
-      try {
-        const parsed = JSON.parse(row.paramsJson) as Record<string, unknown>;
-        const parsedChildId = Number(parsed.childId);
-        const isTargetById =
-          Number.isFinite(parsedChildId) && parsedChildId === childId;
-        const isLegacyTargetByName =
-          !Number.isFinite(parsedChildId) && parsed.childName === oldName;
-        if (!isTargetById && !isLegacyTargetByName) {
-          return;
-        }
+    await Promise.all(
+      rows.map(async (row) => {
+        try {
+          const parsed = JSON.parse(row.paramsJson) as Record<string, unknown>;
+          const parsedChildId = Number(parsed.childId);
+          const isTargetById =
+            Number.isFinite(parsedChildId) && parsedChildId === childId;
+          const isLegacyTargetByName =
+            !Number.isFinite(parsedChildId) && parsed.childName === oldName;
+          if (!isTargetById && !isLegacyTargetByName) {
+            return;
+          }
 
-        updateLifeEvent(
-          row.id,
-          JSON.stringify({
-            ...parsed,
-            childId,
-            childName: newName,
-          }),
-        );
-      } catch {
-        // noop
-      }
-    });
+          await updateLifeEvent(
+            row.id,
+            JSON.stringify({
+              ...parsed,
+              childId,
+              childName: newName,
+            }),
+          );
+        } catch {
+          // noop
+        }
+      }),
+    );
 
     setEducationEvents((prev) =>
       prev.map((event) =>
@@ -931,7 +939,7 @@ export default function PlanScreen() {
         currentChild?.name.trim() ||
         (currentChild ? `子ども${currentChild.id}` : "");
       const newResolvedName = value.trim() || `子ども${id}`;
-      syncEducationEventChildName(id, oldResolvedName, newResolvedName);
+      void syncEducationEventChildName(id, oldResolvedName, newResolvedName);
     }
 
     setChildren((prev) =>
@@ -958,29 +966,31 @@ export default function PlanScreen() {
     );
   };
 
-  const removeChild = (id: number) => {
+  const removeChild = async (id: number) => {
     const targetChild = children.find((child) => child.id === id);
     const targetName = targetChild?.name.trim() || `子ども${id}`;
 
-    const rows = getLifeEvents().filter(
+    const rows = (await getLifeEvents()).filter(
       (row) => row.eventType === "child_education",
     );
-    rows.forEach((row) => {
-      try {
-        const parsed = JSON.parse(row.paramsJson) as Record<string, unknown>;
-        const parsedChildId = Number(parsed.childId);
-        const isTargetById =
-          Number.isFinite(parsedChildId) && parsedChildId === id;
-        const isLegacyTargetByName =
-          !Number.isFinite(parsedChildId) && parsed.childName === targetName;
+    await Promise.all(
+      rows.map(async (row) => {
+        try {
+          const parsed = JSON.parse(row.paramsJson) as Record<string, unknown>;
+          const parsedChildId = Number(parsed.childId);
+          const isTargetById =
+            Number.isFinite(parsedChildId) && parsedChildId === id;
+          const isLegacyTargetByName =
+            !Number.isFinite(parsedChildId) && parsed.childName === targetName;
 
-        if (isTargetById || isLegacyTargetByName) {
-          deleteLifeEvent(row.id);
+          if (isTargetById || isLegacyTargetByName) {
+            await deleteLifeEvent(row.id);
+          }
+        } catch {
+          // noop
         }
-      } catch {
-        // noop
-      }
-    });
+      }),
+    );
 
     setEducationEvents((prev) =>
       prev.filter(
@@ -1007,7 +1017,7 @@ export default function PlanScreen() {
         {
           text: "削除する",
           style: "destructive",
-          onPress: () => removeChild(id),
+          onPress: () => void removeChild(id),
         },
       ],
     );
@@ -1036,7 +1046,7 @@ export default function PlanScreen() {
     updateChild(birthDatePickerTarget.id, "birthDate", formatted);
   };
 
-  const handleApplyEducationSuggestions = () => {
+  const handleApplyEducationSuggestions = async () => {
     if (educationSuggestions.length === 0) {
       setSuggestionSyncMessage("登録できる提案がありません");
       setIsSuggestionPopupVisible(false);
@@ -1051,13 +1061,13 @@ export default function PlanScreen() {
     );
 
     let added = 0;
-    educationSuggestions.forEach((suggestion) => {
+    for (const suggestion of educationSuggestions) {
       const key = `${suggestion.childId}:${suggestion.stageLabel}:${suggestion.startYear}:${suggestion.durationYears}:${suggestion.annualCost}`;
       if (existingKeys.has(key)) {
-        return;
+        continue;
       }
 
-      addLifeEvent(
+      await addLifeEvent(
         "child_education",
         JSON.stringify({
           childId: suggestion.childId,
@@ -1072,13 +1082,10 @@ export default function PlanScreen() {
       );
       existingKeys.add(key);
       added += 1;
-    });
+    }
 
     if (added > 0) {
-      const events = getLifeEvents()
-        .map(parseChildEducationEvent)
-        .filter((e): e is ChildEducationEvent => e !== null);
-      setEducationEvents(events);
+      await loadLifeEvents();
       setSuggestionSyncMessage(`${added}件の進学イベントを登録しました`);
       setIsSuggestionPopupVisible(false);
       return;

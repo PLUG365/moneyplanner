@@ -35,7 +35,7 @@ test("buildEmptyCategoryEditorDraft returns tab-aware default color", () => {
 test("buildCategoryEditorDraft copies editable fields", () => {
   assert.deepEqual(
     buildCategoryEditorDraft({
-      id: 1,
+      id: "category-1",
       name: "食費",
       type: "expense",
       color: "#C62828",
@@ -48,8 +48,8 @@ test("buildCategoryEditorDraft copies editable fields", () => {
 test("buildBreakdownEditorDraft and buildAccountEditorDraft copy source values", () => {
   assert.deepEqual(
     buildBreakdownEditorDraft({
-      id: 2,
-      categoryId: 1,
+      id: "breakdown-1",
+      categoryId: "category-1",
       name: "昼ご飯",
       isDefault: false,
     }),
@@ -57,7 +57,7 @@ test("buildBreakdownEditorDraft and buildAccountEditorDraft copy source values",
   );
   assert.deepEqual(
     buildAccountEditorDraft({
-      id: 3,
+      id: "account-1",
       name: "財布",
       balance: 12000,
       isDefault: false,

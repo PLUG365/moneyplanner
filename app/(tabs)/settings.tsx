@@ -1,4 +1,4 @@
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect, type Href } from "expo-router";
 import React, {
   useCallback,
   useEffect,
@@ -24,6 +24,16 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import {
+  ACCOUNT_DELETION_CONFIRMATION_TEXT,
+  isAccountDeletionConfirmationValid,
+} from "@/lib/accountDeletion";
+import {
+  deleteCurrentUserAccount,
+  getCurrentUser,
+  reauthenticateCurrentUserWithApple,
+  signOut,
+} from "@/lib/auth";
 import { exportCSV } from "@/lib/csvExport";
 import {
   Account,
@@ -36,20 +46,31 @@ import {
   deleteAccountAndMoveToDefault,
   deleteBreakdown,
   deleteCategory,
+  deleteHouseholdDataAndCurrentUserProfile,
   deleteMonthlyBudget,
   getAccounts,
   getBreakdownsByCategory,
   getCategories,
   getMonthlyBudgets,
   resetCategoryAndBreakdownsToDefault,
-  resetDatabaseForDevelopment,
+  resetFirestoreForDevelopment,
   setMonthlyBudget,
   TransactionType,
   updateAccountBalance,
   updateAccountName,
   updateBreakdown,
   updateCategory,
-} from "@/lib/database";
+} from "@/lib/firestore";
+import {
+  getHouseholdId,
+  getHouseholdMembers,
+  getInviteCode,
+  regenerateInviteCode,
+  removeHouseholdMember,
+  type HouseholdMember,
+} from "@/lib/household";
+import { buildBudgetInputMap } from "@/lib/settingsBudgetEditor";
+import { getMemberRemovalActionLabel } from "@/lib/settingsHouseholdMembers";
 import {
   formatYenDisplay,
   getSettingsKeyboardAccessoryPreview,
@@ -117,11 +138,11 @@ export default function SettingsScreen() {
 
   const [managerTab, setManagerTab] = useState<SettingsManagerTab>("category");
   const [activeType, setActiveType] = useState<TransactionType>("expense");
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
     null,
   );
 
-  const [categoryEditingId, setCategoryEditingId] = useState<number | null>(
+  const [categoryEditingId, setCategoryEditingId] = useState<string | null>(
     null,
   );
   const [categoryNameInput, setCategoryNameInput] = useState("");
@@ -130,23 +151,38 @@ export default function SettingsScreen() {
   );
   const [categoryBudgetInput, setCategoryBudgetInput] = useState("");
 
-  const [breakdownEditingId, setBreakdownEditingId] = useState<number | null>(
+  const [breakdownEditingId, setBreakdownEditingId] = useState<string | null>(
     null,
   );
   const [breakdownNameInput, setBreakdownNameInput] = useState("");
-  const [accountEditingId, setAccountEditingId] = useState<number | null>(null);
+  const [accountEditingId, setAccountEditingId] = useState<string | null>(null);
   const [accountNameInput, setAccountNameInput] = useState("");
   const [accountBalanceInput, setAccountBalanceInput] = useState("");
   const [activeKeyboardField, setActiveKeyboardField] =
     useState<SettingsKeyboardField>(null);
 
   const [exporting, setExporting] = useState(false);
-  const [budgetInputs, setBudgetInputs] = useState<Record<number, string>>({});
+  const [budgetInputs, setBudgetInputs] = useState<Record<string, string>>({});
+  const [householdId, setHouseholdId] = useState<string | null>(null);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
+    [],
+  );
+  const [householdLoading, setHouseholdLoading] = useState(false);
+  const [regeneratingInviteCode, setRegeneratingInviteCode] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const currentUser = getCurrentUser();
 
-  const load = useCallback(() => {
-    const allCategories = getCategories();
+  const load = useCallback(async () => {
+    const [incomeCategories, expenseCategories, loadedAccounts] =
+      await Promise.all([
+        getCategories("income"),
+        getCategories("expense"),
+        getAccounts(),
+      ]);
+    const allCategories = [...incomeCategories, ...expenseCategories];
     setCategories(allCategories);
-    setAccounts(getAccounts());
+    setAccounts(loadedAccounts);
 
     const firstCategory =
       allCategories.find((c) => c.type === activeType) ?? null;
@@ -158,30 +194,52 @@ export default function SettingsScreen() {
 
     setSelectedCategoryId(nextCategoryId);
     if (nextCategoryId) {
-      setBreakdowns(getBreakdownsByCategory(nextCategoryId));
+      setBreakdowns(await getBreakdownsByCategory(nextCategoryId));
     } else {
       setBreakdowns([]);
     }
   }, [activeType, selectedCategoryId]);
 
-  const loadBudgetEditor = useCallback(() => {
-    const rows = getMonthlyBudgets("expense");
-    const nextInputs: Record<number, string> = {};
-    rows.forEach((row) => {
-      nextInputs[row.categoryId] = row.amount > 0 ? String(row.amount) : "";
-    });
-    setBudgetInputs(nextInputs);
+  const loadBudgetEditor = useCallback(async () => {
+    const rows = await getMonthlyBudgets("expense");
+    setBudgetInputs(buildBudgetInputMap(rows));
+  }, []);
+
+  const loadHouseholdInfo = useCallback(async () => {
+    setHouseholdLoading(true);
+    try {
+      const nextHouseholdId = await getHouseholdId();
+      setHouseholdId(nextHouseholdId);
+      if (!nextHouseholdId) {
+        setInviteCode(null);
+        setHouseholdMembers([]);
+        return;
+      }
+
+      const [nextInviteCode, nextMembers] = await Promise.all([
+        getInviteCode(nextHouseholdId),
+        getHouseholdMembers(nextHouseholdId),
+      ]);
+      setInviteCode(nextInviteCode);
+      setHouseholdMembers(nextMembers);
+    } catch {
+      setInviteCode(null);
+      setHouseholdMembers([]);
+    } finally {
+      setHouseholdLoading(false);
+    }
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      load();
-      loadBudgetEditor();
-    }, [load, loadBudgetEditor]),
+      void load();
+      void loadBudgetEditor();
+      void loadHouseholdInfo();
+    }, [load, loadBudgetEditor, loadHouseholdInfo]),
   );
 
   useEffect(() => {
-    loadBudgetEditor();
+    void loadBudgetEditor();
   }, [loadBudgetEditor]);
 
   const visibleCategories = useMemo(
@@ -244,12 +302,12 @@ export default function SettingsScreen() {
     setActiveKeyboardField(null);
   };
 
-  const reloadBreakdowns = (categoryId: number | null) => {
+  const reloadBreakdowns = async (categoryId: string | null) => {
     if (!categoryId) {
       setBreakdowns([]);
       return;
     }
-    setBreakdowns(getBreakdownsByCategory(categoryId));
+    setBreakdowns(await getBreakdownsByCategory(categoryId));
   };
 
   const handleTypeChange = (type: TransactionType) => {
@@ -257,13 +315,13 @@ export default function SettingsScreen() {
     const first = categories.find((c) => c.type === type) ?? null;
     const nextId = first?.id ?? null;
     setSelectedCategoryId(nextId);
-    reloadBreakdowns(nextId);
+    void reloadBreakdowns(nextId);
     resetCategoryForm();
     resetBreakdownForm();
     resetAccountForm();
   };
 
-  const handleSaveAccount = () => {
+  const handleSaveAccount = async () => {
     const trimmed = accountNameInput.trim();
     if (!trimmed) {
       Alert.alert("エラー", "口座名を入力してください");
@@ -277,13 +335,13 @@ export default function SettingsScreen() {
     }
 
     if (accountEditingId) {
-      updateAccountName(accountEditingId, trimmed);
-      updateAccountBalance(accountEditingId, balance);
+      await updateAccountName(accountEditingId, trimmed);
+      await updateAccountBalance(accountEditingId, balance);
     } else {
-      addAccount(trimmed, balance);
+      await addAccount(trimmed, balance);
     }
 
-    load();
+    await load();
     resetAccountForm();
     setShowEditorModal(false);
   };
@@ -311,9 +369,9 @@ export default function SettingsScreen() {
         {
           text: "削除",
           style: "destructive",
-          onPress: () => {
-            deleteAccountAndMoveToDefault(account.id);
-            load();
+          onPress: async () => {
+            await deleteAccountAndMoveToDefault(account.id);
+            await load();
             resetAccountForm();
           },
         },
@@ -321,35 +379,39 @@ export default function SettingsScreen() {
     );
   };
 
-  const handleSaveCategory = () => {
+  const handleSaveCategory = async () => {
     const trimmed = categoryNameInput.trim();
     if (!trimmed) {
       Alert.alert("エラー", "カテゴリ名を入力してください");
       return;
     }
 
-    let savedCategoryId: number;
+    let savedCategoryId: string;
     if (categoryEditingId) {
-      updateCategory(categoryEditingId, trimmed, categoryColorInput);
+      await updateCategory(categoryEditingId, trimmed, categoryColorInput);
       savedCategoryId = categoryEditingId;
     } else {
-      savedCategoryId = addCategory(trimmed, activeType, categoryColorInput);
+      savedCategoryId = await addCategory(
+        trimmed,
+        activeType,
+        categoryColorInput,
+      );
     }
 
     if (activeType === "expense") {
       const normalized = categoryBudgetInput.replace(/\D/g, "");
       if (!normalized) {
-        deleteMonthlyBudget(savedCategoryId);
+        await deleteMonthlyBudget(savedCategoryId);
       } else {
         const amount = parseInt(normalized, 10);
         if (!isNaN(amount) && amount >= 0) {
-          setMonthlyBudget(savedCategoryId, amount);
+          await setMonthlyBudget(savedCategoryId, amount);
         }
       }
     }
 
-    load();
-    loadBudgetEditor();
+    await load();
+    await loadBudgetEditor();
     resetCategoryForm();
     setShowEditorModal(false);
   };
@@ -370,10 +432,10 @@ export default function SettingsScreen() {
       {
         text: "削除",
         style: "destructive",
-        onPress: () => {
-          deleteCategory(cat.id);
-          load();
-          loadBudgetEditor();
+        onPress: async () => {
+          await deleteCategory(cat.id);
+          await load();
+          await loadBudgetEditor();
           if (selectedCategoryId === cat.id) {
             setSelectedCategoryId(null);
           }
@@ -382,7 +444,7 @@ export default function SettingsScreen() {
     ]);
   };
 
-  const handleSaveBreakdown = () => {
+  const handleSaveBreakdown = async () => {
     const trimmed = breakdownNameInput.trim();
     if (!trimmed) {
       Alert.alert("エラー", "内訳名を入力してください");
@@ -394,12 +456,12 @@ export default function SettingsScreen() {
     }
 
     if (breakdownEditingId) {
-      updateBreakdown(breakdownEditingId, trimmed);
+      await updateBreakdown(breakdownEditingId, trimmed);
     } else {
-      addBreakdown(selectedCategoryId, trimmed);
+      await addBreakdown(selectedCategoryId, trimmed);
     }
 
-    reloadBreakdowns(selectedCategoryId);
+    await reloadBreakdowns(selectedCategoryId);
     resetBreakdownForm();
     setShowEditorModal(false);
   };
@@ -418,9 +480,9 @@ export default function SettingsScreen() {
       {
         text: "削除",
         style: "destructive",
-        onPress: () => {
-          deleteBreakdown(item.id);
-          reloadBreakdowns(selectedCategoryId);
+        onPress: async () => {
+          await deleteBreakdown(item.id);
+          await reloadBreakdowns(selectedCategoryId);
         },
       },
     ]);
@@ -435,13 +497,13 @@ export default function SettingsScreen() {
         {
           text: "実行",
           style: "destructive",
-          onPress: () => {
+          onPress: async () => {
             try {
-              resetCategoryAndBreakdownsToDefault();
-              load();
+              await resetCategoryAndBreakdownsToDefault();
+              await load();
               resetCategoryForm();
               resetBreakdownForm();
-              loadBudgetEditor();
+              await loadBudgetEditor();
               Alert.alert("完了", "カテゴリ/内訳をデフォルトに戻しました");
             } catch {
               Alert.alert("エラー", "初期化に失敗しました");
@@ -540,6 +602,145 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+    } catch {
+      Alert.alert("エラー", "ログアウトに失敗しました");
+    }
+  };
+
+  const executeAccountDeletion = async (confirmationInput?: string) => {
+    if (!isAccountDeletionConfirmationValid(confirmationInput ?? "")) {
+      Alert.alert(
+        "確認できません",
+        `「${ACCOUNT_DELETION_CONFIRMATION_TEXT}」と入力してください`,
+      );
+      return;
+    }
+
+    setDeletingAccount(true);
+    try {
+      await reauthenticateCurrentUserWithApple();
+      await deleteHouseholdDataAndCurrentUserProfile();
+      await deleteCurrentUserAccount();
+      router.replace("/auth" as Href);
+    } catch (error) {
+      Alert.alert(
+        "エラー",
+        error instanceof Error
+          ? error.message
+          : "認証解除と全データ削除に失敗しました",
+      );
+    } finally {
+      setDeletingAccount(false);
+    }
+  };
+
+  const handleDeleteAccountAndAllData = () => {
+    if (!currentUser || !householdId) {
+      Alert.alert("エラー", "ログインまたは世帯情報を確認できません");
+      return;
+    }
+
+    Alert.alert(
+      "認証解除と全データ削除",
+      "世帯の共有データをすべて削除し、現在のアカウントを削除します。削除前に必要なデータはCSVで書き出してください。",
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "続ける",
+          style: "destructive",
+          onPress: () => {
+            Alert.prompt(
+              "確認入力",
+              `実行するには「${ACCOUNT_DELETION_CONFIRMATION_TEXT}」と入力してください`,
+              [
+                { text: "キャンセル", style: "cancel" },
+                {
+                  text: "削除する",
+                  style: "destructive",
+                  onPress: (text?: string) => void executeAccountDeletion(text),
+                },
+              ],
+              "plain-text",
+            );
+          },
+        },
+      ],
+    );
+  };
+
+  const handleRemoveMember = (member: HouseholdMember) => {
+    if (!householdId) return;
+
+    const isSelf = currentUser?.uid === member.uid;
+    Alert.alert(
+      isSelf ? "世帯から退出" : "メンバーを解除",
+      isSelf
+        ? "世帯から退出します。世帯データは削除されません。実行しますか？"
+        : `「${member.displayName}」を世帯から解除します。解除されたメンバーは次回アクセス時に世帯データへアクセスできなくなります。`,
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: isSelf ? "退出" : "解除",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await removeHouseholdMember(householdId, member.uid);
+              if (isSelf) {
+                router.replace("/household" as Href);
+                return;
+              }
+              await loadHouseholdInfo();
+            } catch {
+              Alert.alert(
+                "エラー",
+                isSelf ? "退出に失敗しました" : "解除に失敗しました",
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleRegenerateInviteCode = () => {
+    if (!householdId) {
+      Alert.alert("エラー", "世帯情報を確認できません");
+      return;
+    }
+
+    Alert.alert(
+      "招待コードを再発行",
+      "現在の招待コードを無効にし、新しいコードを発行します。すでに共有済みの古いコードでは参加できなくなります。",
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "再発行",
+          style: "destructive",
+          onPress: async () => {
+            setRegeneratingInviteCode(true);
+            try {
+              const nextInviteCode = await regenerateInviteCode(householdId);
+              setInviteCode(nextInviteCode);
+              Alert.alert("完了", "招待コードを再発行しました");
+            } catch (error) {
+              Alert.alert(
+                "エラー",
+                error instanceof Error
+                  ? error.message
+                  : "招待コードの再発行に失敗しました",
+              );
+            } finally {
+              setRegeneratingInviteCode(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleResetDatabase = () => {
     Alert.alert(
       "開発用DBリセット",
@@ -549,10 +750,10 @@ export default function SettingsScreen() {
         {
           text: "リセット",
           style: "destructive",
-          onPress: () => {
+          onPress: async () => {
             try {
-              resetDatabaseForDevelopment();
-              load();
+              await resetFirestoreForDevelopment();
+              await load();
               setSelectedCategoryId(null);
               setCategoryEditingId(null);
               setBreakdownEditingId(null);
@@ -629,6 +830,94 @@ export default function SettingsScreen() {
         >
           <Text style={styles.actionButtonText}>
             カテゴリ/内訳をデフォルトに戻す
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <View
+        style={[
+          styles.section,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>世帯</Text>
+        <Text style={[styles.sectionDescription, { color: colors.subText }]}>
+          招待コードと世帯メンバーを確認できます。
+        </Text>
+        <View style={[styles.infoRow, { borderColor: colors.border }]}>
+          <Text style={[styles.infoLabel, { color: colors.subText }]}>
+            招待コード
+          </Text>
+          <Text style={[styles.infoValue, { color: colors.text }]}>
+            {householdLoading ? "読み込み中..." : (inviteCode ?? "未設定")}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.inviteCodeButton]}
+          onPress={handleRegenerateInviteCode}
+          disabled={householdLoading || regeneratingInviteCode || !householdId}
+        >
+          <Text style={styles.actionButtonText}>
+            {regeneratingInviteCode ? "再発行中..." : "招待コードを再発行"}
+          </Text>
+        </TouchableOpacity>
+        <Text style={[styles.groupLabel, { color: colors.subText }]}>
+          メンバー
+        </Text>
+        {householdMembers.length === 0 ? (
+          <Text style={[styles.emptyText, { color: colors.subText }]}>
+            メンバー情報がありません
+          </Text>
+        ) : (
+          householdMembers.map((member) => (
+            <View
+              key={member.uid}
+              style={[styles.memberRow, { borderColor: colors.border }]}
+            >
+              <View style={styles.memberInfoWrap}>
+                <Text style={[styles.itemName, { color: colors.text }]}>
+                  {member.displayName}
+                  {member.uid === currentUser?.uid ? "（自分）" : ""}
+                </Text>
+                <Text
+                  style={[styles.memberUidText, { color: colors.subText }]}
+                  numberOfLines={1}
+                >
+                  {member.uid}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => handleRemoveMember(member)}>
+                <Text style={styles.itemDelete}>
+                  {getMemberRemovalActionLabel(currentUser?.uid, member.uid)}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ))
+        )}
+      </View>
+
+      <View
+        style={[
+          styles.section,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          アカウント
+        </Text>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.signOutButton]}
+          onPress={handleSignOut}
+        >
+          <Text style={styles.actionButtonText}>ログアウト</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.accountDeleteButton]}
+          onPress={handleDeleteAccountAndAllData}
+          disabled={deletingAccount}
+        >
+          <Text style={styles.actionButtonText}>
+            {deletingAccount ? "削除中..." : "認証解除と全データ削除"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -861,7 +1150,7 @@ export default function SettingsScreen() {
                         ]}
                         onPress={() => {
                           setSelectedCategoryId(cat.id);
-                          reloadBreakdowns(cat.id);
+                          void reloadBreakdowns(cat.id);
                           resetBreakdownForm();
                         }}
                       >
@@ -1352,7 +1641,37 @@ const styles = StyleSheet.create({
     backgroundColor: "#00695C",
     marginTop: 10,
   },
+  inviteCodeButton: {
+    backgroundColor: "#00695C",
+    marginBottom: 14,
+  },
+  signOutButton: {
+    backgroundColor: "#455A64",
+  },
+  accountDeleteButton: {
+    backgroundColor: "#B71C1C",
+    marginTop: 10,
+  },
   actionButtonText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  infoRow: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+  },
+  infoLabel: { fontSize: 12, fontWeight: "600", marginBottom: 4 },
+  infoValue: { fontSize: 18, fontWeight: "700", letterSpacing: 2 },
+  memberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    gap: 8,
+  },
+  memberInfoWrap: { flex: 1, minWidth: 0 },
+  memberUidText: { fontSize: 11, marginTop: 2 },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",

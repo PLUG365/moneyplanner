@@ -1,6 +1,6 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Modal,
@@ -17,6 +17,7 @@ import TransactionEditor from "@/components/TransactionEditor";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import {
   Account,
   addTransaction,
@@ -27,18 +28,19 @@ import {
   getAccounts,
   getBreakdownsByCategory,
   getCategories,
-  getDatesWithTransactions,
-  getTransactionsByDate,
-  getTransactionsByMonth,
+  householdCollection,
+  mapTransaction,
   Transaction,
   TransactionType,
   updateTransaction,
-} from "@/lib/database";
+} from "@/lib/firestore";
+import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
+import { resolveTransactionCopyTarget } from "@/lib/transactionCopy";
 
 type ViewMode = "list" | "calendar";
 
 type UncopiedRecord = {
-  id: number;
+  id: string;
   date: string;
   type: TransactionType;
   amount: number;
@@ -79,6 +81,7 @@ export default function HistoryScreen() {
   const colors = Colors[colorScheme];
   const bottomTabOverflow = useBottomTabOverflow();
   const safeAreaInsets = useSafeAreaInsets();
+  const householdId = useHouseholdId();
 
   const now = new Date();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -89,40 +92,70 @@ export default function HistoryScreen() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedDateTxs, setSelectedDateTxs] = useState<Transaction[]>([]);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editingTxId, setEditingTxId] = useState<number | null>(null);
+  const [editingTxId, setEditingTxId] = useState<string | null>(null);
   const [editDate, setEditDate] = useState("");
   const [editAmountRaw, setEditAmountRaw] = useState("");
   const [editType, setEditType] = useState<TransactionType>("expense");
   const [editAccounts, setEditAccounts] = useState<Account[]>([]);
-  const [editAccountId, setEditAccountId] = useState<number | null>(null);
-  const [editCategoryId, setEditCategoryId] = useState<number | null>(null);
-  const [editBreakdownId, setEditBreakdownId] = useState<number | null>(null);
+  const [editAccountId, setEditAccountId] = useState<string | null>(null);
+  const [editCategoryId, setEditCategoryId] = useState<string | null>(null);
+  const [editBreakdownId, setEditBreakdownId] = useState<string | null>(null);
   const [editMemo, setEditMemo] = useState("");
-  const [editStoreId, setEditStoreId] = useState<number | null>(null);
+  const [editStoreId, setEditStoreId] = useState<string | null>(null);
   const [editStoreName, setEditStoreName] = useState("");
   const [editCategories, setEditCategories] = useState<Category[]>([]);
   const [editBreakdowns, setEditBreakdowns] = useState<Breakdown[]>([]);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
-  const [selectedTxIds, setSelectedTxIds] = useState<number[]>([]);
+  const [selectedTxIds, setSelectedTxIds] = useState<string[]>([]);
   const [showBulkCopyModal, setShowBulkCopyModal] = useState(false);
   const [copyDate, setCopyDate] = useState(formatDate(new Date()));
   const [showCopyDatePicker, setShowCopyDatePicker] = useState(false);
   const [showUncopiedModal, setShowUncopiedModal] = useState(false);
   const [uncopiedRecords, setUncopiedRecords] = useState<UncopiedRecord[]>([]);
 
-  const load = useCallback(() => {
-    const txs = getTransactionsByMonth(year, month);
-    setTransactions(txs);
-    const dates = getDatesWithTransactions(year, month);
-    setMarkedDates(dates);
-    if (selectedDate) {
-      setSelectedDateTxs(getTransactionsByDate(selectedDate));
-    }
-  }, [year, month, selectedDate]);
+  const monthScope = `${year}-${String(month).padStart(2, "0")}`;
+  const monthTransactionsSubscription = useCollection<Transaction>(
+    buildFirestoreQueryKey(householdId, "transactions", monthScope),
+    () => {
+      if (!householdId) return null;
+      const from = `${monthScope}-01`;
+      const to = `${monthScope}-31`;
+      return householdCollection(householdId, "transactions")
+        .where("date", ">=", from)
+        .where("date", "<=", to)
+        .orderBy("date", "desc");
+    },
+    mapTransaction,
+  );
+
+  const subscribedTransactions = useMemo(
+    () =>
+      [...monthTransactionsSubscription.data].sort((a, b) => {
+        const dateCmp = b.date.localeCompare(a.date);
+        if (dateCmp !== 0) return dateCmp;
+        return b.createdAt.localeCompare(a.createdAt);
+      }),
+    [monthTransactionsSubscription.data],
+  );
+
+  const load = useCallback(async () => {
+    setTransactions(subscribedTransactions);
+    setMarkedDates(
+      Array.from(new Set(subscribedTransactions.map((tx) => tx.date))),
+    );
+    setSelectedDateTxs(
+      selectedDate
+        ? subscribedTransactions.filter((tx) => tx.date === selectedDate)
+        : [],
+    );
+  }, [selectedDate, subscribedTransactions]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   useFocusEffect(
     useCallback(() => {
-      load();
       return () => {
         setIsSelectionMode(false);
         setSelectedTxIds([]);
@@ -131,7 +164,7 @@ export default function HistoryScreen() {
         setShowUncopiedModal(false);
         setUncopiedRecords([]);
       };
-    }, [load]),
+    }, []),
   );
 
   const prevMonth = () => {
@@ -161,9 +194,8 @@ export default function HistoryScreen() {
         {
           text: "削除",
           style: "destructive",
-          onPress: () => {
-            deleteTransaction(tx.id);
-            load();
+          onPress: async () => {
+            await deleteTransaction(tx.id);
           },
         },
       ],
@@ -175,13 +207,13 @@ export default function HistoryScreen() {
     setSelectedTxIds([]);
   };
 
-  const toggleSelection = (id: number) => {
+  const toggleSelection = (id: string) => {
     setSelectedTxIds((prev) =>
       prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id],
     );
   };
 
-  const handleLongPressTransaction = (id: number) => {
+  const handleLongPressTransaction = (id: string) => {
     if (!isSelectionMode) {
       setIsSelectionMode(true);
       setSelectedTxIds([id]);
@@ -199,7 +231,7 @@ export default function HistoryScreen() {
     setShowBulkCopyModal(true);
   };
 
-  const handleExecuteBulkCopy = () => {
+  const handleExecuteBulkCopy = async () => {
     if (selectedTxIds.length === 0) {
       Alert.alert("未選択", "コピーする記録を選択してください");
       return;
@@ -209,81 +241,35 @@ export default function HistoryScreen() {
     let skipped = 0;
     const failed: UncopiedRecord[] = [];
     const sourceMap = new Map(transactions.map((tx) => [tx.id, tx]));
-    const incomeCategories = getCategories("income");
-    const expenseCategories = getCategories("expense");
-    const accounts = getAccounts();
 
-    const normalize = (value: string) => value.trim().toLowerCase();
+    const [incomeCategories, expenseCategories, accounts] = await Promise.all([
+      getCategories("income"),
+      getCategories("expense"),
+      getAccounts(),
+    ]);
+    const categories = [...incomeCategories, ...expenseCategories];
+    const breakdownPairs = await Promise.all(
+      categories.map(
+        async (category) =>
+          [category.id, await getBreakdownsByCategory(category.id)] as const,
+      ),
+    );
+    const breakdownsByCategory = new Map<string, Breakdown[]>(breakdownPairs);
 
-    const getCandidateCategories = (type: TransactionType) =>
-      type === "income" ? incomeCategories : expenseCategories;
-
-    const breakdownCache = new Map<number, Breakdown[]>();
-    const getBreakdownsCached = (categoryId: number) => {
-      const cached = breakdownCache.get(categoryId);
-      if (cached) return cached;
-      const list = getBreakdownsByCategory(categoryId);
-      breakdownCache.set(categoryId, list);
-      return list;
-    };
-
-    const resolveCategoryIdForCopy = (tx: Transaction): number | null => {
-      const candidates = getCandidateCategories(tx.type);
-      if (tx.categoryId && candidates.some((c) => c.id === tx.categoryId)) {
-        return tx.categoryId;
-      }
-      const normalizedName = normalize(tx.categoryName);
-      const matched = candidates.find(
-        (c) => normalize(c.name) === normalizedName,
-      );
-      return matched?.id ?? null;
-    };
-
-    const resolveBreakdownIdForCopy = (
-      tx: Transaction,
-      categoryId: number,
-    ): number | null => {
-      const breakdowns = getBreakdownsCached(categoryId);
-
-      if (tx.breakdownId && breakdowns.some((b) => b.id === tx.breakdownId)) {
-        return tx.breakdownId;
-      }
-
-      if (!tx.breakdownName.trim()) {
-        return null;
-      }
-
-      const normalizedName = normalize(tx.breakdownName);
-      const matched = breakdowns.find(
-        (b) => normalize(b.name) === normalizedName,
-      );
-      return matched?.id ?? null;
-    };
-
-    const resolveAccountIdForCopy = (tx: Transaction): number => {
-      if (accounts.some((a) => a.id === tx.accountId)) {
-        return tx.accountId;
-      }
-      const byName = accounts.find((a) => a.name === tx.accountName);
-      if (byName) {
-        return byName.id;
-      }
-      return (
-        accounts.find((a) => a.id === DEFAULT_ACCOUNT_ID)?.id ??
-        accounts[0]?.id ??
-        DEFAULT_ACCOUNT_ID
-      );
-    };
-
-    selectedTxIds.forEach((id) => {
+    for (const id of selectedTxIds) {
       const tx = sourceMap.get(id);
       if (!tx) {
         skipped += 1;
-        return;
+        continue;
       }
 
-      const targetCategoryId = resolveCategoryIdForCopy(tx);
-      if (!targetCategoryId) {
+      const target = resolveTransactionCopyTarget(tx, {
+        categories,
+        breakdownsByCategory,
+        accounts,
+        defaultAccountId: DEFAULT_ACCOUNT_ID,
+      });
+      if (!target) {
         skipped += 1;
         failed.push({
           id: tx.id,
@@ -293,27 +279,25 @@ export default function HistoryScreen() {
           categoryName: tx.categoryName,
           breakdownName: tx.breakdownName,
         });
-        return;
+        continue;
       }
 
-      const targetBreakdownId = resolveBreakdownIdForCopy(tx, targetCategoryId);
-
-      addTransaction(
+      await addTransaction(
         copyDate,
         tx.amount,
         tx.type,
-        targetCategoryId,
-        resolveAccountIdForCopy(tx),
+        target.categoryId,
+        target.accountId,
         tx.memo ?? "",
-        targetBreakdownId,
+        target.breakdownId,
       );
       copied += 1;
-    });
+    }
 
     setShowBulkCopyModal(false);
     setShowCopyDatePicker(false);
     exitSelectionMode();
-    load();
+    await load();
 
     setUncopiedRecords(failed);
     setShowUncopiedModal(failed.length > 0);
@@ -335,12 +319,12 @@ export default function HistoryScreen() {
     Alert.alert("一括コピー完了", `${copied}件コピーしました`);
   };
 
-  const syncEditCategories = (
+  const syncEditCategories = async (
     type: TransactionType,
-    preferredCategoryId?: number | null,
-    preferredBreakdownId?: number | null,
+    preferredCategoryId?: string | null,
+    preferredBreakdownId?: string | null,
   ) => {
-    const cats = getCategories(type);
+    const cats = await getCategories(type);
     setEditCategories(cats);
 
     const nextCategoryId =
@@ -352,7 +336,7 @@ export default function HistoryScreen() {
     setEditCategoryId(nextCategoryId);
 
     if (nextCategoryId) {
-      const bds = getBreakdownsByCategory(nextCategoryId);
+      const bds = await getBreakdownsByCategory(nextCategoryId);
       setEditBreakdowns(bds);
       const nextBreakdownId =
         preferredBreakdownId === null
@@ -368,8 +352,8 @@ export default function HistoryScreen() {
     }
   };
 
-  const openEditModal = (tx: Transaction) => {
-    const accounts = getAccounts();
+  const openEditModal = async (tx: Transaction) => {
+    const accounts = await getAccounts();
     setEditAccounts(accounts);
     setEditingTxId(tx.id);
     setEditDate(tx.date);
@@ -385,7 +369,7 @@ export default function HistoryScreen() {
     setEditMemo(tx.memo || "");
     setEditStoreId(tx.storeId);
     setEditStoreName(tx.storeName);
-    syncEditCategories(tx.type, tx.categoryId, tx.breakdownId);
+    await syncEditCategories(tx.type, tx.categoryId, tx.breakdownId);
     setShowEditModal(true);
   };
 
@@ -393,19 +377,19 @@ export default function HistoryScreen() {
     setEditType(nextType);
     setEditStoreId(null);
     setEditStoreName("");
-    syncEditCategories(nextType);
+    void syncEditCategories(nextType);
   };
 
-  const handleEditCategoryChange = (nextCategoryId: number) => {
+  const handleEditCategoryChange = async (nextCategoryId: string) => {
     setEditCategoryId(nextCategoryId);
-    const bds = getBreakdownsByCategory(nextCategoryId);
+    const bds = await getBreakdownsByCategory(nextCategoryId);
     setEditBreakdowns(bds);
     setEditBreakdownId(bds[0]?.id ?? null);
     setEditStoreId(null);
     setEditStoreName("");
   };
 
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     if (!editingTxId) return;
 
     const amount = parseInt(editAmountRaw.replace(/,/g, ""), 10);
@@ -422,7 +406,7 @@ export default function HistoryScreen() {
       return;
     }
 
-    updateTransaction(
+    await updateTransaction(
       editingTxId,
       editDate,
       amount,
@@ -436,7 +420,6 @@ export default function HistoryScreen() {
 
     setShowEditModal(false);
     setEditingTxId(null);
-    load();
   };
 
   const handleSelectDate = (dateStr: string) => {
@@ -445,7 +428,7 @@ export default function HistoryScreen() {
       setSelectedDateTxs([]);
     } else {
       setSelectedDate(dateStr);
-      setSelectedDateTxs(getTransactionsByDate(dateStr));
+      setSelectedDateTxs(transactions.filter((tx) => tx.date === dateStr));
     }
   };
 
