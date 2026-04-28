@@ -159,6 +159,68 @@ erDiagram
     accounts ||--o{ transactions : "accountId"
 ```
 
+### Firestore コレクション詳細
+
+```text
+/users/{userId}
+    - householdId: string
+    - displayName: string
+    - createdAt: Timestamp
+
+/households/{householdId}
+    - createdBy: string (userId)
+    - inviteCode: string (6文字、参加用)
+    - createdAt: Timestamp
+
+    /members/{userId}
+        - displayName: string
+        - joinedAt: Timestamp
+        - removedAt?: Timestamp
+
+    /joinRequests/{requestId} (参加承認制を実装する場合の予定コレクション。現行フローでは未使用)
+        - uid: string
+        - displayName: string
+        - status: pending | approved | rejected
+        - requestedAt, reviewedAt?: Timestamp
+
+    /categories/{categoryId}
+        - name, type, color, isDefault
+        - updatedAt: Timestamp
+
+    /breakdowns/{breakdownId}
+        - categoryId, name, isDefault
+        - updatedAt: Timestamp
+
+    /transactions/{transactionId}
+        - date, amount, type, accountId, categoryId, breakdownId, storeId
+        - accountNameSnapshot, categoryNameSnapshot, categoryColorSnapshot
+        - breakdownNameSnapshot, storeNameSnapshot
+        - memo, createdAt, updatedAt: Timestamp
+        - createdBy: string (userId)
+
+    /accounts/{accountId}
+        - name, balance, isDefault
+        - createdAt, updatedAt: Timestamp
+
+    /stores/{storeId}
+        - name, categoryId, lastUsedAt: Timestamp
+
+    /storeCategoryUsage/{storeId_categoryId}
+        - storeId, categoryId, lastUsedAt: Timestamp
+
+    /budgets/{categoryId}
+        - categoryId, amount
+        - updatedAt: Timestamp
+
+    /planLifeEvents/{eventId}
+        - eventType, paramsJson
+        - createdAt, updatedAt: Timestamp
+
+    /planProfile (単一ドキュメント: id="default")
+        - payloadJson
+        - updatedAt: Timestamp
+```
+
 ### デフォルトカテゴリ
 
 | 種別 | カテゴリ                                                                     |
@@ -244,7 +306,7 @@ sequenceDiagram
 - **同期方式**: Cloud Firestoreリアルタイムリスナー（`onSnapshot`）
 - **オフライン**: Firestore内蔵のオフライン永続化で自動対応
 - **認証**: Apple Sign-In + Firebase Auth
-- **世帯共有**: 招待コード方式、6桁コードで家族が同一世帯に参加
+- **世帯共有**: 招待コード方式、6文字コードで家族が同一世帯に参加
 - **競合解決**: `serverTimestamp()` による last-write-wins
 - **実装要件**: expo-dev-client + React Native Firebase + EAS Build
 
