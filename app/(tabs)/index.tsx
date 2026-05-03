@@ -1,20 +1,20 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect } from "expo-router";
 import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
 } from "react";
 import {
-  Alert,
-  Animated,
-  Easing,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Animated,
+    Easing,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 import TransactionEditor from "@/components/TransactionEditor";
@@ -22,19 +22,24 @@ import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import {
-  Account,
-  addTransaction,
-  Breakdown,
-  Category,
-  DEFAULT_ACCOUNT_ID,
-  getBudgetStatusForDate,
-  householdCollection,
-  mapAccount,
-  mapBreakdown,
-  mapCategory,
-  TransactionType,
+    Account,
+    addTransaction,
+    Breakdown,
+    Category,
+    DEFAULT_ACCOUNT_ID,
+    getBudgetStatusForDate,
+    householdCollection,
+    mapAccount,
+    mapBreakdown,
+    mapCategory,
+    reconcileAccountBalancesFromTransactions,
+    TransactionType,
 } from "@/lib/firestore";
 import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
+import { waitForPendingWrite } from "@/lib/pendingWrite";
+import { buildRecordCategoryOptions } from "@/lib/recordOptions";
+import { resolveTransactionAmountInput } from "@/lib/transactionAmountInput";
+import { isValidTransactionAmount } from "@/lib/transactionAmountValidation";
 
 function formatDate(date: Date): string {
   const y = date.getFullYear();
@@ -44,6 +49,25 @@ function formatDate(date: Date): string {
 }
 
 type ToastVariant = "info" | "warning" | "exceeded";
+const WRITE_ACK_TIMEOUT_MS = 900;
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: T,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise.catch(() => fallback),
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 export default function RecordScreen() {
   const colorScheme = useColorScheme() ?? "light";
@@ -85,15 +109,8 @@ export default function RecordScreen() {
     mapCategory,
   );
   const breakdownSubscription = useCollection<Breakdown>(
-    buildFirestoreQueryKey(householdId, "breakdowns", categoryId ?? "none"),
-    () =>
-      householdId && categoryId
-        ? householdCollection(householdId, "breakdowns").where(
-            "categoryId",
-            "==",
-            categoryId,
-          )
-        : null,
+    buildFirestoreQueryKey(householdId, "breakdowns", "all"),
+    () => (householdId ? householdCollection(householdId, "breakdowns") : null),
     mapBreakdown,
   );
 
@@ -106,11 +123,7 @@ export default function RecordScreen() {
     [accountSubscription.data],
   );
   const categories = useMemo(
-    () =>
-      [...categorySubscription.data].sort((a, b) => {
-        if (a.isDefault !== b.isDefault) return b.isDefault ? 1 : -1;
-        return a.name.localeCompare(b.name);
-      }),
+    () => buildRecordCategoryOptions(categorySubscription.data),
     [categorySubscription.data],
   );
   const breakdowns = useMemo(
@@ -120,6 +133,18 @@ export default function RecordScreen() {
         return a.name.localeCompare(b.name);
       }),
     [breakdownSubscription.data],
+  );
+  const selectedAccount = useMemo(
+    () => accounts.find((account) => account.id === accountId) ?? null,
+    [accountId, accounts],
+  );
+  const selectedCategory = useMemo(
+    () => categories.find((category) => category.id === categoryId) ?? null,
+    [categories, categoryId],
+  );
+  const selectedBreakdown = useMemo(
+    () => breakdowns.find((breakdown) => breakdown.id === breakdownId) ?? null,
+    [breakdownId, breakdowns],
   );
 
   useEffect(() => {
@@ -141,11 +166,15 @@ export default function RecordScreen() {
 
   useEffect(() => {
     setBreakdownId((prev) =>
-      prev && breakdowns.some((breakdown) => breakdown.id === prev)
+      prev &&
+      breakdowns.some(
+        (breakdown) =>
+          breakdown.id === prev && breakdown.categoryId === categoryId,
+      )
         ? prev
         : null,
     );
-  }, [breakdowns]);
+  }, [breakdowns, categoryId]);
 
   const resetForm = useCallback(() => {
     setAmountRaw("");
@@ -238,9 +267,9 @@ export default function RecordScreen() {
 
   const handleSave = async () => {
     if (saving) return;
-    const amount = parseInt(amountRaw.replace(/,/g, ""), 10);
-    if (!amountRaw || isNaN(amount) || amount < 0) {
-      Alert.alert("エラー", "金額を入力してください");
+    const amount = resolveTransactionAmountInput(amountRaw);
+    if (!isValidTransactionAmount(amount, memo)) {
+      Alert.alert("エラー", "金額を入力するか、メモを入力してください");
       return;
     }
     if (!categoryId) {
@@ -254,22 +283,39 @@ export default function RecordScreen() {
 
     setSaving(true);
     try {
-      await addTransaction(
-        date,
-        amount,
-        type,
-        categoryId,
-        accountId,
-        memo,
-        breakdownId,
-        storeId,
+      const writeResult = await waitForPendingWrite(
+        addTransaction(
+          date,
+          amount,
+          type,
+          categoryId,
+          accountId,
+          memo,
+          breakdownId,
+          storeId,
+          {
+            accountName: selectedAccount?.name,
+            categoryName: selectedCategory?.name,
+            categoryColor: selectedCategory?.color,
+            breakdownName: selectedBreakdown?.name,
+            storeName,
+          },
+        ),
+        WRITE_ACK_TIMEOUT_MS,
       );
 
       const afterStatus =
-        type === "expense"
-          ? await getBudgetStatusForDate(date, categoryId)
+        writeResult.status === "acknowledged" && type === "expense"
+          ? await withTimeout(
+              getBudgetStatusForDate(date, categoryId),
+              WRITE_ACK_TIMEOUT_MS,
+              null,
+            )
           : null;
-      let nextToastMessage = "保存しました";
+      let nextToastMessage =
+        writeResult.status === "queued"
+          ? "保存しました（同期待ち）"
+          : "保存しました";
       let nextToastVariant: ToastVariant = "info";
       if (
         afterStatus &&
@@ -345,6 +391,7 @@ export default function RecordScreen() {
         incomeColor={incomeColor}
         expenseColor={expenseColor}
         bottomInset={tabBarHeight}
+        onAccountPickerOpen={reconcileAccountBalancesFromTransactions}
         submitLabel={saving ? "保存中..." : "保存する"}
         onTypeChange={handleTypeChange}
         onAmountRawChange={setAmountRaw}

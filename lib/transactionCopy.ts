@@ -35,6 +35,24 @@ type ResolveContext = {
   defaultAccountId: string;
 };
 
+type MasterSelectionSource = {
+  type: TransactionType;
+  categoryId: string | null;
+  categoryName: string;
+  breakdownId: string | null;
+  breakdownName: string;
+};
+
+type MasterSelectionContext = {
+  categories: CopyCategory[];
+  breakdownsByCategory: Map<string, CopyBreakdown[]>;
+};
+
+export type MasterSelection = {
+  categoryId: string;
+  breakdownId: string | null;
+};
+
 export type CopyTarget = {
   categoryId: string;
   breakdownId: string | null;
@@ -45,10 +63,22 @@ function normalize(value: string): string {
   return value.trim().toLowerCase();
 }
 
-export function resolveTransactionCopyTarget(
-  source: CopySource,
-  context: ResolveContext,
-): CopyTarget | null {
+export function buildBreakdownsByCategory<T extends CopyBreakdown>(
+  breakdowns: T[],
+): Map<string, T[]> {
+  const result = new Map<string, T[]>();
+  for (const breakdown of breakdowns) {
+    const categoryBreakdowns = result.get(breakdown.categoryId) ?? [];
+    categoryBreakdowns.push(breakdown);
+    result.set(breakdown.categoryId, categoryBreakdowns);
+  }
+  return result;
+}
+
+export function resolveTransactionMasterSelection(
+  source: MasterSelectionSource,
+  context: MasterSelectionContext,
+): MasterSelection | null {
   const candidateCategories = context.categories.filter(
     (category) => category.type === source.type,
   );
@@ -83,6 +113,21 @@ export function resolveTransactionCopyTarget(
         )
       : undefined);
 
+  return {
+    categoryId: resolvedCategory.id,
+    breakdownId: resolvedBreakdown?.id ?? null,
+  };
+}
+
+export function resolveTransactionCopyTarget(
+  source: CopySource,
+  context: ResolveContext,
+): CopyTarget | null {
+  const selection = resolveTransactionMasterSelection(source, context);
+  if (!selection) {
+    return null;
+  }
+
   const account = context.accounts.find(
     (candidate) => candidate.id === source.accountId,
   );
@@ -95,8 +140,8 @@ export function resolveTransactionCopyTarget(
     ) ?? context.accounts[0];
 
   return {
-    categoryId: resolvedCategory.id,
-    breakdownId: resolvedBreakdown?.id ?? null,
+    categoryId: selection.categoryId,
+    breakdownId: selection.breakdownId,
     accountId:
       account?.id ??
       accountByName?.id ??

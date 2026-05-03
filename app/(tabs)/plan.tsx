@@ -1,62 +1,70 @@
 import DateTimePicker, {
-  type DateTimePickerEvent,
+    type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "expo-router";
 import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
 } from "react";
 import {
-  Alert,
-  Linking,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Linking,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import {
-  addLifeEvent,
-  deleteLifeEvent,
-  getLifeEvents,
-  getPlanProfile,
-  getYearMonthlyTotals,
-  savePlanProfile,
-  updateLifeEvent,
-  type PlanLifeEvent,
-} from "@/lib/firestore";
+    useCollection,
+    useDocument,
+    useHouseholdId,
+} from "@/hooks/useFirestore";
 import {
-  ADDITIONAL_CHILD_COST_DEFINITIONS,
-  ASSUMPTION_DEFINITIONS,
-  DEFAULT_ASSUMPTIONS,
-  EDUCATION_STAGE_DEFINITIONS,
-  getPublicDefaultsUpdatedLabel,
-  isPublicDefaultsUpdateDue,
-  PUBLIC_DEFAULTS_VERSION,
-  type AssumptionKey,
-  type EducationStageKey,
-  type SchoolKind,
+    addLifeEvent,
+    deleteLifeEvent,
+    getLifeEvents,
+    householdCollection,
+    mapPlanLifeEvent,
+    mapPlanProfile,
+    savePlanProfile,
+    updateLifeEvent,
+    type PlanLifeEvent,
+    type PlanProfile,
+} from "@/lib/firestore";
+import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
+import {
+    ADDITIONAL_CHILD_COST_DEFINITIONS,
+    ASSUMPTION_DEFINITIONS,
+    DEFAULT_ASSUMPTIONS,
+    EDUCATION_STAGE_DEFINITIONS,
+    getPublicDefaultsUpdatedLabel,
+    isPublicDefaultsUpdateDue,
+    PUBLIC_DEFAULTS_VERSION,
+    type AssumptionKey,
+    type EducationStageKey,
+    type SchoolKind,
 } from "@/lib/simulation/assumptions";
 import { runSimulation } from "@/lib/simulation/engine";
 import {
-  expandLifeEventsByYear,
-  type CarPurchaseEvent,
-  type ChildEducationEvent,
-  type HousingPurchaseEvent,
+    expandLifeEventsByYear,
+    type CarPurchaseEvent,
+    type ChildEducationEvent,
+    type HousingPurchaseEvent,
 } from "@/lib/simulation/events";
 import {
-  defaultPlanProfile,
-  normalizePlanProfilePayload,
-  type PlanProfilePayload,
+    defaultPlanProfile,
+    normalizePlanProfilePayload,
+    type PlanProfilePayload,
 } from "@/lib/simulation/planProfile";
 
 function formatAmount(value: number): string {
@@ -434,6 +442,7 @@ function isLegacyHousingParams(paramsJson: string): boolean {
 export default function PlanScreen() {
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
+  const householdId = useHouseholdId();
   const currentYear = new Date().getFullYear();
   const publicDefaultsUpdatedLabel = useMemo(
     () => getPublicDefaultsUpdatedLabel("ja-JP"),
@@ -446,8 +455,6 @@ export default function PlanScreen() {
   );
   const hasLoadedProfileRef = useRef(false);
   const isHydratingProfileRef = useRef(false);
-  const annualIncomeTouchedRef = useRef(false);
-  const annualExpenseTouchedRef = useRef(false);
 
   const [startYear, setStartYear] = useState(String(currentYear));
   const [years, setYears] = useState("20");
@@ -501,6 +508,28 @@ export default function PlanScreen() {
   const [isSuggestionPopupVisible, setIsSuggestionPopupVisible] =
     useState(false);
 
+  const planProfileSubscription = useDocument<PlanProfile>(
+    buildFirestoreQueryKey(householdId, "planProfile", "default"),
+    () =>
+      householdId
+        ? householdCollection(householdId, "planProfile").doc("default")
+        : null,
+    mapPlanProfile,
+  );
+  const lifeEventsSubscription = useCollection<PlanLifeEvent>(
+    buildFirestoreQueryKey(householdId, "planLifeEvents"),
+    () =>
+      householdId ? householdCollection(householdId, "planLifeEvents") : null,
+    mapPlanLifeEvent,
+  );
+  const lifeEventRows = useMemo(
+    () =>
+      [...lifeEventsSubscription.data].sort((a, b) =>
+        a.createdAt.localeCompare(b.createdAt),
+      ),
+    [lifeEventsSubscription.data],
+  );
+
   const resetEventInputForms = useCallback(() => {
     setEventChildId(null);
     setEventEducationType("");
@@ -523,54 +552,44 @@ export default function PlanScreen() {
     }, [resetEventInputForms]),
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      if (hasLoadedProfileRef.current) {
-        return;
-      }
+  useEffect(() => {
+    if (planProfileSubscription.loading) {
+      return;
+    }
 
-      hasLoadedProfileRef.current = true;
+    hasLoadedProfileRef.current = true;
+    const stored = planProfileSubscription.data;
+    if (!stored) {
+      return;
+    }
 
-      const loadProfile = async () => {
-        const stored = await getPlanProfile();
-        if (!stored) {
-          return;
-        }
-
-        try {
-          const parsed = JSON.parse(stored.payloadJson) as unknown;
-          const normalized = normalizePlanProfilePayload(
-            parsed,
-            defaultProfile,
-          );
-          isHydratingProfileRef.current = true;
-          setStartYear(normalized.startYear);
-          setYears(normalized.years);
-          setInitialBalance(normalized.initialBalance);
-          setAnnualIncome(normalized.annualIncome);
-          if (toInt(normalized.annualIncome, 0) !== 0)
-            annualIncomeTouchedRef.current = true;
-          setAnnualExpense(normalized.annualExpense);
-          if (toInt(normalized.annualExpense, 0) !== 0)
-            annualExpenseTouchedRef.current = true;
-          setChildren(normalized.children);
-          setAssumptionRates(normalized.assumptionRates);
-          setIsInputSectionOpen(normalized.isInputSectionOpen);
-          setIsEducationSectionOpen(normalized.isEducationSectionOpen);
-          setIsCarSectionOpen(normalized.isCarSectionOpen);
-          setIsHousingSectionOpen(normalized.isHousingSectionOpen);
-        } catch {
-          // noop
-        } finally {
-          setTimeout(() => {
-            isHydratingProfileRef.current = false;
-          }, 0);
-        }
-      };
-
-      void loadProfile();
-    }, [defaultProfile]),
-  );
+    try {
+      const parsed = JSON.parse(stored.payloadJson) as unknown;
+      const normalized = normalizePlanProfilePayload(parsed, defaultProfile);
+      isHydratingProfileRef.current = true;
+      setStartYear(normalized.startYear);
+      setYears(normalized.years);
+      setInitialBalance(normalized.initialBalance);
+      setAnnualIncome(normalized.annualIncome);
+      setAnnualExpense(normalized.annualExpense);
+      setChildren(normalized.children);
+      setAssumptionRates(normalized.assumptionRates);
+      setIsInputSectionOpen(normalized.isInputSectionOpen);
+      setIsEducationSectionOpen(normalized.isEducationSectionOpen);
+      setIsCarSectionOpen(normalized.isCarSectionOpen);
+      setIsHousingSectionOpen(normalized.isHousingSectionOpen);
+    } catch {
+      // noop
+    } finally {
+      setTimeout(() => {
+        isHydratingProfileRef.current = false;
+      }, 0);
+    }
+  }, [
+    defaultProfile,
+    planProfileSubscription.data,
+    planProfileSubscription.loading,
+  ]);
 
   useEffect(() => {
     if (!hasLoadedProfileRef.current || isHydratingProfileRef.current) {
@@ -606,8 +625,12 @@ export default function PlanScreen() {
     years,
   ]);
 
-  const loadLifeEvents = useCallback(async () => {
-    let rows = await getLifeEvents();
+  useEffect(() => {
+    if (lifeEventsSubscription.loading) {
+      return;
+    }
+
+    let rows = lifeEventRows;
     const legacyHousingIds = rows
       .filter(
         (row) =>
@@ -617,8 +640,8 @@ export default function PlanScreen() {
       .map((row) => row.id);
 
     if (legacyHousingIds.length > 0) {
-      await Promise.all(legacyHousingIds.map((id) => deleteLifeEvent(id)));
-      rows = await getLifeEvents();
+      void Promise.all(legacyHousingIds.map((id) => deleteLifeEvent(id)));
+      rows = rows.filter((row) => !legacyHousingIds.includes(row.id));
     }
 
     const legacyCarIds = rows
@@ -629,8 +652,8 @@ export default function PlanScreen() {
       .map((row) => row.id);
 
     if (legacyCarIds.length > 0) {
-      await Promise.all(legacyCarIds.map((id) => deleteLifeEvent(id)));
-      rows = await getLifeEvents();
+      void Promise.all(legacyCarIds.map((id) => deleteLifeEvent(id)));
+      rows = rows.filter((row) => !legacyCarIds.includes(row.id));
     }
 
     setEducationEvents(
@@ -648,35 +671,7 @@ export default function PlanScreen() {
         .map(parseHousingPurchaseEvent)
         .filter((e): e is HousingPurchaseEvent => e !== null),
     );
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      const loadTotalsAndEvents = async () => {
-        const totals = await getYearMonthlyTotals(currentYear);
-        const incomeTotal = totals.reduce((sum, row) => sum + row.income, 0);
-        const expenseTotal = totals.reduce((sum, row) => sum + row.expense, 0);
-        if (
-          incomeTotal > 0 &&
-          toInt(annualIncome, 0) === 0 &&
-          !annualIncomeTouchedRef.current
-        ) {
-          setAnnualIncome(String(Math.round(incomeTotal)));
-        }
-        if (
-          expenseTotal > 0 &&
-          toInt(annualExpense, 0) === 0 &&
-          !annualExpenseTouchedRef.current
-        ) {
-          setAnnualExpense(String(Math.round(expenseTotal)));
-        }
-
-        await loadLifeEvents();
-      };
-
-      void loadTotalsAndEvents();
-    }, [annualExpense, annualIncome, currentYear, loadLifeEvents]),
-  );
+  }, [lifeEventRows, lifeEventsSubscription.loading]);
 
   const educationSuggestions = useMemo(
     () => buildEducationSuggestions(children),
@@ -783,8 +778,6 @@ export default function PlanScreen() {
       }),
     );
 
-    await loadLifeEvents();
-
     setEventChildId(null);
     setEventEducationType("");
     setEventStartYear("");
@@ -815,8 +808,6 @@ export default function PlanScreen() {
         amount,
       }),
     );
-
-    await loadLifeEvents();
 
     setCarName("");
     setCarPurchaseYear("");
@@ -852,8 +843,6 @@ export default function PlanScreen() {
         amount,
       }),
     );
-
-    await loadLifeEvents();
 
     setHomeName("");
     setHomePurchaseYear("");
@@ -1085,7 +1074,6 @@ export default function PlanScreen() {
     }
 
     if (added > 0) {
-      await loadLifeEvents();
       setSuggestionSyncMessage(`${added}件の進学イベントを登録しました`);
       setIsSuggestionPopupVisible(false);
       return;
@@ -1217,10 +1205,9 @@ export default function PlanScreen() {
                   { color: colors.text, borderColor: colors.border },
                 ]}
                 value={annualIncome ? formatAmount(toInt(annualIncome, 0)) : ""}
-                onChangeText={(text) => {
-                  annualIncomeTouchedRef.current = true;
-                  setAnnualIncome(text.replace(/[^0-9]/g, ""));
-                }}
+                onChangeText={(text) =>
+                  setAnnualIncome(text.replace(/[^0-9]/g, ""))
+                }
                 keyboardType="number-pad"
               />
 
@@ -1235,10 +1222,9 @@ export default function PlanScreen() {
                 value={
                   annualExpense ? formatAmount(toInt(annualExpense, 0)) : ""
                 }
-                onChangeText={(text) => {
-                  annualExpenseTouchedRef.current = true;
-                  setAnnualExpense(text.replace(/[^0-9]/g, ""));
-                }}
+                onChangeText={(text) =>
+                  setAnnualExpense(text.replace(/[^0-9]/g, ""))
+                }
                 keyboardType="number-pad"
               />
 

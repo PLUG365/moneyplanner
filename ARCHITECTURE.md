@@ -114,9 +114,14 @@ erDiagram
         number amount
         string type "income / expense"
         string accountId FK
+        string accountNameSnapshot
         string categoryId FK
+        string categoryNameSnapshot
+        string categoryColorSnapshot
         string breakdownId FK
+        string breakdownNameSnapshot
         string storeId FK
+        string storeNameSnapshot
         string memo
         Timestamp createdAt
         Timestamp updatedAt
@@ -128,6 +133,7 @@ erDiagram
         string type "income / expense"
         string color
         boolean isDefault
+        number displayOrder
     }
 
     breakdowns {
@@ -141,6 +147,7 @@ erDiagram
         string id PK
         string name
         number balance
+        number initialBalance
         boolean isDefault
     }
 
@@ -184,7 +191,7 @@ erDiagram
         - requestedAt, reviewedAt?: Timestamp
 
     /categories/{categoryId}
-        - name, type, color, isDefault
+        - name, type, color, isDefault, displayOrder
         - updatedAt: Timestamp
 
     /breakdowns/{breakdownId}
@@ -199,7 +206,7 @@ erDiagram
         - createdBy: string (userId)
 
     /accounts/{accountId}
-        - name, balance, isDefault
+        - name, balance, initialBalance, isDefault
         - createdAt, updatedAt: Timestamp
 
     /stores/{storeId}

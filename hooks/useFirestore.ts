@@ -35,10 +35,18 @@ export function useCollection<T>(
   queryKey: string | null,
   queryFactory: () => FirebaseFirestoreTypes.Query | null,
   mapFn: (id: string, data: FirebaseFirestoreTypes.DocumentData) => T,
-): { data: T[]; loading: boolean; error: Error | null } {
+): {
+  data: T[];
+  loading: boolean;
+  error: Error | null;
+  fromCache: boolean;
+  hasPendingWrites: boolean;
+} {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [fromCache, setFromCache] = useState(false);
+  const [hasPendingWrites, setHasPendingWrites] = useState(false);
 
   const queryFactoryRef = useRef(queryFactory);
   const mapFnRef = useRef(mapFn);
@@ -49,6 +57,8 @@ export function useCollection<T>(
     if (queryKey === null) {
       setData([]);
       setLoading(false);
+      setFromCache(false);
+      setHasPendingWrites(false);
       return;
     }
 
@@ -57,12 +67,17 @@ export function useCollection<T>(
     if (!query) {
       setData([]);
       setLoading(false);
+      setFromCache(false);
+      setHasPendingWrites(false);
       return;
     }
 
     const unsub = query.onSnapshot(
+      { includeMetadataChanges: true },
       (snap) => {
         setData(snap.docs.map((doc) => mapFnRef.current(doc.id, doc.data())));
+        setFromCache(snap.metadata.fromCache);
+        setHasPendingWrites(snap.metadata.hasPendingWrites);
         setLoading(false);
         setError(null);
       },
@@ -75,7 +90,7 @@ export function useCollection<T>(
     return () => unsub();
   }, [queryKey]);
 
-  return { data, loading, error };
+  return { data, loading, error, fromCache, hasPendingWrites };
 }
 
 /**

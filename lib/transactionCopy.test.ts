@@ -1,7 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveTransactionCopyTarget } from "./transactionCopy";
+import {
+    buildBreakdownsByCategory,
+    resolveTransactionCopyTarget,
+    resolveTransactionMasterSelection,
+} from "./transactionCopy";
+
+test("buildBreakdownsByCategory groups subscribed breakdowns by category", () => {
+  const grouped = buildBreakdownsByCategory([
+    { id: "bd-food-1", categoryId: "food", name: "外食" },
+    { id: "bd-daily-1", categoryId: "daily", name: "洗剤" },
+    { id: "bd-food-2", categoryId: "food", name: "自炊" },
+  ]);
+
+  assert.deepEqual(Array.from(grouped.entries()), [
+    [
+      "food",
+      [
+        { id: "bd-food-1", categoryId: "food", name: "外食" },
+        { id: "bd-food-2", categoryId: "food", name: "自炊" },
+      ],
+    ],
+    ["daily", [{ id: "bd-daily-1", categoryId: "daily", name: "洗剤" }]],
+  ]);
+});
 
 test("resolveTransactionCopyTarget keeps valid current ids", () => {
   const result = resolveTransactionCopyTarget(
@@ -91,4 +114,62 @@ test("resolveTransactionCopyTarget returns null when category cannot be resolved
   );
 
   assert.equal(result, null);
+});
+
+test("resolveTransactionMasterSelection falls back to snapshot category and breakdown names", () => {
+  const result = resolveTransactionMasterSelection(
+    {
+      type: "expense",
+      categoryId: "old-cat",
+      categoryName: "食費",
+      breakdownId: "old-bd",
+      breakdownName: "外食",
+    },
+    {
+      categories: [
+        { id: "cat-income", name: "食費", type: "income" },
+        { id: "cat-food", name: "食費", type: "expense" },
+      ],
+      breakdownsByCategory: new Map([
+        [
+          "cat-food",
+          [
+            { id: "bd-home", categoryId: "cat-food", name: "自炊" },
+            { id: "bd-eat-out", categoryId: "cat-food", name: "外食" },
+          ],
+        ],
+      ]),
+    },
+  );
+
+  assert.deepEqual(result, {
+    categoryId: "cat-food",
+    breakdownId: "bd-eat-out",
+  });
+});
+
+test("resolveTransactionMasterSelection keeps empty breakdown when snapshot has none", () => {
+  const result = resolveTransactionMasterSelection(
+    {
+      type: "expense",
+      categoryId: "old-cat",
+      categoryName: "交通費",
+      breakdownId: "old-bd",
+      breakdownName: "",
+    },
+    {
+      categories: [{ id: "cat-transport", name: "交通費", type: "expense" }],
+      breakdownsByCategory: new Map([
+        [
+          "cat-transport",
+          [{ id: "bd-train", categoryId: "cat-transport", name: "電車" }],
+        ],
+      ]),
+    },
+  );
+
+  assert.deepEqual(result, {
+    categoryId: "cat-transport",
+    breakdownId: null,
+  });
 });

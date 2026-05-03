@@ -30,6 +30,16 @@ function isInMonth(date: string, year: number, month: number): boolean {
   return date.startsWith(`${year}-${String(month).padStart(2, "0")}-`);
 }
 
+function buildCategorySummaryKey(tx: SummaryTransaction): string {
+  if (tx.categoryId) return tx.categoryId;
+  const snapshotName = tx.categoryName?.trim();
+  return snapshotName ? `snapshot:${tx.type}:${snapshotName}` : "";
+}
+
+function normalize(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 export function buildMonthCategorySummaryFromTransactions(
   transactions: SummaryTransaction[],
   year: number,
@@ -39,7 +49,7 @@ export function buildMonthCategorySummaryFromTransactions(
 
   for (const tx of transactions) {
     if (!isInMonth(tx.date, year, month)) continue;
-    const categoryId = tx.categoryId || "";
+    const categoryId = buildCategorySummaryKey(tx);
     const key = `${tx.type}_${categoryId}`;
     const existing = summaryMap.get(key);
     if (existing) {
@@ -70,12 +80,14 @@ export function buildBudgetStatusesFromData(input: {
   categories: CategorySource[];
 }): BudgetStatus[] {
   const categoryMap = new Map<string, { name: string; color: string }>();
+  const expenseCategoryIdByName = new Map<string, string>();
   for (const category of input.categories) {
     if (category.type === "expense") {
       categoryMap.set(category.id, {
         name: category.name,
         color: category.color,
       });
+      expenseCategoryIdByName.set(normalize(category.name), category.id);
     }
   }
 
@@ -83,7 +95,10 @@ export function buildBudgetStatusesFromData(input: {
   for (const tx of input.transactions) {
     if (!isInMonth(tx.date, input.year, input.month)) continue;
     if (tx.type !== "expense") continue;
-    const categoryId = tx.categoryId || "";
+    const categoryId =
+      tx.categoryId ||
+      expenseCategoryIdByName.get(normalize(tx.categoryName ?? "")) ||
+      "";
     spendingMap.set(categoryId, (spendingMap.get(categoryId) ?? 0) + tx.amount);
   }
 

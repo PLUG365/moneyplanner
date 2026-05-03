@@ -1,91 +1,105 @@
 import { router, useFocusEffect, type Href } from "expo-router";
 import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
 } from "react";
 import {
-  Alert,
-  Animated,
-  InputAccessoryView,
-  Keyboard,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Animated,
+    InputAccessoryView,
+    Keyboard,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import MoneyInputModal from "@/components/MoneyInputModal";
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
+import { useCollection } from "@/hooks/useFirestore";
 import {
-  ACCOUNT_DELETION_CONFIRMATION_TEXT,
-  isAccountDeletionConfirmationValid,
+    ACCOUNT_DELETION_CONFIRMATION_TEXT,
+    isAccountDeletionConfirmationValid,
 } from "@/lib/accountDeletion";
 import {
-  deleteCurrentUserAccount,
-  getCurrentUser,
-  reauthenticateCurrentUserWithApple,
-  signOut,
+    deleteCurrentUserAccount,
+    getCurrentUser,
+    reauthenticateCurrentUserWithApple,
+    signOut,
 } from "@/lib/auth";
+import {
+    moveCategoryInDisplayOrder,
+    type CategoryMoveDirection,
+} from "@/lib/categoryOrdering";
 import { exportCSV } from "@/lib/csvExport";
 import {
-  Account,
-  addAccount,
-  addBreakdown,
-  addCategory,
-  Breakdown,
-  Category,
-  DEFAULT_ACCOUNT_ID,
-  deleteAccountAndMoveToDefault,
-  deleteBreakdown,
-  deleteCategory,
-  deleteHouseholdDataAndCurrentUserProfile,
-  deleteMonthlyBudget,
-  getAccounts,
-  getBreakdownsByCategory,
-  getCategories,
-  getMonthlyBudgets,
-  resetCategoryAndBreakdownsToDefault,
-  resetFirestoreForDevelopment,
-  setMonthlyBudget,
-  TransactionType,
-  updateAccountBalance,
-  updateAccountName,
-  updateBreakdown,
-  updateCategory,
+    Account,
+    addAccount,
+    addBreakdown,
+    addCategory,
+    Breakdown,
+    Category,
+    DEFAULT_ACCOUNT_ID,
+    deleteAccountAndMoveToDefault,
+    deleteBreakdown,
+    deleteCategory,
+    deleteHouseholdDataAndCurrentUserProfile,
+    deleteMonthlyBudget,
+    getAccounts,
+    getBreakdownsByCategory,
+    getCategories,
+    getMonthlyBudgets,
+    householdCollection,
+    mapAccount,
+    reconcileAccountBalancesFromTransactions,
+    resetCategoryAndBreakdownsToDefault,
+    resetFirestoreForDevelopment,
+    setMonthlyBudget,
+    TransactionType,
+    updateAccountBalance,
+    updateAccountName,
+    updateBreakdown,
+    updateCategory,
+    updateCategoryDisplayOrders,
 } from "@/lib/firestore";
+import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
 import {
-  getHouseholdId,
-  getHouseholdMembers,
-  getInviteCode,
-  regenerateInviteCode,
-  removeHouseholdMember,
-  type HouseholdMember,
+    getHouseholdId,
+    getHouseholdMembers,
+    getInviteCode,
+    regenerateInviteCode,
+    removeHouseholdMember,
+    type HouseholdMember,
 } from "@/lib/household";
 import { buildBudgetInputMap } from "@/lib/settingsBudgetEditor";
 import { getMemberRemovalActionLabel } from "@/lib/settingsHouseholdMembers";
 import {
-  formatYenDisplay,
-  getSettingsKeyboardAccessoryPreview,
-  type SettingsKeyboardField,
+    formatAccountBalanceInputDisplay,
+    formatYenDisplay,
+    getSettingsKeyboardAccessoryPreview,
+    resolveAccountBalanceInput,
+    type SettingsKeyboardField,
 } from "@/lib/settingsKeyboardAccessory";
 import {
-  buildAccountEditorDraft,
-  buildBreakdownEditorDraft,
-  buildCategoryEditorDraft,
-  buildEditorMeta,
-  buildEmptyAccountEditorDraft,
-  buildEmptyBreakdownEditorDraft,
-  buildEmptyCategoryEditorDraft,
-  type SettingsManagerTab,
+    buildAccountEditorDraft,
+    buildBreakdownEditorDraft,
+    buildCategoryEditorDraft,
+    buildEditorMeta,
+    buildEmptyAccountEditorDraft,
+    buildEmptyBreakdownEditorDraft,
+    buildEmptyCategoryEditorDraft,
+    type SettingsManagerTab,
 } from "@/lib/settingsManagerEditor";
+import { getSettingsWriteAvailability } from "@/lib/settingsWriteAvailability";
 
 const PRESET_COLORS = [
   "#1565C0",
@@ -106,6 +120,8 @@ const PRESET_COLORS = [
 ];
 
 const KEYBOARD_ACCESSORY_VIEW_ID = "settings-keyboard-accessory";
+
+type NumericInputTarget = "category-budget" | "account-balance";
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme() ?? "light";
@@ -160,6 +176,8 @@ export default function SettingsScreen() {
   const [accountBalanceInput, setAccountBalanceInput] = useState("");
   const [activeKeyboardField, setActiveKeyboardField] =
     useState<SettingsKeyboardField>(null);
+  const [numericInputTarget, setNumericInputTarget] =
+    useState<NumericInputTarget | null>(null);
 
   const [exporting, setExporting] = useState(false);
   const [budgetInputs, setBudgetInputs] = useState<Record<string, string>>({});
@@ -172,6 +190,42 @@ export default function SettingsScreen() {
   const [regeneratingInviteCode, setRegeneratingInviteCode] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const currentUser = getCurrentUser();
+
+  const settingsConnectivitySubscription = useCollection<Account>(
+    buildFirestoreQueryKey(householdId, "accounts", "settings-connectivity"),
+    () => (householdId ? householdCollection(householdId, "accounts") : null),
+    mapAccount,
+  );
+  const settingsWriteAvailability = getSettingsWriteAvailability({
+    settingsDataFromCache:
+      !settingsConnectivitySubscription.loading &&
+      settingsConnectivitySubscription.fromCache,
+  });
+  const isSettingsWriteDisabled = !settingsWriteAvailability.canWrite;
+
+  useEffect(() => {
+    if (isSettingsWriteDisabled && numericInputTarget !== null) {
+      setNumericInputTarget(null);
+    }
+    if (isSettingsWriteDisabled && showEditorModal) {
+      setShowEditorModal(false);
+      setActiveKeyboardField(null);
+      Keyboard.dismiss();
+    }
+  }, [isSettingsWriteDisabled, numericInputTarget, showEditorModal]);
+
+  const showSettingsOfflineAlert = () => {
+    Alert.alert(
+      "オンライン接続が必要です",
+      "設定変更は他メンバーの操作と競合しやすいため、オフライン中は操作できません。オンライン復帰後に更新してください。",
+    );
+  };
+
+  const guardSettingsWrite = (): boolean => {
+    if (!isSettingsWriteDisabled) return true;
+    showSettingsOfflineAlert();
+    return false;
+  };
 
   const load = useCallback(async () => {
     const [incomeCategories, expenseCategories, loadedAccounts] =
@@ -252,6 +306,29 @@ export default function SettingsScreen() {
     [categories, selectedCategoryId],
   );
 
+  const handleMoveCategory = async (
+    categoryId: string,
+    direction: CategoryMoveDirection,
+  ) => {
+    if (!guardSettingsWrite()) return;
+
+    const movedVisibleCategories = moveCategoryInDisplayOrder(
+      visibleCategories,
+      categoryId,
+      direction,
+    );
+    const movedQueue = [...movedVisibleCategories];
+    const nextCategories = categories.map((category) =>
+      category.type === activeType
+        ? (movedQueue.shift() ?? category)
+        : category,
+    );
+
+    setCategories(nextCategories);
+    await updateCategoryDisplayOrders(movedVisibleCategories);
+    await load();
+  };
+
   const isEditingCurrentTab =
     (managerTab === "category" && categoryEditingId !== null) ||
     (managerTab === "breakdown" && breakdownEditingId !== null) ||
@@ -322,15 +399,17 @@ export default function SettingsScreen() {
   };
 
   const handleSaveAccount = async () => {
+    if (!guardSettingsWrite()) return;
+
     const trimmed = accountNameInput.trim();
     if (!trimmed) {
       Alert.alert("エラー", "口座名を入力してください");
       return;
     }
 
-    const balance = parseInt(accountBalanceInput || "0", 10);
-    if (isNaN(balance)) {
-      Alert.alert("エラー", "残高を入力してください");
+    const balance = resolveAccountBalanceInput(accountBalanceInput);
+    if (balance === null) {
+      Alert.alert("エラー", "残高の入力内容を確認してください");
       return;
     }
 
@@ -347,6 +426,8 @@ export default function SettingsScreen() {
   };
 
   const handleEditAccount = (account: Account) => {
+    if (!guardSettingsWrite()) return;
+
     setAccountEditingId(account.id);
     const draft = buildAccountEditorDraft(account);
     setAccountNameInput(draft.name);
@@ -356,6 +437,8 @@ export default function SettingsScreen() {
   };
 
   const handleDeleteAccount = (account: Account) => {
+    if (!guardSettingsWrite()) return;
+
     if (account.id === DEFAULT_ACCOUNT_ID || account.isDefault) {
       Alert.alert("削除不可", "既定口座は削除できません");
       return;
@@ -379,7 +462,20 @@ export default function SettingsScreen() {
     );
   };
 
+  const numericModalValue =
+    numericInputTarget === "category-budget"
+      ? categoryBudgetInput
+      : numericInputTarget === "account-balance"
+        ? accountBalanceInput
+        : "";
+  const handleNumericModalChange = (value: string) => {
+    if (numericInputTarget === "category-budget") setCategoryBudgetInput(value);
+    if (numericInputTarget === "account-balance") setAccountBalanceInput(value);
+  };
+
   const handleSaveCategory = async () => {
+    if (!guardSettingsWrite()) return;
+
     const trimmed = categoryNameInput.trim();
     if (!trimmed) {
       Alert.alert("エラー", "カテゴリ名を入力してください");
@@ -417,6 +513,8 @@ export default function SettingsScreen() {
   };
 
   const handleEditCategory = (cat: Category) => {
+    if (!guardSettingsWrite()) return;
+
     setCategoryEditingId(cat.id);
     const draft = buildCategoryEditorDraft(cat);
     setCategoryNameInput(draft.name);
@@ -427,24 +525,44 @@ export default function SettingsScreen() {
   };
 
   const handleDeleteCategory = (cat: Category) => {
+    if (!guardSettingsWrite()) return;
+
     Alert.alert("削除確認", `「${cat.name}」を削除しますか？`, [
       { text: "キャンセル", style: "cancel" },
       {
         text: "削除",
         style: "destructive",
-        onPress: async () => {
-          await deleteCategory(cat.id);
-          await load();
-          await loadBudgetEditor();
+        onPress: () => {
+          setCategories((prev) => prev.filter((item) => item.id !== cat.id));
+          setBreakdowns((prev) =>
+            prev.filter((item) => item.categoryId !== cat.id),
+          );
+          setBudgetInputs((prev) => {
+            const next = { ...prev };
+            delete next[cat.id];
+            return next;
+          });
           if (selectedCategoryId === cat.id) {
             setSelectedCategoryId(null);
           }
+          void deleteCategory(cat.id)
+            .then(async () => {
+              await load();
+              await loadBudgetEditor();
+            })
+            .catch(() => {
+              Alert.alert("エラー", "カテゴリ削除に失敗しました");
+              void load();
+              void loadBudgetEditor();
+            });
         },
       },
     ]);
   };
 
   const handleSaveBreakdown = async () => {
+    if (!guardSettingsWrite()) return;
+
     const trimmed = breakdownNameInput.trim();
     if (!trimmed) {
       Alert.alert("エラー", "内訳名を入力してください");
@@ -467,6 +585,8 @@ export default function SettingsScreen() {
   };
 
   const handleEditBreakdown = (item: Breakdown) => {
+    if (!guardSettingsWrite()) return;
+
     setBreakdownEditingId(item.id);
     const draft = buildBreakdownEditorDraft(item);
     setBreakdownNameInput(draft.name);
@@ -475,23 +595,32 @@ export default function SettingsScreen() {
   };
 
   const handleDeleteBreakdown = (item: Breakdown) => {
+    if (!guardSettingsWrite()) return;
+
     Alert.alert("削除確認", `「${item.name}」を削除しますか？`, [
       { text: "キャンセル", style: "cancel" },
       {
         text: "削除",
         style: "destructive",
-        onPress: async () => {
-          await deleteBreakdown(item.id);
-          await reloadBreakdowns(selectedCategoryId);
+        onPress: () => {
+          setBreakdowns((prev) => prev.filter((row) => row.id !== item.id));
+          void deleteBreakdown(item.id)
+            .then(() => reloadBreakdowns(selectedCategoryId))
+            .catch(() => {
+              Alert.alert("エラー", "内訳削除に失敗しました");
+              void reloadBreakdowns(selectedCategoryId);
+            });
         },
       },
     ]);
   };
 
   const handleResetMasterToDefault = () => {
+    if (!guardSettingsWrite()) return;
+
     Alert.alert(
       "カテゴリ/内訳をデフォルトに戻す",
-      "カテゴリと内訳のマスタを初期状態に戻します。記録済みデータは削除されません。実行しますか？",
+      "カテゴリと内訳のマスタを初期状態に戻します。記録済みデータは削除されず、同名カテゴリの予算とお店候補は可能な範囲で引き継がれます。独自カテゴリや独自内訳は削除されます。実行しますか？",
       [
         { text: "キャンセル", style: "cancel" },
         {
@@ -515,6 +644,8 @@ export default function SettingsScreen() {
   };
 
   const handleOpenManager = () => {
+    if (!guardSettingsWrite()) return;
+
     resetCategoryForm();
     resetBreakdownForm();
     resetAccountForm();
@@ -525,7 +656,12 @@ export default function SettingsScreen() {
     setShowManagerModal(true);
   };
 
-  const handleOpenAccountManager = () => {
+  const handleOpenAccountManager = async () => {
+    if (!guardSettingsWrite()) return;
+
+    await reconcileAccountBalancesFromTransactions();
+    await load();
+
     resetCategoryForm();
     resetBreakdownForm();
     resetAccountForm();
@@ -544,6 +680,8 @@ export default function SettingsScreen() {
   };
 
   const handleOpenCategoryCreate = () => {
+    if (!guardSettingsWrite()) return;
+
     resetCategoryForm();
     const draft = buildEmptyCategoryEditorDraft(
       activeType,
@@ -556,6 +694,8 @@ export default function SettingsScreen() {
   };
 
   const handleOpenBreakdownCreate = () => {
+    if (!guardSettingsWrite()) return;
+
     if (!selectedCategoryId) {
       Alert.alert("エラー", "カテゴリを選択してください");
       return;
@@ -568,6 +708,8 @@ export default function SettingsScreen() {
   };
 
   const handleOpenAccountCreate = () => {
+    if (!guardSettingsWrite()) return;
+
     resetAccountForm();
     const draft = buildEmptyAccountEditorDraft();
     setAccountNameInput(draft.name);
@@ -611,6 +753,8 @@ export default function SettingsScreen() {
   };
 
   const executeAccountDeletion = async (confirmationInput?: string) => {
+    if (!guardSettingsWrite()) return;
+
     if (!isAccountDeletionConfirmationValid(confirmationInput ?? "")) {
       Alert.alert(
         "確認できません",
@@ -638,6 +782,8 @@ export default function SettingsScreen() {
   };
 
   const handleDeleteAccountAndAllData = () => {
+    if (!guardSettingsWrite()) return;
+
     if (!currentUser || !householdId) {
       Alert.alert("エラー", "ログインまたは世帯情報を確認できません");
       return;
@@ -672,6 +818,8 @@ export default function SettingsScreen() {
   };
 
   const handleRemoveMember = (member: HouseholdMember) => {
+    if (!guardSettingsWrite()) return;
+
     if (!householdId) return;
 
     const isSelf = currentUser?.uid === member.uid;
@@ -706,6 +854,8 @@ export default function SettingsScreen() {
   };
 
   const handleRegenerateInviteCode = () => {
+    if (!guardSettingsWrite()) return;
+
     if (!householdId) {
       Alert.alert("エラー", "世帯情報を確認できません");
       return;
@@ -742,6 +892,8 @@ export default function SettingsScreen() {
   };
 
   const handleResetDatabase = () => {
+    if (!guardSettingsWrite()) return;
+
     Alert.alert(
       "開発用DBリセット",
       "カテゴリ・内訳・記録データをすべて初期化します。実行しますか？",
@@ -797,12 +949,25 @@ export default function SettingsScreen() {
         </TouchableOpacity>
 
         {__DEV__ && (
-          <TouchableOpacity
-            style={[styles.actionButton, styles.devResetButton]}
-            onPress={handleResetDatabase}
-          >
-            <Text style={styles.actionButtonText}>開発用: DBをリセット</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.devPreviewButton]}
+              onPress={() => router.push("/dev-ui-preview" as Href)}
+            >
+              <Text style={styles.actionButtonText}>開発用: UIプレビュー</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                styles.devResetButton,
+                isSettingsWriteDisabled && styles.disabledControl,
+              ]}
+              onPress={handleResetDatabase}
+              disabled={isSettingsWriteDisabled}
+            >
+              <Text style={styles.actionButtonText}>開発用: DBをリセット</Text>
+            </TouchableOpacity>
+          </>
         )}
       </View>
 
@@ -815,18 +980,33 @@ export default function SettingsScreen() {
         <Text style={[styles.sectionTitle, { color: colors.text }]}>
           カテゴリ/内訳
         </Text>
+        {isSettingsWriteDisabled ? (
+          <Text style={[styles.offlineNoticeText, { color: colors.subText }]}>
+            オフライン中は設定変更できません
+          </Text>
+        ) : null}
         <Text style={[styles.sectionDescription, { color: colors.subText }]}>
           カテゴリ・内訳の追加・編集・削除ができます。
         </Text>
         <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: colors.tint }]}
+          style={[
+            styles.actionButton,
+            { backgroundColor: colors.tint },
+            isSettingsWriteDisabled && styles.disabledControl,
+          ]}
           onPress={handleOpenManager}
+          disabled={isSettingsWriteDisabled}
         >
           <Text style={styles.actionButtonText}>管理画面を開く</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.actionButton, styles.resetDefaultButton]}
+          style={[
+            styles.actionButton,
+            styles.resetDefaultButton,
+            isSettingsWriteDisabled && styles.disabledControl,
+          ]}
           onPress={handleResetMasterToDefault}
+          disabled={isSettingsWriteDisabled}
         >
           <Text style={styles.actionButtonText}>
             カテゴリ/内訳をデフォルトに戻す
@@ -853,9 +1033,18 @@ export default function SettingsScreen() {
           </Text>
         </View>
         <TouchableOpacity
-          style={[styles.actionButton, styles.inviteCodeButton]}
+          style={[
+            styles.actionButton,
+            styles.inviteCodeButton,
+            isSettingsWriteDisabled && styles.disabledControl,
+          ]}
           onPress={handleRegenerateInviteCode}
-          disabled={householdLoading || regeneratingInviteCode || !householdId}
+          disabled={
+            isSettingsWriteDisabled ||
+            householdLoading ||
+            regeneratingInviteCode ||
+            !householdId
+          }
         >
           <Text style={styles.actionButtonText}>
             {regeneratingInviteCode ? "再発行中..." : "招待コードを再発行"}
@@ -886,8 +1075,16 @@ export default function SettingsScreen() {
                   {member.uid}
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => handleRemoveMember(member)}>
-                <Text style={styles.itemDelete}>
+              <TouchableOpacity
+                onPress={() => handleRemoveMember(member)}
+                disabled={isSettingsWriteDisabled}
+              >
+                <Text
+                  style={[
+                    styles.itemDelete,
+                    isSettingsWriteDisabled && { color: colors.subText },
+                  ]}
+                >
                   {getMemberRemovalActionLabel(currentUser?.uid, member.uid)}
                 </Text>
               </TouchableOpacity>
@@ -912,9 +1109,13 @@ export default function SettingsScreen() {
           <Text style={styles.actionButtonText}>ログアウト</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.actionButton, styles.accountDeleteButton]}
+          style={[
+            styles.actionButton,
+            styles.accountDeleteButton,
+            isSettingsWriteDisabled && styles.disabledControl,
+          ]}
           onPress={handleDeleteAccountAndAllData}
-          disabled={deletingAccount}
+          disabled={isSettingsWriteDisabled || deletingAccount}
         >
           <Text style={styles.actionButtonText}>
             {deletingAccount ? "削除中..." : "認証解除と全データ削除"}
@@ -935,8 +1136,13 @@ export default function SettingsScreen() {
           口座の追加・編集・削除ができます。
         </Text>
         <TouchableOpacity
-          style={[styles.actionButton, styles.accountManagerButton]}
+          style={[
+            styles.actionButton,
+            styles.accountManagerButton,
+            isSettingsWriteDisabled && styles.disabledControl,
+          ]}
           onPress={handleOpenAccountManager}
+          disabled={isSettingsWriteDisabled}
         >
           <Text style={styles.actionButtonText}>口座管理を開く</Text>
         </TouchableOpacity>
@@ -1057,8 +1263,10 @@ export default function SettingsScreen() {
                     style={[
                       styles.secondaryActionButton,
                       { borderColor: colors.tint },
+                      isSettingsWriteDisabled && styles.disabledControl,
                     ]}
                     onPress={handleOpenCategoryCreate}
+                    disabled={isSettingsWriteDisabled}
                   >
                     <Text
                       style={[
@@ -1072,11 +1280,56 @@ export default function SettingsScreen() {
                   <Text style={[styles.groupLabel, { color: colors.subText }]}>
                     カテゴリ一覧
                   </Text>
-                  {visibleCategories.map((cat) => (
+                  {visibleCategories.map((cat, categoryIndex) => (
                     <View
                       key={cat.id}
                       style={[styles.itemRow, { borderColor: colors.border }]}
                     >
+                      <View style={styles.reorderButtons}>
+                        <TouchableOpacity
+                          style={[
+                            styles.reorderButton,
+                            { borderColor: colors.border },
+                            (categoryIndex === 0 ||
+                              isSettingsWriteDisabled) && { opacity: 0.35 },
+                          ]}
+                          disabled={
+                            categoryIndex === 0 || isSettingsWriteDisabled
+                          }
+                          onPress={() => handleMoveCategory(cat.id, "up")}
+                        >
+                          <Text
+                            style={[
+                              styles.reorderButtonText,
+                              { color: colors.tint },
+                            ]}
+                          >
+                            ↑
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[
+                            styles.reorderButton,
+                            { borderColor: colors.border },
+                            (categoryIndex === visibleCategories.length - 1 ||
+                              isSettingsWriteDisabled) && { opacity: 0.35 },
+                          ]}
+                          disabled={
+                            categoryIndex === visibleCategories.length - 1 ||
+                            isSettingsWriteDisabled
+                          }
+                          onPress={() => handleMoveCategory(cat.id, "down")}
+                        >
+                          <Text
+                            style={[
+                              styles.reorderButtonText,
+                              { color: colors.tint },
+                            ]}
+                          >
+                            ↓
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                       <View
                         style={[
                           styles.categoryDot,
@@ -1098,17 +1351,37 @@ export default function SettingsScreen() {
                             : "未設定"}
                         </Text>
                       ) : null}
-                      <TouchableOpacity onPress={() => handleEditCategory(cat)}>
+                      <TouchableOpacity
+                        onPress={() => handleEditCategory(cat)}
+                        disabled={isSettingsWriteDisabled}
+                      >
                         <Text
-                          style={[styles.itemAction, { color: colors.tint }]}
+                          style={[
+                            styles.itemAction,
+                            {
+                              color: isSettingsWriteDisabled
+                                ? colors.subText
+                                : colors.tint,
+                            },
+                          ]}
                         >
                           編集
                         </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => handleDeleteCategory(cat)}
+                        disabled={isSettingsWriteDisabled}
                       >
-                        <Text style={[styles.itemDelete]}>削除</Text>
+                        <Text
+                          style={[
+                            styles.itemDelete,
+                            isSettingsWriteDisabled && {
+                              color: colors.subText,
+                            },
+                          ]}
+                        >
+                          削除
+                        </Text>
                       </TouchableOpacity>
                     </View>
                   ))}
@@ -1122,8 +1395,10 @@ export default function SettingsScreen() {
                     style={[
                       styles.secondaryActionButton,
                       { borderColor: colors.tint },
+                      isSettingsWriteDisabled && styles.disabledControl,
                     ]}
                     onPress={handleOpenBreakdownCreate}
+                    disabled={isSettingsWriteDisabled}
                   >
                     <Text
                       style={[
@@ -1187,11 +1462,16 @@ export default function SettingsScreen() {
                           </Text>
                           <TouchableOpacity
                             onPress={() => handleEditBreakdown(item)}
+                            disabled={isSettingsWriteDisabled}
                           >
                             <Text
                               style={[
                                 styles.itemAction,
-                                { color: colors.tint },
+                                {
+                                  color: isSettingsWriteDisabled
+                                    ? colors.subText
+                                    : colors.tint,
+                                },
                               ]}
                             >
                               編集
@@ -1199,8 +1479,18 @@ export default function SettingsScreen() {
                           </TouchableOpacity>
                           <TouchableOpacity
                             onPress={() => handleDeleteBreakdown(item)}
+                            disabled={isSettingsWriteDisabled}
                           >
-                            <Text style={[styles.itemDelete]}>削除</Text>
+                            <Text
+                              style={[
+                                styles.itemDelete,
+                                isSettingsWriteDisabled && {
+                                  color: colors.subText,
+                                },
+                              ]}
+                            >
+                              削除
+                            </Text>
                           </TouchableOpacity>
                         </View>
                       ))
@@ -1226,8 +1516,10 @@ export default function SettingsScreen() {
                     style={[
                       styles.secondaryActionButton,
                       { borderColor: colors.tint },
+                      isSettingsWriteDisabled && styles.disabledControl,
                     ]}
                     onPress={handleOpenAccountCreate}
+                    disabled={isSettingsWriteDisabled}
                   >
                     <Text
                       style={[
@@ -1262,21 +1554,31 @@ export default function SettingsScreen() {
                       </View>
                       <TouchableOpacity
                         onPress={() => handleEditAccount(account)}
+                        disabled={isSettingsWriteDisabled}
                       >
                         <Text
-                          style={[styles.itemAction, { color: colors.tint }]}
+                          style={[
+                            styles.itemAction,
+                            {
+                              color: isSettingsWriteDisabled
+                                ? colors.subText
+                                : colors.tint,
+                            },
+                          ]}
                         >
                           編集
                         </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => handleDeleteAccount(account)}
-                        disabled={account.isDefault}
+                        disabled={account.isDefault || isSettingsWriteDisabled}
                       >
                         <Text
                           style={[
                             styles.itemDelete,
-                            account.isDefault && { color: colors.subText },
+                            (account.isDefault || isSettingsWriteDisabled) && {
+                              color: colors.subText,
+                            },
                           ]}
                         >
                           削除
@@ -1369,7 +1671,9 @@ export default function SettingsScreen() {
                             { backgroundColor: c },
                             categoryColorInput === c &&
                               styles.colorSwatchSelected,
+                            isSettingsWriteDisabled && styles.disabledControl,
                           ]}
+                          disabled={isSettingsWriteDisabled}
                           onPress={() => setCategoryColorInput(c)}
                         />
                       ))}
@@ -1382,32 +1686,34 @@ export default function SettingsScreen() {
                         >
                           月次予算
                         </Text>
-                        <TextInput
+                        <TouchableOpacity
                           style={[
                             styles.textInput,
-                            { borderColor: colors.border, color: colors.text },
+                            styles.numericInputButton,
+                            { borderColor: colors.border },
+                            isSettingsWriteDisabled && styles.disabledControl,
                           ]}
-                          value={formatYenDisplay(categoryBudgetInput)}
-                          onChangeText={(text) =>
-                            setCategoryBudgetInput(text.replace(/\D/g, ""))
-                          }
-                          onFocus={() =>
-                            setActiveKeyboardField({
-                              kind: "budget",
-                              categoryName: categoryNameInput,
-                            })
-                          }
-                          onBlur={() => setActiveKeyboardField(null)}
-                          placeholder="予算なし"
-                          placeholderTextColor={colors.subText}
-                          keyboardType="number-pad"
-                          returnKeyType="done"
-                          inputAccessoryViewID={
-                            Platform.OS === "ios"
-                              ? KEYBOARD_ACCESSORY_VIEW_ID
-                              : undefined
-                          }
-                        />
+                          disabled={isSettingsWriteDisabled}
+                          onPress={() => {
+                            Keyboard.dismiss();
+                            setActiveKeyboardField(null);
+                            setNumericInputTarget("category-budget");
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.numericInputButtonText,
+                              {
+                                color: categoryBudgetInput
+                                  ? colors.text
+                                  : colors.subText,
+                              },
+                            ]}
+                          >
+                            {formatYenDisplay(categoryBudgetInput) ||
+                              "予算なし"}
+                          </Text>
+                        </TouchableOpacity>
                       </>
                     )}
                   </>
@@ -1499,29 +1805,63 @@ export default function SettingsScreen() {
                     >
                       初期残高
                     </Text>
-                    <TextInput
+                    <TouchableOpacity
                       style={[
                         styles.textInput,
-                        { borderColor: colors.border, color: colors.text },
+                        styles.numericInputButton,
+                        { borderColor: colors.border },
+                        isSettingsWriteDisabled && styles.disabledControl,
                       ]}
-                      value={formatYenDisplay(accountBalanceInput)}
-                      onChangeText={(text) =>
-                        setAccountBalanceInput(text.replace(/\D/g, ""))
-                      }
-                      onFocus={() =>
-                        setActiveKeyboardField({ kind: "account-balance" })
-                      }
-                      onBlur={() => setActiveKeyboardField(null)}
-                      placeholder="初期残高（例: ¥100000）"
-                      placeholderTextColor={colors.subText}
-                      keyboardType="number-pad"
-                      returnKeyType="done"
-                      inputAccessoryViewID={
-                        Platform.OS === "ios"
-                          ? KEYBOARD_ACCESSORY_VIEW_ID
-                          : undefined
-                      }
-                    />
+                      disabled={isSettingsWriteDisabled}
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setActiveKeyboardField(null);
+                        setNumericInputTarget("account-balance");
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.numericInputButtonText,
+                          {
+                            color: accountBalanceInput
+                              ? colors.text
+                              : colors.subText,
+                          },
+                        ]}
+                      >
+                        {formatAccountBalanceInputDisplay(
+                          accountBalanceInput,
+                        ) || "初期残高（例: ¥100000）"}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.inlineClearButton,
+                        { borderColor: colors.border },
+                        isSettingsWriteDisabled && styles.disabledControl,
+                      ]}
+                      disabled={isSettingsWriteDisabled}
+                      onPress={() => setAccountBalanceInput("0")}
+                    >
+                      <Text
+                        style={[
+                          styles.inlineClearButtonText,
+                          { color: colors.subText },
+                        ]}
+                      >
+                        残高を0にする
+                      </Text>
+                    </TouchableOpacity>
+                    {isSettingsWriteDisabled ? (
+                      <Text
+                        style={[
+                          styles.offlineNoticeText,
+                          { color: colors.subText },
+                        ]}
+                      >
+                        オフライン中は設定変更できません
+                      </Text>
+                    ) : null}
                   </>
                 )}
                 <View
@@ -1544,10 +1884,15 @@ export default function SettingsScreen() {
                     style={[
                       styles.formButton,
                       {
-                        backgroundColor: colors.tint,
-                        borderColor: colors.tint,
+                        backgroundColor: isSettingsWriteDisabled
+                          ? colors.border
+                          : colors.tint,
+                        borderColor: isSettingsWriteDisabled
+                          ? colors.border
+                          : colors.tint,
                       },
                     ]}
+                    disabled={isSettingsWriteDisabled}
                     onPress={
                       managerTab === "category"
                         ? handleSaveCategory
@@ -1565,6 +1910,27 @@ export default function SettingsScreen() {
             </Animated.View>
           </View>
         )}
+        <MoneyInputModal
+          visible={numericInputTarget !== null}
+          title={
+            numericInputTarget === "account-balance" ? "初期残高" : "月次予算"
+          }
+          value={numericModalValue}
+          placeholder={
+            numericInputTarget === "account-balance" ? "¥0" : "予算なし"
+          }
+          colors={colors}
+          allowOperators={numericInputTarget === "account-balance"}
+          allowNegative={numericInputTarget === "account-balance"}
+          onChange={handleNumericModalChange}
+          emptyValue={numericInputTarget === "account-balance" ? 0 : null}
+          onInvalidExpression={() =>
+            Alert.alert("エラー", "計算式を確認してください")
+          }
+          onCancel={() => setNumericInputTarget(null)}
+          onConfirm={() => setNumericInputTarget(null)}
+          useNativeModal={false}
+        />
       </Modal>
 
       {Platform.OS === "ios" ? (
@@ -1629,8 +1995,13 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
   },
+  disabledControl: { opacity: 0.45 },
   devResetButton: {
     backgroundColor: "#B71C1C",
+    marginTop: 10,
+  },
+  devPreviewButton: {
+    backgroundColor: "#455A64",
     marginTop: 10,
   },
   resetDefaultButton: {
@@ -1743,6 +2114,20 @@ const styles = StyleSheet.create({
   },
   accountInfoWrap: { flex: 1 },
   accountBalanceText: { fontSize: 12, marginTop: 2 },
+  reorderButtons: {
+    flexDirection: "column",
+    gap: 4,
+    marginRight: 8,
+  },
+  reorderButton: {
+    width: 28,
+    height: 24,
+    borderWidth: 1,
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reorderButtonText: { fontSize: 14, fontWeight: "700" },
   categoryDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
   itemName: { flex: 1, fontSize: 15 },
   itemAction: { fontSize: 13, fontWeight: "600", marginRight: 10 },
@@ -1760,6 +2145,21 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 15,
   },
+  numericInputButton: {
+    minHeight: 43,
+    justifyContent: "center",
+  },
+  numericInputButtonText: { fontSize: 15 },
+  inlineClearButton: {
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderRadius: 8,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  inlineClearButtonText: { fontSize: 13, fontWeight: "600" },
+  offlineNoticeText: { fontSize: 12, fontWeight: "600", marginTop: 8 },
   colorGrid: {
     flexDirection: "row",
     flexWrap: "wrap",

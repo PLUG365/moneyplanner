@@ -1,32 +1,42 @@
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { router, type Href } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import {
-  BudgetDefinition,
-  BudgetStatus,
-  Category,
-  householdCollection,
-  mapBudgetDefinition,
-  mapCategory,
-  mapTransaction,
-  MonthlyCategorySummary,
-  MonthlyTotal,
-  Transaction,
+    BudgetDefinition,
+    BudgetStatus,
+    Category,
+    householdCollection,
+    mapBudgetDefinition,
+    mapCategory,
+    mapTransaction,
+    MonthlyCategorySummary,
+    MonthlyTotal,
+    Transaction,
 } from "@/lib/firestore";
 import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
+import { buildHistoryDrilldownParams } from "@/lib/historyDrilldown";
 import {
-  buildBudgetStatusesFromData,
-  buildMonthCategorySummaryFromTransactions,
-  buildYearMonthlyTotalsFromTransactions,
+    formatYearMonthLabel,
+    fromYearMonthDate,
+    shiftYearMonth,
+    toYearMonthDate,
+} from "@/lib/monthPicker";
+import {
+    buildBudgetStatusesFromData,
+    buildMonthCategorySummaryFromTransactions,
+    buildYearMonthlyTotalsFromTransactions,
 } from "@/lib/summaryAggregation";
 
 type ViewMode = "monthly" | "yearly";
@@ -59,6 +69,7 @@ export default function SummaryScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>("monthly");
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  const [showPeriodPicker, setShowPeriodPicker] = useState(false);
   const yearScope = String(year);
   const transactionSubscription = useCollection<Transaction>(
     buildFirestoreQueryKey(householdId, "transactions", yearScope),
@@ -129,10 +140,9 @@ export default function SummaryScreen() {
 
   const prevPeriod = () => {
     if (viewMode === "monthly") {
-      if (month === 1) {
-        setYear((y) => y - 1);
-        setMonth(12);
-      } else setMonth((m) => m - 1);
+      const next = shiftYearMonth(year, month, -1);
+      setYear(next.year);
+      setMonth(next.month);
     } else {
       setYear((y) => y - 1);
     }
@@ -140,13 +150,36 @@ export default function SummaryScreen() {
 
   const nextPeriod = () => {
     if (viewMode === "monthly") {
-      if (month === 12) {
-        setYear((y) => y + 1);
-        setMonth(1);
-      } else setMonth((m) => m + 1);
+      const next = shiftYearMonth(year, month, 1);
+      setYear(next.year);
+      setMonth(next.month);
     } else {
       setYear((y) => y + 1);
     }
+  };
+
+  const handlePeriodPickerChange = (selected: Date) => {
+    const next = fromYearMonthDate(selected);
+    setYear(next.year);
+    setMonth(next.month);
+  };
+
+  const openHistoryDrilldown = (item: {
+    type: "income" | "expense";
+    categoryName: string;
+  }) => {
+    router.push({
+      pathname: "/(tabs)/history",
+      params: {
+        ...buildHistoryDrilldownParams({
+          type: item.type,
+          categoryName: item.categoryName,
+          year,
+          month,
+        }),
+        drilldownAt: String(Date.now()),
+      },
+    } as Href);
   };
 
   const incomeColor = colorScheme === "dark" ? "#42A5F5" : "#1565C0";
@@ -249,13 +282,66 @@ export default function SummaryScreen() {
         <TouchableOpacity onPress={prevPeriod} style={styles.navButton}>
           <Text style={[styles.navArrow, { color: colors.tint }]}>‹</Text>
         </TouchableOpacity>
-        <Text style={[styles.monthTitle, { color: colors.text }]}>
-          {viewMode === "monthly" ? `${year}年${month}月` : `${year}年`}
-        </Text>
+        <TouchableOpacity
+          style={styles.monthTitleButton}
+          onPress={() => setShowPeriodPicker((visible) => !visible)}
+        >
+          <Text style={[styles.monthTitle, { color: colors.text }]}>
+            {formatYearMonthLabel(year, month, viewMode)}
+          </Text>
+          <Text style={[styles.monthJumpHint, { color: colors.subText }]}>
+            変更
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={nextPeriod} style={styles.navButton}>
           <Text style={[styles.navArrow, { color: colors.tint }]}>›</Text>
         </TouchableOpacity>
       </View>
+
+      {showPeriodPicker ? (
+        Platform.OS === "ios" ? (
+          <View
+            style={[
+              styles.inlineDatePickerWrap,
+              { borderColor: colors.border, marginHorizontal: 12 },
+            ]}
+          >
+            <View
+              style={[
+                styles.inlineDatePickerHeader,
+                { borderBottomColor: colors.border },
+              ]}
+            >
+              <TouchableOpacity onPress={() => setShowPeriodPicker(false)}>
+                <Text style={[styles.datePickerDone, { color: colors.tint }]}>
+                  完了
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <DateTimePicker
+              value={toYearMonthDate(year, month)}
+              mode="date"
+              display="spinner"
+              locale="ja-JP"
+              onChange={(_, selected) => {
+                if (selected) handlePeriodPickerChange(selected);
+              }}
+            />
+          </View>
+        ) : (
+          <DateTimePicker
+            value={toYearMonthDate(year, month)}
+            mode="date"
+            display="default"
+            onChange={(event, selected) => {
+              setShowPeriodPicker(false);
+              if (event.type === "set" && selected) {
+                handlePeriodPickerChange(selected);
+              }
+            }}
+          />
+        )
+      ) : null}
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {loading && (
@@ -330,7 +416,7 @@ export default function SummaryScreen() {
                   const percent = Math.round(item.usageRate * 100);
                   const delta = item.budgetAmount - item.spentAmount;
                   return (
-                    <View
+                    <TouchableOpacity
                       key={`budget-${item.categoryId}`}
                       style={[
                         styles.budgetRow,
@@ -339,6 +425,13 @@ export default function SummaryScreen() {
                           backgroundColor: meta.tint,
                         },
                       ]}
+                      activeOpacity={0.75}
+                      onPress={() =>
+                        openHistoryDrilldown({
+                          type: "expense",
+                          categoryName: item.categoryName,
+                        })
+                      }
                     >
                       <View style={styles.budgetHeaderRow}>
                         <View style={styles.budgetNameWrap}>
@@ -413,7 +506,7 @@ export default function SummaryScreen() {
                           ? `残り ¥${fmt(delta)}`
                           : `超過 ¥${fmt(Math.abs(delta))}`}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </View>
@@ -431,9 +524,11 @@ export default function SummaryScreen() {
                   収入
                 </Text>
                 {incomeItems.map((item) => (
-                  <View
+                  <TouchableOpacity
                     key={`${item.categoryId}-${item.categoryName}-${item.categoryColor}`}
                     style={[styles.tableRow, { borderTopColor: colors.border }]}
+                    activeOpacity={0.75}
+                    onPress={() => openHistoryDrilldown(item)}
                   >
                     <View
                       style={[
@@ -449,14 +544,26 @@ export default function SummaryScreen() {
                     >
                       ¥{fmt(item.total)}
                     </Text>
-                  </View>
+                    <Text
+                      style={[styles.rowChevron, { color: colors.subText }]}
+                    >
+                      ›
+                    </Text>
+                  </TouchableOpacity>
                 ))}
-                <View
+                <TouchableOpacity
                   style={[
                     styles.tableRow,
                     styles.totalRow,
                     { borderTopColor: colors.border },
                   ]}
+                  activeOpacity={0.75}
+                  onPress={() =>
+                    openHistoryDrilldown({
+                      type: "income",
+                      categoryName: "",
+                    })
+                  }
                 >
                   <Text style={[styles.totalLabel, { color: colors.subText }]}>
                     合計
@@ -464,7 +571,10 @@ export default function SummaryScreen() {
                   <Text style={[styles.totalAmount, { color: incomeColor }]}>
                     ¥{fmt(totalIncome)}
                   </Text>
-                </View>
+                  <Text style={[styles.rowChevron, { color: colors.subText }]}>
+                    ›
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
 
@@ -480,9 +590,11 @@ export default function SummaryScreen() {
                   支出
                 </Text>
                 {expenseItems.map((item) => (
-                  <View
+                  <TouchableOpacity
                     key={`${item.categoryId}-${item.categoryName}-${item.categoryColor}`}
                     style={[styles.tableRow, { borderTopColor: colors.border }]}
+                    activeOpacity={0.75}
+                    onPress={() => openHistoryDrilldown(item)}
                   >
                     <View
                       style={[
@@ -498,14 +610,26 @@ export default function SummaryScreen() {
                     >
                       ¥{fmt(item.total)}
                     </Text>
-                  </View>
+                    <Text
+                      style={[styles.rowChevron, { color: colors.subText }]}
+                    >
+                      ›
+                    </Text>
+                  </TouchableOpacity>
                 ))}
-                <View
+                <TouchableOpacity
                   style={[
                     styles.tableRow,
                     styles.totalRow,
                     { borderTopColor: colors.border },
                   ]}
+                  activeOpacity={0.75}
+                  onPress={() =>
+                    openHistoryDrilldown({
+                      type: "expense",
+                      categoryName: "",
+                    })
+                  }
                 >
                   <Text style={[styles.totalLabel, { color: colors.subText }]}>
                     合計
@@ -513,7 +637,10 @@ export default function SummaryScreen() {
                   <Text style={[styles.totalAmount, { color: expenseColor }]}>
                     ¥{fmt(totalExpense)}
                   </Text>
-                </View>
+                  <Text style={[styles.rowChevron, { color: colors.subText }]}>
+                    ›
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
 
@@ -746,7 +873,9 @@ const styles = StyleSheet.create({
   },
   navButton: { padding: 8 },
   navArrow: { fontSize: 26 },
+  monthTitleButton: { alignItems: "center", paddingVertical: 6, flex: 1 },
   monthTitle: { fontSize: 17, fontWeight: "700" },
+  monthJumpHint: { fontSize: 11, fontWeight: "700", marginTop: 2 },
   scrollContent: { paddingHorizontal: 12, paddingBottom: 100 },
   emptyText: { textAlign: "center", marginTop: 48, fontSize: 15 },
   loadingText: { textAlign: "center", marginBottom: 8, fontSize: 13 },
@@ -783,6 +912,7 @@ const styles = StyleSheet.create({
   categoryDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
   categoryName: { flex: 1, fontSize: 14 },
   categoryAmount: { fontSize: 14, fontWeight: "600" },
+  rowChevron: { fontSize: 18, fontWeight: "700", marginLeft: 8 },
   totalRow: { backgroundColor: "rgba(0,0,0,0.03)" },
   totalLabel: { flex: 1, fontSize: 13, fontWeight: "600" },
   totalAmount: { fontSize: 15, fontWeight: "700" },
@@ -834,4 +964,17 @@ const styles = StyleSheet.create({
   },
   progressFill: { height: "100%", borderRadius: 999 },
   budgetDetailText: { fontSize: 12, fontWeight: "600", marginBottom: 2 },
+  inlineDatePickerWrap: {
+    marginBottom: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  inlineDatePickerHeader: {
+    alignItems: "flex-end",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  datePickerDone: { fontSize: 17, fontWeight: "600" },
 });

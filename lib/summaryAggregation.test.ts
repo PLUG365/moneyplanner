@@ -65,6 +65,56 @@ test("buildMonthCategorySummaryFromTransactions groups current month by type and
   ]);
 });
 
+test("buildMonthCategorySummaryFromTransactions keeps reset categories separate by snapshot name", () => {
+  const summary = buildMonthCategorySummaryFromTransactions(
+    [
+      {
+        date: "2026-05-01",
+        amount: 1000,
+        type: "expense",
+        categoryId: null,
+        categoryName: "食費",
+        categoryColor: "#1565C0",
+      },
+      {
+        date: "2026-05-02",
+        amount: 2000,
+        type: "expense",
+        categoryId: null,
+        categoryName: "交通",
+        categoryColor: "#2E7D32",
+      },
+      {
+        date: "2026-05-03",
+        amount: 500,
+        type: "expense",
+        categoryId: null,
+        categoryName: "食費",
+        categoryColor: "#1565C0",
+      },
+    ],
+    2026,
+    5,
+  );
+
+  assert.deepEqual(summary, [
+    {
+      type: "expense",
+      categoryId: "snapshot:expense:交通",
+      categoryName: "交通",
+      categoryColor: "#2E7D32",
+      total: 2000,
+    },
+    {
+      type: "expense",
+      categoryId: "snapshot:expense:食費",
+      categoryName: "食費",
+      categoryColor: "#1565C0",
+      total: 1500,
+    },
+  ]);
+});
+
 test("buildBudgetStatusesFromData computes warning and exceeded levels", () => {
   const statuses = buildBudgetStatusesFromData({
     year: 2026,
@@ -106,6 +156,36 @@ test("buildBudgetStatusesFromData computes warning and exceeded levels", () => {
       { categoryId: "daily", level: "exceeded" },
       { categoryId: "food", level: "warning" },
     ],
+  );
+});
+
+test("buildBudgetStatusesFromData counts reset transactions by snapshot category name", () => {
+  const statuses = buildBudgetStatusesFromData({
+    year: 2026,
+    month: 5,
+    transactions: [
+      {
+        date: "2026-05-01",
+        amount: 9000,
+        type: "expense",
+        categoryId: null,
+        categoryName: "食費",
+        categoryColor: "#111111",
+      },
+    ],
+    budgets: [{ categoryId: "food", amount: 10000 }],
+    categories: [
+      { id: "food", name: "食費", type: "expense", color: "#111111" },
+    ],
+  });
+
+  assert.deepEqual(
+    statuses.map((status) => ({
+      categoryId: status.categoryId,
+      spentAmount: status.spentAmount,
+      level: status.level,
+    })),
+    [{ categoryId: "food", spentAmount: 9000, level: "warning" }],
   );
 });
 

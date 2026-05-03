@@ -1,6 +1,7 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
 import React, { useMemo, useState } from "react";
 import {
+    Alert,
     InputAccessoryView,
     Keyboard,
     Modal,
@@ -14,11 +15,18 @@ import {
     View,
 } from "react-native";
 
+import MoneyInputModal from "@/components/MoneyInputModal";
 import {
     getStoresByCategory,
     TransactionType,
     upsertStore,
 } from "@/lib/firestore";
+import { formatTransactionAmountInputDisplay } from "@/lib/transactionAmountInput";
+import {
+    buildCategoryDisplayName,
+    getBreakdownChoicesForCategory,
+    getCategoryModalNextStep,
+} from "@/lib/transactionEditorPresentation";
 
 type EditorId = string | number;
 
@@ -36,6 +44,7 @@ type Category = {
 
 type Breakdown = {
   id: EditorId;
+  categoryId: EditorId;
   name: string;
 };
 
@@ -43,6 +52,10 @@ type Store = {
   id: EditorId;
   name: string;
 };
+
+type CategoryModalStep = "category" | "breakdown";
+
+const ACCOUNT_PICKER_PRELOAD_TIMEOUT_MS = 900;
 
 type ThemeColors = {
   text: string;
@@ -70,6 +83,8 @@ type Props = {
   incomeColor: string;
   expenseColor: string;
   bottomInset?: number;
+  amountInputUseNativeModal?: boolean;
+  onAccountPickerOpen?: () => void | Promise<unknown>;
   submitLabel: string;
   onTypeChange: (type: TransactionType) => void;
   onAmountRawChange: (amountRaw: string) => void;
@@ -94,10 +109,22 @@ function displayDate(dateStr: string): string {
   return `${y}年${parseInt(m)}月${parseInt(d)}日`;
 }
 
-function formatAmount(raw: string): string {
-  const n = parseInt(raw.replace(/,/g, ""), 10);
-  if (isNaN(n)) return "";
-  return n.toLocaleString("ja-JP");
+async function waitForOptionalPreload(
+  preload?: () => void | Promise<unknown>,
+): Promise<void> {
+  if (!preload) return;
+
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    await Promise.race([
+      Promise.resolve(preload()).catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ACCOUNT_PICKER_PRELOAD_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export default function TransactionEditor({
@@ -117,6 +144,8 @@ export default function TransactionEditor({
   incomeColor,
   expenseColor,
   bottomInset = 0,
+  amountInputUseNativeModal = true,
+  onAccountPickerOpen,
   submitLabel,
   onTypeChange,
   onAmountRawChange,
@@ -129,14 +158,28 @@ export default function TransactionEditor({
   onSubmit,
 }: Props) {
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showAmountModal, setShowAmountModal] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showStoreModal, setShowStoreModal] = useState(false);
   const [storeSearchQuery, setStoreSearchQuery] = useState("");
   const [categoryStores, setCategoryStores] = useState<Store[]>([]);
+  const [categoryModalStep, setCategoryModalStep] =
+    useState<CategoryModalStep>("category");
+  const [modalBreakdownCategory, setModalBreakdownCategory] =
+    useState<Category | null>(null);
+  const [modalBreakdownChoices, setModalBreakdownChoices] = useState<
+    Breakdown[]
+  >([]);
+  const [categorySelectionLoadingId, setCategorySelectionLoadingId] =
+    useState<EditorId | null>(null);
+  const [pendingBreakdown, setPendingBreakdown] = useState<Breakdown | null>(
+    null,
+  );
   const keyboardAccessoryViewId = "transaction-editor-keyboard-accessory";
 
   const activeColor = type === "income" ? incomeColor : expenseColor;
+  const amountDisplay = formatTransactionAmountInputDisplay(amountRaw);
   const selectedCategory = useMemo(
     () => categories.find((c) => c.id === categoryId) ?? null,
     [categories, categoryId],
@@ -146,10 +189,19 @@ export default function TransactionEditor({
     [accounts, accountId],
   );
   const selectedBreakdown = useMemo(
-    () => breakdowns.find((b) => b.id === breakdownId) ?? null,
-    [breakdowns, breakdownId],
+    () =>
+      breakdowns.find((b) => b.id === breakdownId) ??
+      (pendingBreakdown?.id === breakdownId ? pendingBreakdown : null),
+    [breakdowns, breakdownId, pendingBreakdown],
   );
-
+  const currentCategoryBreakdowns = useMemo(
+    () => getBreakdownChoicesForCategory(categoryId, breakdowns),
+    [breakdowns, categoryId],
+  );
+  const categoryDisplayName = buildCategoryDisplayName({
+    categoryName: selectedCategory?.name,
+    breakdownName: selectedBreakdown?.name,
+  });
   const filteredStores = useMemo(() => {
     if (!storeSearchQuery.trim()) return categoryStores;
     return categoryStores.filter((s) =>
@@ -170,6 +222,52 @@ export default function TransactionEditor({
     );
     setStoreSearchQuery("");
     setShowStoreModal(true);
+  };
+
+  const openAccountPicker = async () => {
+    await waitForOptionalPreload(onAccountPickerOpen);
+    setShowAccountModal(true);
+  };
+
+  const openCategoryPicker = () => {
+    setCategoryModalStep("category");
+    setModalBreakdownCategory(selectedCategory);
+    setModalBreakdownChoices(currentCategoryBreakdowns);
+    setCategorySelectionLoadingId(null);
+    setShowCategoryModal(true);
+  };
+
+  const closeCategoryPicker = () => {
+    setShowCategoryModal(false);
+    setCategoryModalStep("category");
+    setCategorySelectionLoadingId(null);
+  };
+
+  const handleCategorySelect = async (cat: Category) => {
+    setCategorySelectionLoadingId(cat.id);
+    try {
+      const nextBreakdowns = getBreakdownChoicesForCategory(cat.id, breakdowns);
+      onCategoryChange(cat.id);
+      onBreakdownChange(null);
+      setPendingBreakdown(null);
+      setModalBreakdownCategory(cat);
+      setModalBreakdownChoices(nextBreakdowns);
+
+      if (getCategoryModalNextStep(nextBreakdowns.length) === "close") {
+        closeCategoryPicker();
+        return;
+      }
+
+      setCategoryModalStep("breakdown");
+    } finally {
+      setCategorySelectionLoadingId(null);
+    }
+  };
+
+  const handleBreakdownSelect = (item: Breakdown) => {
+    setPendingBreakdown(item);
+    onBreakdownChange(item.id);
+    closeCategoryPicker();
   };
 
   return (
@@ -230,25 +328,27 @@ export default function TransactionEditor({
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            <Text style={[styles.label, { color: colors.subText }]}>金額</Text>
             <View style={styles.amountRow}>
               <Text style={[styles.yen, { color: activeColor }]}>¥</Text>
-              <TextInput
-                style={[styles.amountInput, { color: activeColor }]}
-                value={amountRaw ? formatAmount(amountRaw) : ""}
-                onChangeText={(text) =>
-                  onAmountRawChange(text.replace(/[^0-9]/g, ""))
-                }
-                keyboardType="numeric"
-                placeholder="0"
-                placeholderTextColor={colors.border}
-                returnKeyType="done"
-                blurOnSubmit
-                onSubmitEditing={Keyboard.dismiss}
-                inputAccessoryViewID={
-                  Platform.OS === "ios" ? keyboardAccessoryViewId : undefined
-                }
-              />
+              <TouchableOpacity
+                style={styles.amountInputButton}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setShowAmountModal(true);
+                }}
+              >
+                <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.5}
+                  style={[
+                    styles.amountInputText,
+                    { color: amountRaw ? activeColor : colors.border },
+                  ]}
+                >
+                  {amountDisplay.replace(/^¥/, "") || "0"}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -284,7 +384,6 @@ export default function TransactionEditor({
             ]}
             onPress={() => setShowDatePicker(true)}
           >
-            <Text style={[styles.label, { color: colors.subText }]}>日付</Text>
             <Text style={[styles.dateText, { color: colors.text }]}>
               {displayDate(date)}
             </Text>
@@ -296,13 +395,14 @@ export default function TransactionEditor({
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            <Text style={[styles.label, { color: colors.subText }]}>口座</Text>
             <TouchableOpacity
               style={[
                 styles.selectorButton,
                 { borderColor: selectedAccount ? colors.tint : colors.border },
               ]}
-              onPress={() => setShowAccountModal(true)}
+              onPress={() => {
+                void openAccountPicker();
+              }}
             >
               <Text
                 style={[
@@ -373,15 +473,12 @@ export default function TransactionEditor({
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            <Text style={[styles.label, { color: colors.subText }]}>
-              カテゴリ
-            </Text>
             <TouchableOpacity
               style={[
                 styles.selectorButton,
                 { borderColor: selectedCategory?.color || colors.border },
               ]}
-              onPress={() => setShowCategoryModal(true)}
+              onPress={openCategoryPicker}
             >
               <Text
                 style={[
@@ -389,66 +486,12 @@ export default function TransactionEditor({
                   { color: selectedCategory?.color || colors.text },
                 ]}
               >
-                {selectedCategory?.name ?? "カテゴリを選択"}
+                {categoryDisplayName}
               </Text>
               <Text style={[styles.selectorAction, { color: colors.tint }]}>
                 選択
               </Text>
             </TouchableOpacity>
-
-            <Text
-              style={[styles.label, { color: colors.subText, marginTop: 14 }]}
-            >
-              内訳
-            </Text>
-            {breakdowns.length === 0 ? (
-              <Text
-                style={[styles.emptyBreakdownText, { color: colors.subText }]}
-              >
-                このカテゴリに内訳はありません
-              </Text>
-            ) : (
-              <View style={styles.categoryGrid}>
-                {breakdowns.map((item) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[
-                      styles.categoryChip,
-                      { borderColor: selectedCategory?.color || colors.tint },
-                      breakdownId === item.id && {
-                        backgroundColor: selectedCategory?.color || colors.tint,
-                      },
-                    ]}
-                    onPress={() =>
-                      onBreakdownChange(
-                        breakdownId === item.id ? null : item.id,
-                      )
-                    }
-                  >
-                    <Text
-                      style={[
-                        styles.categoryChipText,
-                        { color: selectedCategory?.color || colors.tint },
-                        breakdownId === item.id && { color: "#fff" },
-                      ]}
-                    >
-                      {item.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            {selectedBreakdown ? (
-              <Text
-                style={[
-                  styles.selectedBreakdownText,
-                  { color: colors.subText },
-                ]}
-              >
-                選択中: {selectedBreakdown.name}
-              </Text>
-            ) : null}
           </View>
 
           {type === "expense" && (
@@ -458,9 +501,6 @@ export default function TransactionEditor({
                 { backgroundColor: colors.card, borderColor: colors.border },
               ]}
             >
-              <Text style={[styles.label, { color: colors.subText }]}>
-                お店（任意）
-              </Text>
               <TouchableOpacity
                 style={[
                   styles.selectorButton,
@@ -514,6 +554,22 @@ export default function TransactionEditor({
             <Text style={styles.submitButtonText}>{submitLabel}</Text>
           </TouchableOpacity>
         </View>
+
+        <MoneyInputModal
+          visible={showAmountModal}
+          title="金額"
+          value={amountRaw}
+          placeholder="¥0"
+          colors={colors}
+          allowOperators
+          onChange={onAmountRawChange}
+          onInvalidExpression={() =>
+            Alert.alert("エラー", "計算式を確認してください")
+          }
+          onCancel={() => setShowAmountModal(false)}
+          onConfirm={() => setShowAmountModal(false)}
+          useNativeModal={amountInputUseNativeModal}
+        />
       </View>
 
       {Platform.OS === "ios" ? (
@@ -549,49 +605,125 @@ export default function TransactionEditor({
             ]}
           >
             <Text style={[styles.fullModalTitle, { color: colors.text }]}>
-              カテゴリを選択
+              {categoryModalStep === "breakdown"
+                ? "内訳を選択"
+                : "カテゴリを選択"}
             </Text>
-            <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
+            <TouchableOpacity onPress={closeCategoryPicker}>
               <Text style={[styles.fullModalClose, { color: colors.tint }]}>
                 閉じる
               </Text>
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.fullModalContent}>
-            {categories.map((cat) => (
-              <TouchableOpacity
-                key={cat.id}
-                style={[
-                  styles.fullCategoryRow,
-                  { borderColor: colors.border, backgroundColor: colors.card },
-                  categoryId === cat.id && {
-                    borderColor: cat.color,
-                    borderWidth: 2,
-                  },
-                ]}
-                onPress={() => {
-                  onCategoryChange(cat.id);
-                  setShowCategoryModal(false);
-                }}
-              >
-                <View
+            {categoryModalStep === "category" ? (
+              categories.map((cat) => (
+                <TouchableOpacity
+                  key={cat.id}
+                  disabled={categorySelectionLoadingId !== null}
                   style={[
-                    styles.fullCategoryDot,
-                    { backgroundColor: cat.color },
+                    styles.fullCategoryRow,
+                    {
+                      borderColor: colors.border,
+                      backgroundColor: colors.card,
+                    },
+                    categoryId === cat.id && {
+                      borderColor: cat.color,
+                      borderWidth: 2,
+                    },
                   ]}
-                />
-                <Text style={[styles.fullCategoryName, { color: colors.text }]}>
-                  {cat.name}
-                </Text>
-                {categoryId === cat.id ? (
+                  onPress={() => {
+                    void handleCategorySelect(cat);
+                  }}
+                >
+                  <View
+                    style={[
+                      styles.fullCategoryDot,
+                      { backgroundColor: cat.color },
+                    ]}
+                  />
                   <Text
-                    style={[styles.fullCategorySelected, { color: cat.color }]}
+                    style={[styles.fullCategoryName, { color: colors.text }]}
                   >
-                    選択中
+                    {cat.name}
                   </Text>
-                ) : null}
-              </TouchableOpacity>
-            ))}
+                  {categorySelectionLoadingId === cat.id ? (
+                    <Text
+                      style={[
+                        styles.fullCategorySelected,
+                        { color: colors.subText },
+                      ]}
+                    >
+                      確認中...
+                    </Text>
+                  ) : categoryId === cat.id ? (
+                    <Text
+                      style={[
+                        styles.fullCategorySelected,
+                        { color: cat.color },
+                      ]}
+                    >
+                      選択中
+                    </Text>
+                  ) : null}
+                </TouchableOpacity>
+              ))
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[styles.modalBackRow, { borderColor: colors.border }]}
+                  onPress={() => setCategoryModalStep("category")}
+                >
+                  <Text style={[styles.modalBackText, { color: colors.tint }]}>
+                    カテゴリを選び直す
+                  </Text>
+                </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.breakdownModalTitle,
+                    { color: colors.subText },
+                  ]}
+                >
+                  {modalBreakdownCategory?.name}
+                </Text>
+                {modalBreakdownChoices.map((item) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[
+                      styles.fullCategoryRow,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: colors.card,
+                      },
+                      breakdownId === item.id && {
+                        borderColor:
+                          modalBreakdownCategory?.color ?? colors.tint,
+                        borderWidth: 2,
+                      },
+                    ]}
+                    onPress={() => handleBreakdownSelect(item)}
+                  >
+                    <Text
+                      style={[styles.fullCategoryName, { color: colors.text }]}
+                    >
+                      {item.name}
+                    </Text>
+                    {breakdownId === item.id ? (
+                      <Text
+                        style={[
+                          styles.fullCategorySelected,
+                          {
+                            color: modalBreakdownCategory?.color ?? colors.tint,
+                          },
+                        ]}
+                      >
+                        選択中
+                      </Text>
+                    ) : null}
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -766,7 +898,7 @@ export default function TransactionEditor({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, position: "relative" },
   fixedTop: {
     paddingHorizontal: 16,
     paddingTop: 16,
@@ -811,7 +943,8 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, marginBottom: 8 },
   amountRow: { flexDirection: "row", alignItems: "center" },
   yen: { fontSize: 28, fontWeight: "700", marginRight: 4 },
-  amountInput: { fontSize: 36, fontWeight: "700", flex: 1 },
+  amountInputButton: { flex: 1, minHeight: 44, justifyContent: "center" },
+  amountInputText: { fontSize: 36, fontWeight: "700" },
   dateText: { fontSize: 18, fontWeight: "500" },
   selectorButton: {
     borderWidth: 1.5,
@@ -832,16 +965,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
   },
-  categoryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  categoryChip: {
-    borderWidth: 1.5,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-  },
-  categoryChipText: { fontSize: 14, fontWeight: "500" },
-  emptyBreakdownText: { fontSize: 14 },
-  selectedBreakdownText: { fontSize: 12, marginTop: 8 },
   memoInput: {
     borderWidth: 1,
     borderRadius: 8,
@@ -904,6 +1027,21 @@ const styles = StyleSheet.create({
   fullCategoryDot: { width: 10, height: 10, borderRadius: 5, marginRight: 10 },
   fullCategoryName: { flex: 1, fontSize: 16, fontWeight: "600" },
   fullCategorySelected: { fontSize: 13, fontWeight: "700" },
+  modalBackRow: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  modalBackText: { fontSize: 15, fontWeight: "700" },
+  breakdownModalSection: { marginTop: 14, gap: 10 },
+  breakdownModalTitle: { fontSize: 13, fontWeight: "700" },
+  breakdownModalEmpty: {
+    fontSize: 14,
+    textAlign: "center",
+    paddingVertical: 8,
+  },
   storeSearchContainer: {
     paddingHorizontal: 16,
     paddingVertical: 10,

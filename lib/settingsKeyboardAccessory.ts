@@ -1,3 +1,9 @@
+import {
+    formatMoneyInputDisplay,
+    normalizeMoneyInput,
+    resolveMoneyInput,
+} from "./moneyInput";
+
 export type SettingsKeyboardField =
   | { kind: "category-name" }
   | { kind: "breakdown-name" }
@@ -15,10 +21,33 @@ type SettingsKeyboardAccessoryInputs = {
 };
 
 export function formatYenDisplay(rawDigits: string): string {
-  if (!rawDigits) return "";
-  const amount = parseInt(rawDigits, 10);
-  if (Number.isNaN(amount)) return "";
-  return `¥${amount.toLocaleString("ja-JP")}`;
+  return formatMoneyInputDisplay(rawDigits, { allowNegative: true });
+}
+
+export function normalizeSignedYenInput(input: string): string {
+  return normalizeMoneyInput(input, { allowNegative: true });
+}
+
+export function normalizeAccountBalanceInput(input: string): string {
+  return normalizeMoneyInput(input, {
+    allowOperators: true,
+    allowNegative: true,
+  });
+}
+
+export function formatAccountBalanceInputDisplay(input: string): string {
+  return formatMoneyInputDisplay(input, {
+    allowOperators: true,
+    allowNegative: true,
+  });
+}
+
+export function resolveAccountBalanceInput(input: string): number | null {
+  return resolveMoneyInput(input, {
+    allowOperators: true,
+    allowNegative: true,
+    emptyValue: 0,
+  });
 }
 
 export function getSettingsKeyboardAccessoryPreview(
@@ -49,7 +78,7 @@ export function getSettingsKeyboardAccessoryPreview(
         isPlaceholder: !inputs.accountName,
       };
     case "account-balance": {
-      const formatted = formatYenDisplay(inputs.accountBalance);
+      const formatted = formatAccountBalanceInputDisplay(inputs.accountBalance);
       return {
         title: "口座残高",
         text: formatted || "初期残高を入力",

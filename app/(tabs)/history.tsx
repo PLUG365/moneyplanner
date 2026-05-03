@@ -1,43 +1,69 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import HistorySearchPanel, {
+    type HistorySearchDateTarget,
+} from "@/components/HistorySearchPanel";
 import TransactionEditor from "@/components/TransactionEditor";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import {
-  Account,
-  addTransaction,
-  Breakdown,
-  Category,
-  DEFAULT_ACCOUNT_ID,
-  deleteTransaction,
-  getAccounts,
-  getBreakdownsByCategory,
-  getCategories,
-  householdCollection,
-  mapTransaction,
-  Transaction,
-  TransactionType,
-  updateTransaction,
+    Account,
+    addTransaction,
+    Breakdown,
+    Category,
+    DEFAULT_ACCOUNT_ID,
+    deleteTransactionFromPrevious,
+    householdCollection,
+    mapAccount,
+    mapBreakdown,
+    mapCategory,
+    mapTransaction,
+    reconcileAccountBalancesFromTransactions,
+    Transaction,
+    TransactionType,
+    updateTransactionFromPrevious,
 } from "@/lib/firestore";
 import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
-import { resolveTransactionCopyTarget } from "@/lib/transactionCopy";
+import { parseHistoryDrilldownParams } from "@/lib/historyDrilldown";
+import { buildHistoryListTransactions } from "@/lib/historyList";
+import {
+    filterHistoryTransactions,
+    type HistorySearchType,
+} from "@/lib/historySearch";
+import {
+    formatYearMonthLabel,
+    fromYearMonthDate,
+    shiftYearMonth,
+    toYearMonthDate,
+} from "@/lib/monthPicker";
+import { waitForPendingWrite } from "@/lib/pendingWrite";
+import { buildRecordCategoryOptions } from "@/lib/recordOptions";
+import { resolveTransactionAmountInput } from "@/lib/transactionAmountInput";
+import { isValidTransactionAmount } from "@/lib/transactionAmountValidation";
+import {
+    buildBreakdownsByCategory,
+    resolveTransactionCopyTarget,
+    resolveTransactionMasterSelection,
+} from "@/lib/transactionCopy";
+import { buildStoreEditResolution } from "@/lib/transactionStoreEdit";
 
 type ViewMode = "list" | "calendar";
+const WRITE_ACK_TIMEOUT_MS = 900;
 
 type UncopiedRecord = {
   id: string;
@@ -76,12 +102,34 @@ function toLocalDate(dateStr: string): Date {
   return new Date(y, m - 1, d);
 }
 
+function uniqueNonEmpty(values: (string | null | undefined)[]): string[] {
+  return Array.from(
+    new Set(values.map((value) => value?.trim()).filter(Boolean) as string[]),
+  );
+}
+
 export default function HistoryScreen() {
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
   const bottomTabOverflow = useBottomTabOverflow();
   const safeAreaInsets = useSafeAreaInsets();
   const householdId = useHouseholdId();
+  const historyParams = useLocalSearchParams<{
+    historyType?: string;
+    categoryName?: string;
+    fromDate?: string;
+    toDate?: string;
+    expandSearch?: string;
+    drilldownAt?: string;
+  }>();
+  const {
+    historyType,
+    categoryName: drilldownCategoryName,
+    fromDate: drilldownFromDate,
+    toDate: drilldownToDate,
+    expandSearch,
+    drilldownAt,
+  } = historyParams;
 
   const now = new Date();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -93,6 +141,7 @@ export default function HistoryScreen() {
   const [selectedDateTxs, setSelectedDateTxs] = useState<Transaction[]>([]);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTxId, setEditingTxId] = useState<string | null>(null);
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [editDate, setEditDate] = useState("");
   const [editAmountRaw, setEditAmountRaw] = useState("");
   const [editType, setEditType] = useState<TransactionType>("expense");
@@ -110,10 +159,45 @@ export default function HistoryScreen() {
   const [showBulkCopyModal, setShowBulkCopyModal] = useState(false);
   const [copyDate, setCopyDate] = useState(formatDate(new Date()));
   const [showCopyDatePicker, setShowCopyDatePicker] = useState(false);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showUncopiedModal, setShowUncopiedModal] = useState(false);
   const [uncopiedRecords, setUncopiedRecords] = useState<UncopiedRecord[]>([]);
+  const [historySearchType, setHistorySearchType] =
+    useState<HistorySearchType>("expense");
+  const [historySearchCategoryName, setHistorySearchCategoryName] =
+    useState("");
+  const [historySearchBreakdownName, setHistorySearchBreakdownName] =
+    useState("");
+  const [historySearchStoreName, setHistorySearchStoreName] = useState("");
+  const [historySearchMemoQuery, setHistorySearchMemoQuery] = useState("");
+  const [historySearchFromDate, setHistorySearchFromDate] = useState<
+    string | null
+  >(null);
+  const [historySearchToDate, setHistorySearchToDate] = useState<string | null>(
+    null,
+  );
+  const [searchDatePickerTarget, setSearchDatePickerTarget] =
+    useState<HistorySearchDateTarget | null>(null);
+  const [isHistorySearchExpanded, setIsHistorySearchExpanded] = useState(false);
 
   const monthScope = `${year}-${String(month).padStart(2, "0")}`;
+  const accountSubscription = useCollection<Account>(
+    buildFirestoreQueryKey(householdId, "accounts", "history-edit"),
+    () => (householdId ? householdCollection(householdId, "accounts") : null),
+    mapAccount,
+  );
+  const allTransactionsSubscription = useCollection<Transaction>(
+    buildFirestoreQueryKey(householdId, "transactions", "all"),
+    () => {
+      if (!householdId) return null;
+      return householdCollection(householdId, "transactions").orderBy(
+        "date",
+        "desc",
+      );
+    },
+    mapTransaction,
+  );
+
   const monthTransactionsSubscription = useCollection<Transaction>(
     buildFirestoreQueryKey(householdId, "transactions", monthScope),
     () => {
@@ -127,32 +211,186 @@ export default function HistoryScreen() {
     },
     mapTransaction,
   );
+  const categorySubscription = useCollection<Category>(
+    buildFirestoreQueryKey(householdId, "categories", "history-edit"),
+    () => (householdId ? householdCollection(householdId, "categories") : null),
+    mapCategory,
+  );
+  const breakdownSubscription = useCollection<Breakdown>(
+    buildFirestoreQueryKey(householdId, "breakdowns", "history-edit"),
+    () => (householdId ? householdCollection(householdId, "breakdowns") : null),
+    mapBreakdown,
+  );
 
-  const subscribedTransactions = useMemo(
-    () =>
-      [...monthTransactionsSubscription.data].sort((a, b) => {
-        const dateCmp = b.date.localeCompare(a.date);
-        if (dateCmp !== 0) return dateCmp;
-        return b.createdAt.localeCompare(a.createdAt);
-      }),
+  const listTransactions = useMemo(
+    () => buildHistoryListTransactions(allTransactionsSubscription.data),
+    [allTransactionsSubscription.data],
+  );
+
+  const calendarTransactions = useMemo(
+    () => buildHistoryListTransactions(monthTransactionsSubscription.data),
     [monthTransactionsSubscription.data],
   );
 
+  const filteredListTransactions = useMemo(
+    () =>
+      filterHistoryTransactions(listTransactions, {
+        type: historySearchType,
+        categoryName: historySearchCategoryName,
+        breakdownName: historySearchBreakdownName,
+        storeName: historySearchStoreName,
+        memoQuery: historySearchMemoQuery,
+        fromDate: historySearchFromDate,
+        toDate: historySearchToDate,
+      }),
+    [
+      historySearchBreakdownName,
+      historySearchCategoryName,
+      historySearchFromDate,
+      historySearchMemoQuery,
+      historySearchStoreName,
+      historySearchToDate,
+      historySearchType,
+      listTransactions,
+    ],
+  );
+
+  const accountOptions = useMemo(
+    () => [...accountSubscription.data],
+    [accountSubscription.data],
+  );
+  const categoryOptions = useMemo(
+    () => buildRecordCategoryOptions(categorySubscription.data),
+    [categorySubscription.data],
+  );
+  const breakdownOptions = useMemo(
+    () =>
+      [...breakdownSubscription.data].sort((a, b) => {
+        if (a.isDefault !== b.isDefault) return b.isDefault ? 1 : -1;
+        return a.name.localeCompare(b.name);
+      }),
+    [breakdownSubscription.data],
+  );
+  const breakdownsByCategory = useMemo(
+    () => buildBreakdownsByCategory(breakdownOptions),
+    [breakdownOptions],
+  );
+  const selectedEditAccount = useMemo(
+    () =>
+      accountOptions.find((account) => account.id === editAccountId) ?? null,
+    [accountOptions, editAccountId],
+  );
+  const selectedEditCategory = useMemo(
+    () =>
+      editCategories.find((category) => category.id === editCategoryId) ?? null,
+    [editCategories, editCategoryId],
+  );
+  const selectedEditBreakdown = useMemo(
+    () =>
+      editBreakdowns.find((breakdown) => breakdown.id === editBreakdownId) ??
+      null,
+    [editBreakdowns, editBreakdownId],
+  );
+
+  const historySearchCategoryOptions = useMemo(
+    () =>
+      uniqueNonEmpty(
+        listTransactions
+          .filter((tx) => tx.type === historySearchType)
+          .map((tx) => tx.categoryName),
+      ),
+    [historySearchType, listTransactions],
+  );
+
+  const historySearchBreakdownOptions = useMemo(
+    () =>
+      uniqueNonEmpty(
+        listTransactions
+          .filter(
+            (tx) =>
+              tx.type === historySearchType &&
+              (!historySearchCategoryName ||
+                tx.categoryName === historySearchCategoryName),
+          )
+          .map((tx) => tx.breakdownName),
+      ),
+    [historySearchCategoryName, historySearchType, listTransactions],
+  );
+
+  const historySearchStoreOptions = useMemo(
+    () =>
+      uniqueNonEmpty(
+        listTransactions
+          .filter(
+            (tx) =>
+              tx.type === "expense" &&
+              (!historySearchCategoryName ||
+                tx.categoryName === historySearchCategoryName),
+          )
+          .map((tx) => tx.storeName),
+      ),
+    [historySearchCategoryName, listTransactions],
+  );
+
   const load = useCallback(async () => {
-    setTransactions(subscribedTransactions);
+    setTransactions(filteredListTransactions);
     setMarkedDates(
-      Array.from(new Set(subscribedTransactions.map((tx) => tx.date))),
+      Array.from(new Set(calendarTransactions.map((tx) => tx.date))),
     );
     setSelectedDateTxs(
       selectedDate
-        ? subscribedTransactions.filter((tx) => tx.date === selectedDate)
+        ? calendarTransactions.filter((tx) => tx.date === selectedDate)
         : [],
     );
-  }, [selectedDate, subscribedTransactions]);
+  }, [calendarTransactions, filteredListTransactions, selectedDate]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const parsed = parseHistoryDrilldownParams({
+      historyType,
+      categoryName: drilldownCategoryName,
+      fromDate: drilldownFromDate,
+      toDate: drilldownToDate,
+      expandSearch,
+    });
+    if (!parsed) return;
+
+    setViewMode("list");
+    setHistorySearchType(parsed.type);
+    setHistorySearchCategoryName(parsed.categoryName);
+    setHistorySearchBreakdownName("");
+    setHistorySearchStoreName("");
+    setHistorySearchMemoQuery("");
+    setHistorySearchFromDate(parsed.fromDate || null);
+    setHistorySearchToDate(parsed.toDate || null);
+    setSearchDatePickerTarget(null);
+    setIsHistorySearchExpanded(parsed.expandSearch);
+  }, [
+    drilldownAt,
+    drilldownCategoryName,
+    drilldownFromDate,
+    drilldownToDate,
+    expandSearch,
+    historyType,
+  ]);
+
+  const clearHistorySearchConditions = () => {
+    setHistorySearchCategoryName("");
+    setHistorySearchBreakdownName("");
+    setHistorySearchStoreName("");
+    setHistorySearchMemoQuery("");
+    setHistorySearchFromDate(null);
+    setHistorySearchToDate(null);
+    setSearchDatePickerTarget(null);
+  };
+
+  const handleHistorySearchTypeChange = (nextType: HistorySearchType) => {
+    setHistorySearchType(nextType);
+    clearHistorySearchConditions();
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -167,22 +405,30 @@ export default function HistoryScreen() {
     }, []),
   );
 
-  const prevMonth = () => {
-    if (month === 1) {
-      setYear((y) => y - 1);
-      setMonth(12);
-    } else setMonth((m) => m - 1);
+  const clearCalendarSelection = () => {
     setSelectedDate(null);
     setSelectedDateTxs([]);
   };
 
+  const prevMonth = () => {
+    const next = shiftYearMonth(year, month, -1);
+    setYear(next.year);
+    setMonth(next.month);
+    clearCalendarSelection();
+  };
+
   const nextMonth = () => {
-    if (month === 12) {
-      setYear((y) => y + 1);
-      setMonth(1);
-    } else setMonth((m) => m + 1);
-    setSelectedDate(null);
-    setSelectedDateTxs([]);
+    const next = shiftYearMonth(year, month, 1);
+    setYear(next.year);
+    setMonth(next.month);
+    clearCalendarSelection();
+  };
+
+  const handleCalendarMonthChange = (selected: Date) => {
+    const next = fromYearMonthDate(selected);
+    setYear(next.year);
+    setMonth(next.month);
+    clearCalendarSelection();
   };
 
   const handleDelete = (tx: Transaction) => {
@@ -195,7 +441,10 @@ export default function HistoryScreen() {
           text: "削除",
           style: "destructive",
           onPress: async () => {
-            await deleteTransaction(tx.id);
+            await waitForPendingWrite(
+              deleteTransactionFromPrevious(tx),
+              WRITE_ACK_TIMEOUT_MS,
+            );
           },
         },
       ],
@@ -242,19 +491,8 @@ export default function HistoryScreen() {
     const failed: UncopiedRecord[] = [];
     const sourceMap = new Map(transactions.map((tx) => [tx.id, tx]));
 
-    const [incomeCategories, expenseCategories, accounts] = await Promise.all([
-      getCategories("income"),
-      getCategories("expense"),
-      getAccounts(),
-    ]);
-    const categories = [...incomeCategories, ...expenseCategories];
-    const breakdownPairs = await Promise.all(
-      categories.map(
-        async (category) =>
-          [category.id, await getBreakdownsByCategory(category.id)] as const,
-      ),
-    );
-    const breakdownsByCategory = new Map<string, Breakdown[]>(breakdownPairs);
+    const categories = categoryOptions;
+    const accounts = accountOptions;
 
     for (const id of selectedTxIds) {
       const tx = sourceMap.get(id);
@@ -282,14 +520,37 @@ export default function HistoryScreen() {
         continue;
       }
 
-      await addTransaction(
-        copyDate,
-        tx.amount,
-        tx.type,
-        target.categoryId,
-        target.accountId,
-        tx.memo ?? "",
-        target.breakdownId,
+      await waitForPendingWrite(
+        addTransaction(
+          copyDate,
+          tx.amount,
+          tx.type,
+          target.categoryId,
+          target.accountId,
+          tx.memo ?? "",
+          target.breakdownId,
+          tx.storeId,
+          {
+            accountName:
+              accounts.find((account) => account.id === target.accountId)
+                ?.name ?? tx.accountName,
+            categoryName:
+              categories.find((category) => category.id === target.categoryId)
+                ?.name ?? tx.categoryName,
+            categoryColor:
+              categories.find((category) => category.id === target.categoryId)
+                ?.color ?? tx.categoryColor,
+            breakdownName:
+              (target.breakdownId
+                ? breakdownsByCategory
+                    .get(target.categoryId)
+                    ?.find((breakdown) => breakdown.id === target.breakdownId)
+                    ?.name
+                : "") ?? tx.breakdownName,
+            storeName: tx.storeName,
+          },
+        ),
+        WRITE_ACK_TIMEOUT_MS,
       );
       copied += 1;
     }
@@ -319,33 +580,46 @@ export default function HistoryScreen() {
     Alert.alert("一括コピー完了", `${copied}件コピーしました`);
   };
 
-  const syncEditCategories = async (
+  const syncEditCategories = (
     type: TransactionType,
     preferredCategoryId?: string | null,
     preferredBreakdownId?: string | null,
+    preferredCategoryName = "",
+    preferredBreakdownName = "",
   ) => {
-    const cats = await getCategories(type);
+    const cats = categoryOptions.filter((category) => category.type === type);
     setEditCategories(cats);
 
-    const nextCategoryId =
-      preferredCategoryId === null
-        ? null
-        : preferredCategoryId && cats.some((c) => c.id === preferredCategoryId)
-          ? preferredCategoryId
-          : (cats[0]?.id ?? null);
+    const initialSelection = resolveTransactionMasterSelection(
+      {
+        type,
+        categoryId: preferredCategoryId ?? null,
+        categoryName: preferredCategoryName,
+        breakdownId: preferredBreakdownId ?? null,
+        breakdownName: preferredBreakdownName,
+      },
+      { categories: cats, breakdownsByCategory: new Map() },
+    );
+    const nextCategoryId = initialSelection?.categoryId ?? cats[0]?.id ?? null;
     setEditCategoryId(nextCategoryId);
 
     if (nextCategoryId) {
-      const bds = await getBreakdownsByCategory(nextCategoryId);
+      const bds = breakdownsByCategory.get(nextCategoryId) ?? [];
       setEditBreakdowns(bds);
-      const nextBreakdownId =
-        preferredBreakdownId === null
-          ? null
-          : preferredBreakdownId &&
-              bds.some((b) => b.id === preferredBreakdownId)
-            ? preferredBreakdownId
-            : (bds[0]?.id ?? null);
-      setEditBreakdownId(nextBreakdownId);
+      const selection = resolveTransactionMasterSelection(
+        {
+          type,
+          categoryId: nextCategoryId,
+          categoryName: preferredCategoryName,
+          breakdownId: preferredBreakdownId ?? null,
+          breakdownName: preferredBreakdownName,
+        },
+        {
+          categories: cats,
+          breakdownsByCategory: new Map([[nextCategoryId, bds]]),
+        },
+      );
+      setEditBreakdownId(selection?.breakdownId ?? null);
     } else {
       setEditBreakdowns([]);
       setEditBreakdownId(null);
@@ -353,23 +627,31 @@ export default function HistoryScreen() {
   };
 
   const openEditModal = async (tx: Transaction) => {
-    const accounts = await getAccounts();
-    setEditAccounts(accounts);
+    void reconcileAccountBalancesFromTransactions().catch(() => undefined);
+    setEditAccounts(accountOptions);
     setEditingTxId(tx.id);
+    setEditingTx(tx);
     setEditDate(tx.date);
     setEditAmountRaw(String(tx.amount));
     setEditType(tx.type);
     setEditAccountId(
-      accounts.some((a) => a.id === tx.accountId)
+      accountOptions.some((account) => account.id === tx.accountId)
         ? tx.accountId
-        : (accounts.find((a) => a.id === DEFAULT_ACCOUNT_ID)?.id ??
-            accounts[0]?.id ??
+        : (accountOptions.find((account) => account.id === DEFAULT_ACCOUNT_ID)
+            ?.id ??
+            accountOptions[0]?.id ??
             null),
     );
     setEditMemo(tx.memo || "");
     setEditStoreId(tx.storeId);
     setEditStoreName(tx.storeName);
-    await syncEditCategories(tx.type, tx.categoryId, tx.breakdownId);
+    syncEditCategories(
+      tx.type,
+      tx.categoryId,
+      tx.breakdownId,
+      tx.categoryName,
+      tx.breakdownName,
+    );
     setShowEditModal(true);
   };
 
@@ -377,24 +659,24 @@ export default function HistoryScreen() {
     setEditType(nextType);
     setEditStoreId(null);
     setEditStoreName("");
-    void syncEditCategories(nextType);
+    syncEditCategories(nextType);
   };
 
-  const handleEditCategoryChange = async (nextCategoryId: string) => {
+  const handleEditCategoryChange = (nextCategoryId: string) => {
     setEditCategoryId(nextCategoryId);
-    const bds = await getBreakdownsByCategory(nextCategoryId);
+    const bds = breakdownsByCategory.get(nextCategoryId) ?? [];
     setEditBreakdowns(bds);
-    setEditBreakdownId(bds[0]?.id ?? null);
+    setEditBreakdownId(null);
     setEditStoreId(null);
     setEditStoreName("");
   };
 
   const handleUpdate = async () => {
-    if (!editingTxId) return;
+    if (!editingTxId || !editingTx) return;
 
-    const amount = parseInt(editAmountRaw.replace(/,/g, ""), 10);
-    if (!editAmountRaw || isNaN(amount) || amount <= 0) {
-      Alert.alert("エラー", "金額を入力してください");
+    const amount = resolveTransactionAmountInput(editAmountRaw);
+    if (!isValidTransactionAmount(amount, editMemo)) {
+      Alert.alert("エラー", "金額を入力するか、メモを入力してください");
       return;
     }
     if (!editCategoryId) {
@@ -406,20 +688,47 @@ export default function HistoryScreen() {
       return;
     }
 
-    await updateTransaction(
-      editingTxId,
-      editDate,
-      amount,
-      editType,
-      editCategoryId,
-      editAccountId,
-      editMemo,
-      editBreakdownId,
-      editStoreId,
+    const storeResolution = buildStoreEditResolution({
+      storeId: editStoreId,
+      storeName: editStoreName,
+      categoryId: editCategoryId,
+    });
+    const resolvedStoreId =
+      storeResolution.kind === "selected" ? storeResolution.storeId : null;
+
+    await waitForPendingWrite(
+      updateTransactionFromPrevious(
+        editingTx,
+        editDate,
+        amount,
+        editType,
+        editCategoryId,
+        editAccountId,
+        editMemo,
+        editBreakdownId,
+        resolvedStoreId,
+        {
+          accountName: selectedEditAccount?.name ?? editingTx.accountName,
+          categoryName: selectedEditCategory?.name ?? editingTx.categoryName,
+          categoryColor: selectedEditCategory?.color ?? editingTx.categoryColor,
+          breakdownName: selectedEditBreakdown?.name ?? editingTx.breakdownName,
+          storeName:
+            storeResolution.kind === "restore"
+              ? storeResolution.storeName
+              : editStoreName,
+        },
+      ),
+      WRITE_ACK_TIMEOUT_MS,
     );
 
     setShowEditModal(false);
     setEditingTxId(null);
+    setEditingTx(null);
+  };
+
+  const handleEditAccountPickerOpen = async () => {
+    void reconcileAccountBalancesFromTransactions().catch(() => undefined);
+    setEditAccounts(accountOptions);
   };
 
   const handleSelectDate = (dateStr: string) => {
@@ -604,23 +913,105 @@ export default function HistoryScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 月ナビゲーション */}
-      <View
-        style={[
-          styles.monthNav,
-          { backgroundColor: colors.card, borderColor: colors.border },
-        ]}
-      >
-        <TouchableOpacity onPress={prevMonth} style={styles.navButton}>
-          <Text style={[styles.navArrow, { color: colors.tint }]}>‹</Text>
-        </TouchableOpacity>
-        <Text style={[styles.monthTitle, { color: colors.text }]}>
-          {year}年{month}月
-        </Text>
-        <TouchableOpacity onPress={nextMonth} style={styles.navButton}>
-          <Text style={[styles.navArrow, { color: colors.tint }]}>›</Text>
-        </TouchableOpacity>
-      </View>
+      {viewMode === "calendar" ? (
+        <View
+          style={[
+            styles.monthNav,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <TouchableOpacity onPress={prevMonth} style={styles.navButton}>
+            <Text style={[styles.navArrow, { color: colors.tint }]}>‹</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.monthTitleButton}
+            onPress={() => setShowMonthPicker((visible) => !visible)}
+          >
+            <Text style={[styles.monthTitle, { color: colors.text }]}>
+              {formatYearMonthLabel(year, month, "monthly")}
+            </Text>
+            <Text style={[styles.monthJumpHint, { color: colors.subText }]}>
+              変更
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={nextMonth} style={styles.navButton}>
+            <Text style={[styles.navArrow, { color: colors.tint }]}>›</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {viewMode === "calendar" && showMonthPicker ? (
+        Platform.OS === "ios" ? (
+          <View
+            style={[
+              styles.inlineDatePickerWrap,
+              { borderColor: colors.border, marginHorizontal: 12 },
+            ]}
+          >
+            <View
+              style={[
+                styles.inlineDatePickerHeader,
+                { borderBottomColor: colors.border },
+              ]}
+            >
+              <TouchableOpacity onPress={() => setShowMonthPicker(false)}>
+                <Text style={[styles.datePickerDone, { color: colors.tint }]}>
+                  完了
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <DateTimePicker
+              value={toYearMonthDate(year, month)}
+              mode="date"
+              display="spinner"
+              locale="ja-JP"
+              onChange={(_, selected) => {
+                if (selected) handleCalendarMonthChange(selected);
+              }}
+            />
+          </View>
+        ) : (
+          <DateTimePicker
+            value={toYearMonthDate(year, month)}
+            mode="date"
+            display="default"
+            onChange={(event, selected) => {
+              setShowMonthPicker(false);
+              if (event.type === "set" && selected) {
+                handleCalendarMonthChange(selected);
+              }
+            }}
+          />
+        )
+      ) : null}
+
+      {viewMode === "list" ? (
+        <HistorySearchPanel
+          colors={colors}
+          type={historySearchType}
+          categoryName={historySearchCategoryName}
+          breakdownName={historySearchBreakdownName}
+          storeName={historySearchStoreName}
+          memoQuery={historySearchMemoQuery}
+          fromDate={historySearchFromDate}
+          toDate={historySearchToDate}
+          datePickerTarget={searchDatePickerTarget}
+          categoryOptions={historySearchCategoryOptions}
+          breakdownOptions={historySearchBreakdownOptions}
+          storeOptions={historySearchStoreOptions}
+          expanded={isHistorySearchExpanded}
+          onExpandedChange={setIsHistorySearchExpanded}
+          onTypeChange={handleHistorySearchTypeChange}
+          onCategoryNameChange={setHistorySearchCategoryName}
+          onBreakdownNameChange={setHistorySearchBreakdownName}
+          onStoreNameChange={setHistorySearchStoreName}
+          onMemoQueryChange={setHistorySearchMemoQuery}
+          onFromDateChange={setHistorySearchFromDate}
+          onToDateChange={setHistorySearchToDate}
+          onDatePickerTargetChange={setSearchDatePickerTarget}
+          onClearConditions={clearHistorySearchConditions}
+        />
+      ) : null}
 
       <ScrollView
         contentContainerStyle={[
@@ -868,7 +1259,13 @@ export default function HistoryScreen() {
               <Text style={[styles.modalTitle, { color: colors.text }]}>
                 記録を編集
               </Text>
-              <TouchableOpacity onPress={() => setShowEditModal(false)}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowEditModal(false);
+                  setEditingTx(null);
+                  setEditingTxId(null);
+                }}
+              >
                 <Text style={[styles.modalClose, { color: colors.tint }]}>
                   閉じる
                 </Text>
@@ -893,6 +1290,8 @@ export default function HistoryScreen() {
                 incomeColor={incomeColor}
                 expenseColor={expenseColor}
                 bottomInset={safeAreaInsets.bottom + 8}
+                amountInputUseNativeModal={false}
+                onAccountPickerOpen={handleEditAccountPickerOpen}
                 submitLabel="更新する"
                 onTypeChange={handleEditTypeChange}
                 onAmountRawChange={setEditAmountRaw}
@@ -1010,7 +1409,9 @@ const styles = StyleSheet.create({
   },
   navButton: { padding: 8 },
   navArrow: { fontSize: 26, fontWeight: "400" },
+  monthTitleButton: { alignItems: "center", paddingVertical: 6, flex: 1 },
   monthTitle: { fontSize: 17, fontWeight: "700" },
+  monthJumpHint: { fontSize: 11, fontWeight: "700", marginTop: 2 },
   scrollContent: { paddingHorizontal: 12, paddingBottom: 100 },
   emptyText: { textAlign: "center", marginTop: 48, fontSize: 15 },
   txRow: {
