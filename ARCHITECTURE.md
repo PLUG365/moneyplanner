@@ -14,7 +14,6 @@ graph TD
                 Index["記録タブ<br/>index.tsx"]
                 History["履歴タブ<br/>history.tsx"]
                 Summary["集計タブ<br/>summary.tsx"]
-                Plan["計画タブ<br/>plan.tsx"]
                 Settings["設定タブ<br/>settings.tsx"]
             end
 
@@ -42,13 +41,11 @@ graph TD
     Tabs --> Index
     Tabs --> History
     Tabs --> Summary
-    Tabs --> Plan
     Tabs --> Settings
     Index -->|CRUD| DB
     History -->|CRUD| DB
     Summary -->|CRUD| DB
     Settings -->|CRUD| DB
-    Plan -->|ライフイベント/プロフィール| DB
     Settings -->|exportCSV| CSV
     CSV -->|読み取り| DB
     CSV -->|writeAsStringAsync + shareAsync| Share[共有シート]
@@ -60,14 +57,13 @@ graph TD
 
 ---
 
-## 画面構成（5タブ）
+## 画面構成（4タブ）
 
 ```mermaid
 graph LR
     A[記録] --> B[履歴]
     B --> C[集計]
-    C --> D[計画]
-    D --> E[設定]
+    C --> D[設定]
 
     A:::active
     classDef active fill:#1565C0,color:#fff
@@ -78,7 +74,6 @@ graph LR
 | 記録 | `app/(tabs)/index.tsx`    | 収支入力フォーム・カテゴリ選択・日付入力 |
 | 履歴 | `app/(tabs)/history.tsx`  | リスト表示・カレンダービュー             |
 | 集計 | `app/(tabs)/summary.tsx`  | 月次・年次・カテゴリ別集計               |
-| 計画 | `app/(tabs)/plan.tsx`     | ライフプラン（Phase 2）                  |
 | 設定 | `app/(tabs)/settings.tsx` | カテゴリ管理・CSV出力・世帯管理          |
 
 ---
@@ -218,14 +213,6 @@ erDiagram
     /budgets/{categoryId}
         - categoryId, amount
         - updatedAt: Timestamp
-
-    /planLifeEvents/{eventId}
-        - eventType, paramsJson
-        - createdAt, updatedAt: Timestamp
-
-    /planProfile (単一ドキュメント: id="default")
-        - payloadJson
-        - updatedAt: Timestamp
 ```
 
 ### デフォルトカテゴリ
@@ -333,7 +320,6 @@ moneyplanner/
 │       ├── index.tsx        # 記録
 │       ├── history.tsx      # 履歴
 │       ├── summary.tsx      # 集計
-│       ├── plan.tsx         # 計画
 │       └── settings.tsx     # 設定
 ├── lib/
 │   ├── firestore.ts         # Firestore操作・型定義

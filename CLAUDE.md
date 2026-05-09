@@ -30,6 +30,15 @@ npx expo start
 - **両AIに共通する内容**（技術スタック・DB規則・Git規則・ファイル構成など）を変更するときは `.github/copilot-instructions.md` も同時に更新する
 - **Claude Code固有の内容**（開発サーバールール・previewツール制約など）はこのファイルのみ更新する
 
+## AI運用チェックリスト（共通）
+
+- 詳細ルールは `docs/ai-development.md` を参照し、実行時にも遵守する
+- 大きい実装や委任前に、目的・変更範囲・禁止範囲・DoD・必須テストを明記する
+- セキュリティ/プライバシー影響（Rules、Auth、課金、データ削除、暗号化など）がある変更は人間レビュー必須
+- AI/外部ツールへ本番データ、秘密情報、認証情報、個人情報を渡さない
+- 実装で判明した仕様差分は `PLAN.md`、`ARCHITECTURE.md`、`docs/ai-development.md` に反映する
+- 重要な設計判断、方針転換、採用/不採用理由は `docs/decisions/` に記録し、将来の復活判断に必要な背景と復元方針も残す
+
 ## Gitについて
 
 - **`git push` はユーザーが明示的に指示したときのみ行う**
@@ -69,6 +78,5 @@ app/(tabs)/
   index.tsx        # 記録タブ（初期画面）
   history.tsx      # 履歴タブ
   summary.tsx      # 集計タブ
-  plan.tsx         # 計画タブ
   settings.tsx     # 設定タブ
 ```

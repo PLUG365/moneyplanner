@@ -5,5 +5,6 @@
 ## 一覧
 
 - [Cloud Firestore移行](firestore-migration.md)
+- [計画タブ廃止](plan-feature-retirement.md)
 
 新しい重要判断を追加した場合は、この一覧と [README.md](../../README.md#ドキュメント構成) の更新要否も確認します。

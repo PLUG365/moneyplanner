@@ -13,17 +13,6 @@
 - **CSV出力** — BOM付きUTF-8（Excel対応）
 - **カテゴリ管理** — デフォルトカテゴリ + カスタム追加、内訳管理
 - **世帯管理** — メンバー解除、招待コード再発行、認証解除と全データ削除
-- **計画** — 将来の家計シミュレーション（詳細は下記「計画タブ（現状）」）
-
-## 計画タブ（現状）
-
-- **シミュレーション** — 年次テーブルと固定サマリーで資産推移を表示
-- **想定値編集** — 収入成長率・生活費上昇率・資産運用利回りを編集可能
-- **家族構成（子ども）** — 生年月日・進学プランを登録
-- **教育費自動提案** — 子どもの設定から教育費候補を自動生成し、ポップアップで確認して登録
-- **大型出費イベント** — 教育・車・住宅の一時支出を登録
-- **連動更新** — 子ども名変更時は紐づく教育イベント名を同期、子ども削除時は紐づく教育イベントも削除（確認ダイアログあり）
-- **反映ルール** — 教育費の自動提案は、登録するまで結果サマリーに反映しない
 
 ## 開発環境のセットアップ
 
@@ -79,6 +68,7 @@ npx expo start --tunnel
 | [docs/decisions/](docs/decisions/)                                   | 重要な設計判断・方針転換・採用/不採用理由の記録                                   |
 | [docs/release-checklist.md](docs/release-checklist.md)               | TestFlight、App Check enforcement、App Store申請、有料化開始前の確認項目          |
 | [docs/testflight-history.md](docs/testflight-history.md)             | TestFlight/dev-clientで実施した実機確認の履歴                                     |
+| [docs/known-issues.md](docs/known-issues.md)                         | 機能実装後レビューで洗い出した未対応の懸念事項（UX整合性・データ整合・誤操作など）|
 | [docs/privacy-and-monetization.md](docs/privacy-and-monetization.md) | 課金、プライバシー、問い合わせ、本番データ閲覧制限の方針                          |
 | [docs/ai-development.md](docs/ai-development.md)                     | AI活用、外部ツール、レビュー、知見退避ルール                                      |
 

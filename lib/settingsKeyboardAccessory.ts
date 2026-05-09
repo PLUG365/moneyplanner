@@ -50,6 +50,28 @@ export function resolveAccountBalanceInput(input: string): number | null {
   });
 }
 
+export function normalizeBudgetInput(input: string): string {
+  return normalizeMoneyInput(input, {
+    allowOperators: true,
+    allowNegative: false,
+  });
+}
+
+export function formatBudgetInputDisplay(input: string): string {
+  return formatMoneyInputDisplay(input, {
+    allowOperators: true,
+    allowNegative: false,
+  });
+}
+
+export function resolveBudgetInput(input: string): number | null {
+  return resolveMoneyInput(input, {
+    allowOperators: true,
+    allowNegative: false,
+    emptyValue: null,
+  });
+}
+
 export function getSettingsKeyboardAccessoryPreview(
   field: SettingsKeyboardField,
   inputs: SettingsKeyboardAccessoryInputs,

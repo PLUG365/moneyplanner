@@ -3,11 +3,14 @@ import test from "node:test";
 
 import {
   formatAccountBalanceInputDisplay,
+  formatBudgetInputDisplay,
   formatYenDisplay,
   getSettingsKeyboardAccessoryPreview,
   normalizeAccountBalanceInput,
+  normalizeBudgetInput,
   normalizeSignedYenInput,
   resolveAccountBalanceInput,
+  resolveBudgetInput,
 } from "./settingsKeyboardAccessory";
 
 test("formatYenDisplay formats raw digits as yen", () => {
@@ -47,6 +50,31 @@ test("resolveAccountBalanceInput applies arithmetic expressions", () => {
   assert.equal(resolveAccountBalanceInput(""), 0);
   assert.equal(resolveAccountBalanceInput("12000/0"), null);
   assert.equal(resolveAccountBalanceInput("12000+"), null);
+});
+
+test("normalizeBudgetInput keeps arithmetic operators", () => {
+  assert.equal(normalizeBudgetInput("¥10,000+5,000"), "10000+5000");
+  assert.equal(normalizeBudgetInput("10,000×2"), "10000*2");
+  assert.equal(normalizeBudgetInput("10,000÷2"), "10000/2");
+});
+
+test("formatBudgetInputDisplay formats plain values and keeps expressions editable", () => {
+  assert.equal(formatBudgetInputDisplay("50000"), "¥50,000");
+  assert.equal(formatBudgetInputDisplay("10000+5000"), "10000+5000");
+  assert.equal(formatBudgetInputDisplay("10000*2"), "10000×2");
+  assert.equal(formatBudgetInputDisplay("10000-3000"), "10000-3000");
+  assert.equal(formatBudgetInputDisplay(""), "");
+});
+
+test("resolveBudgetInput evaluates arithmetic expressions and rejects leading negatives", () => {
+  assert.equal(resolveBudgetInput("10000+5000"), 15000);
+  assert.equal(resolveBudgetInput("10000-3000"), 7000);
+  assert.equal(resolveBudgetInput("10000*2"), 20000);
+  assert.equal(resolveBudgetInput("10000/2"), 5000);
+  assert.equal(resolveBudgetInput(""), null);
+  assert.equal(resolveBudgetInput("10000/0"), null);
+  assert.equal(resolveBudgetInput("10000+"), null);
+  assert.equal(resolveBudgetInput("-500"), null);
 });
 
 test("getSettingsKeyboardAccessoryPreview returns category name preview", () => {

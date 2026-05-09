@@ -4,8 +4,6 @@ const HOUSEHOLD_DELETION_COLLECTION_NAMES = [
   "transactions",
   "accounts",
   "budgets",
-  "planLifeEvents",
-  "planProfile",
   "stores",
   "storeCategoryUsage",
   "breakdowns",

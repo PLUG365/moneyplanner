@@ -53,13 +53,6 @@ export interface Breakdown {
   isDefault: boolean;
 }
 
-export interface Store {
-  id: string;
-  name: string;
-  categoryId: string | null;
-  lastUsedAt: string;
-}
-
 export interface Account {
   id: string;
   name: string;
@@ -68,6 +61,13 @@ export interface Account {
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Store {
+  id: string;
+  name: string;
+  categoryId: string | null;
+  lastUsedAt: string;
 }
 
 export interface MonthlyBudget {
@@ -110,19 +110,6 @@ export interface Transaction {
   storeName: string;
   memo: string;
   createdAt: string;
-}
-
-export interface PlanLifeEvent {
-  id: string;
-  eventType: string;
-  paramsJson: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PlanProfile {
-  payloadJson: string;
-  updatedAt: string;
 }
 
 export interface MonthlyCategorySummary {
@@ -418,29 +405,6 @@ function mapStore(
   };
 }
 
-export function mapPlanLifeEvent(
-  id: string,
-  data: FirebaseFirestoreTypes.DocumentData,
-): PlanLifeEvent {
-  return {
-    id,
-    eventType: data.eventType,
-    paramsJson: data.paramsJson,
-    createdAt: toISOString(data.createdAt),
-    updatedAt: toISOString(data.updatedAt),
-  };
-}
-
-export function mapPlanProfile(
-  _id: string,
-  data: FirebaseFirestoreTypes.DocumentData,
-): PlanProfile {
-  return {
-    payloadJson: data.payloadJson,
-    updatedAt: toISOString(data.updatedAt),
-  };
-}
-
 // ── デフォルトカテゴリ ───────────────────────────────
 const DEFAULT_CATEGORIES: {
   name: string;
@@ -651,8 +615,6 @@ export async function resetFirestoreForDevelopment(): Promise<void> {
     "transactions",
     "accounts",
     "budgets",
-    "planLifeEvents",
-    "planProfile",
     "stores",
     "storeCategoryUsage",
     "breakdowns",
@@ -664,70 +626,6 @@ export async function resetFirestoreForDevelopment(): Promise<void> {
   }
 
   // 再初期化
-  const batch = firestore().batch();
-  const displayOrderByType: Record<TransactionType, number> = {
-    income: 0,
-    expense: 0,
-  };
-  for (const cat of DEFAULT_CATEGORIES) {
-    const catRef = hDoc.collection("categories").doc();
-    const displayOrder = displayOrderByType[cat.type]++;
-    batch.set(catRef, {
-      name: cat.name,
-      type: cat.type,
-      color: cat.color,
-      isDefault: true,
-      displayOrder,
-      updatedAt: firestore.FieldValue.serverTimestamp(),
-    });
-    for (const breakdownName of cat.breakdowns) {
-      batch.set(hDoc.collection("breakdowns").doc(), {
-        categoryId: catRef.id,
-        name: breakdownName,
-        isDefault: true,
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      });
-    }
-  }
-  batch.set(hDoc.collection("accounts").doc(DEFAULT_ACCOUNT_ID), {
-    name: DEFAULT_ACCOUNT_NAME,
-    balance: 0,
-    initialBalance: 0,
-    isDefault: true,
-    createdAt: firestore.FieldValue.serverTimestamp(),
-    updatedAt: firestore.FieldValue.serverTimestamp(),
-  });
-  await batch.commit();
-}
-
-export async function deleteHouseholdDataAndCurrentUserProfile(): Promise<void> {
-  const user = getCurrentUser();
-  if (!user) {
-    throw new Error("ログインしていません");
-  }
-
-  const householdId = await ensureHouseholdId();
-  const hDoc = firestore().collection("households").doc(householdId);
-  const householdSnap = await hDoc.get();
-  const inviteCode = householdSnap.data()?.inviteCode as string | undefined;
-
-  if (inviteCode) {
-    await firestore().collection("inviteCodes").doc(inviteCode).delete();
-  }
-
-  const collectionNames = getHouseholdDeletionCollectionNames();
-  for (const name of collectionNames.filter((item) => item !== "members")) {
-    await deleteCollectionDocs(hDoc.collection(name));
-  }
-
-  await deleteHouseholdDocAndMembers(hDoc);
-  await firestore().collection("users").doc(user.uid).delete();
-  clearHouseholdCache();
-}
-
-export async function resetCategoryAndBreakdownsToDefault(): Promise<void> {
-  const hDoc = await householdDoc();
-
   const [txSnap, oldCategorySnap, oldBudgetSnap] = await Promise.all([
     hDoc.collection("transactions").get(),
     hDoc.collection("categories").get(),
@@ -1503,62 +1401,6 @@ export async function getStoresByCategory(
   let storesSnap = await hDoc.collection("stores").get();
 
   if (storesSnap.empty) {
-    const txSnap = await hDoc.collection("transactions").get();
-    await restoreStoreMastersFromTransactionSnapshots(hDoc, txSnap.docs);
-    storesSnap = await hDoc.collection("stores").get();
-  }
-
-  const stores = storesSnap.docs.map((doc) => mapStore(doc.id, doc.data()));
-
-  if (categoryId == null) {
-    return stores.sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt));
-  }
-
-  // カテゴリ別使用履歴で並べ替え
-  const usageSnap = await hDoc
-    .collection("storeCategoryUsage")
-    .where("categoryId", "==", categoryId)
-    .get();
-  const usageMap = new Map<string, string>();
-  for (const doc of usageSnap.docs) {
-    usageMap.set(doc.data().storeId, toISOString(doc.data().lastUsedAt));
-  }
-
-  return stores.sort((a, b) => {
-    const aUsage = usageMap.get(a.id);
-    const bUsage = usageMap.get(b.id);
-    if (aUsage && !bUsage) return -1;
-    if (!aUsage && bUsage) return 1;
-    if (aUsage && bUsage) return bUsage.localeCompare(aUsage);
-    return b.lastUsedAt.localeCompare(a.lastUsedAt);
-  });
-}
-
-export async function getAllStores(): Promise<Store[]> {
-  const hDoc = await householdDoc();
-  const snap = await hDoc.collection("stores").get();
-  return snap.docs
-    .map((doc) => mapStore(doc.id, doc.data()))
-    .sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt));
-}
-
-export async function upsertStore(
-  name: string,
-  categoryId?: string | null,
-): Promise<string> {
-  const hDoc = await householdDoc();
-  const existing = await hDoc
-    .collection("stores")
-    .where("name", "==", name)
-    .limit(1)
-    .get();
-
-  if (existing.empty) {
-    const ref = await hDoc.collection("stores").add({
-      name,
-      categoryId: categoryId ?? null,
-      lastUsedAt: firestore.FieldValue.serverTimestamp(),
-    });
     return ref.id;
   }
 
@@ -1567,64 +1409,6 @@ export async function upsertStore(
     await doc.ref.update({ categoryId });
   }
   return doc.id;
-}
-
-// ── Life Events ──────────────────────────────────────
-
-export async function addLifeEvent(
-  eventType: string,
-  paramsJson: string,
-): Promise<string> {
-  const hDoc = await householdDoc();
-  const ref = await hDoc.collection("planLifeEvents").add({
-    eventType,
-    paramsJson,
-    createdAt: firestore.FieldValue.serverTimestamp(),
-    updatedAt: firestore.FieldValue.serverTimestamp(),
-  });
-  return ref.id;
-}
-
-export async function updateLifeEvent(
-  id: string,
-  paramsJson: string,
-): Promise<void> {
-  const hDoc = await householdDoc();
-  await hDoc.collection("planLifeEvents").doc(id).update({
-    paramsJson,
-    updatedAt: firestore.FieldValue.serverTimestamp(),
-  });
-}
-
-export async function deleteLifeEvent(id: string): Promise<void> {
-  const hDoc = await householdDoc();
-  await hDoc.collection("planLifeEvents").doc(id).delete();
-}
-
-export async function getLifeEvents(): Promise<PlanLifeEvent[]> {
-  const hDoc = await householdDoc();
-  const snap = await hDoc.collection("planLifeEvents").get();
-  return snap.docs
-    .map((doc) => mapPlanLifeEvent(doc.id, doc.data()))
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-}
-
-// ── Plan Profile ─────────────────────────────────────
-
-export async function getPlanProfile(): Promise<PlanProfile | null> {
-  const hDoc = await householdDoc();
-  const snap = await hDoc.collection("planProfile").doc("default").get();
-  const data = getSnapshotDataOrNull(snap);
-  if (!data) return null;
-  return mapPlanProfile(snap.id, data);
-}
-
-export async function savePlanProfile(payloadJson: string): Promise<void> {
-  const hDoc = await householdDoc();
-  await hDoc.collection("planProfile").doc("default").set({
-    payloadJson,
-    updatedAt: firestore.FieldValue.serverTimestamp(),
-  });
 }
 
 // ── Queries ──────────────────────────────────────────

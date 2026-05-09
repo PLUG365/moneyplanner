@@ -60,15 +60,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="plan"
-        options={{
-          title: "計画",
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={26} name="calendar" color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="settings"
         options={{
           title: "設定",

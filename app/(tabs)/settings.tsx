@@ -84,9 +84,11 @@ import { buildBudgetInputMap } from "@/lib/settingsBudgetEditor";
 import { getMemberRemovalActionLabel } from "@/lib/settingsHouseholdMembers";
 import {
     formatAccountBalanceInputDisplay,
+    formatBudgetInputDisplay,
     formatYenDisplay,
     getSettingsKeyboardAccessoryPreview,
     resolveAccountBalanceInput,
+    resolveBudgetInput,
     type SettingsKeyboardField,
 } from "@/lib/settingsKeyboardAccessory";
 import {
@@ -495,12 +497,15 @@ export default function SettingsScreen() {
     }
 
     if (activeType === "expense") {
-      const normalized = categoryBudgetInput.replace(/\D/g, "");
-      if (!normalized) {
+      if (!categoryBudgetInput) {
         await deleteMonthlyBudget(savedCategoryId);
       } else {
-        const amount = parseInt(normalized, 10);
-        if (!isNaN(amount) && amount >= 0) {
+        const amount = resolveBudgetInput(categoryBudgetInput);
+        if (amount === null) {
+          Alert.alert("エラー", "予算額の入力内容を確認してください");
+          return;
+        }
+        if (amount >= 0) {
           await setMonthlyBudget(savedCategoryId, amount);
         }
       }
@@ -1710,7 +1715,7 @@ export default function SettingsScreen() {
                               },
                             ]}
                           >
-                            {formatYenDisplay(categoryBudgetInput) ||
+                            {formatBudgetInputDisplay(categoryBudgetInput) ||
                               "予算なし"}
                           </Text>
                         </TouchableOpacity>
@@ -1920,7 +1925,7 @@ export default function SettingsScreen() {
             numericInputTarget === "account-balance" ? "¥0" : "予算なし"
           }
           colors={colors}
-          allowOperators={numericInputTarget === "account-balance"}
+          allowOperators
           allowNegative={numericInputTarget === "account-balance"}
           onChange={handleNumericModalChange}
           emptyValue={numericInputTarget === "account-balance" ? 0 : null}
