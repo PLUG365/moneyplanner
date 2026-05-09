@@ -58,19 +58,19 @@ npx expo start --tunnel
 
 プロジェクト文書の入口はこのセクションに集約します。文書を追加・分割・統合・名称変更した場合は、この表もあわせて更新してください。
 
-| 文書                                                                 | 役割                                                                              |
-| -------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [PLAN.md](PLAN.md)                                                   | 現在の進捗、未完了タスク、次に実施する作業の管理                                  |
-| [ARCHITECTURE.md](ARCHITECTURE.md)                                   | アプリ構成、Firestoreデータモデル、認証/認可、同期方針、主要な技術判断            |
-| [README.md](README.md)                                               | プロジェクト概要、セットアップ、基本的な利用/開発手順、ドキュメント構成の目次     |
-| [CLAUDE.md](CLAUDE.md)                                               | Claude Code向けの作業ルール、開発サーバー制約、リポジトリ固有の注意点             |
-| [.github/copilot-instructions.md](.github/copilot-instructions.md)   | GitHub Copilot向けの作業ルール、Copilot CLI / VS Codeエージェントモードの使い分け |
-| [docs/decisions/](docs/decisions/)                                   | 重要な設計判断・方針転換・採用/不採用理由の記録                                   |
-| [docs/release-checklist.md](docs/release-checklist.md)               | TestFlight、App Check enforcement、App Store申請、有料化開始前の確認項目          |
-| [docs/testflight-history.md](docs/testflight-history.md)             | TestFlight/dev-clientで実施した実機確認の履歴                                     |
-| [docs/known-issues.md](docs/known-issues.md)                         | 機能実装後レビューで洗い出した未対応の懸念事項（UX整合性・データ整合・誤操作など）|
-| [docs/privacy-and-monetization.md](docs/privacy-and-monetization.md) | 課金、プライバシー、問い合わせ、本番データ閲覧制限の方針                          |
-| [docs/ai-development.md](docs/ai-development.md)                     | AI活用、外部ツール、レビュー、知見退避ルール                                      |
+| 文書                                                                 | 役割                                                                               |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| [PLAN.md](PLAN.md)                                                   | 現在の進捗、未完了タスク、次に実施する作業の管理                                   |
+| [ARCHITECTURE.md](ARCHITECTURE.md)                                   | アプリ構成、Firestoreデータモデル、認証/認可、同期方針、主要な技術判断             |
+| [README.md](README.md)                                               | プロジェクト概要、セットアップ、基本的な利用/開発手順、ドキュメント構成の目次      |
+| [CLAUDE.md](CLAUDE.md)                                               | Claude Code向けの作業ルール、開発サーバー制約、リポジトリ固有の注意点              |
+| [.github/copilot-instructions.md](.github/copilot-instructions.md)   | GitHub Copilot向けの作業ルール、Copilot CLI / VS Codeエージェントモードの使い分け  |
+| [docs/decisions/](docs/decisions/)                                   | 重要な設計判断・方針転換・採用/不採用理由の記録                                    |
+| [docs/release-checklist.md](docs/release-checklist.md)               | TestFlight、App Check enforcement、App Store申請、有料化開始前の確認項目           |
+| [docs/testflight-history.md](docs/testflight-history.md)             | TestFlight/dev-clientで実施した実機確認の履歴                                      |
+| [docs/known-issues.md](docs/known-issues.md)                         | 機能実装後レビューで洗い出した未対応の懸念事項（UX整合性・データ整合・誤操作など） |
+| [docs/privacy-and-monetization.md](docs/privacy-and-monetization.md) | 課金、プライバシー、問い合わせ、本番データ閲覧制限の方針                           |
+| [docs/ai-development.md](docs/ai-development.md)                     | AI活用、外部ツール、レビュー、知見退避ルール                                       |
 
 ## 技術スタック
 

@@ -2,7 +2,6 @@ import firestore, {
     FirebaseFirestoreTypes,
 } from "@react-native-firebase/firestore";
 import { buildAccountBalanceReconciliation } from "./accountBalanceReconciliation";
-import { getHouseholdDeletionCollectionNames } from "./accountDeletion";
 import { getCurrentUser } from "./auth";
 import {
     buildCategoryDisplayOrderPatch,
