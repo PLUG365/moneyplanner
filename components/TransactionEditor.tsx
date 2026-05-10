@@ -176,6 +176,7 @@ export default function TransactionEditor({
   const [pendingBreakdown, setPendingBreakdown] = useState<Breakdown | null>(
     null,
   );
+  const [isMemoFocused, setIsMemoFocused] = useState(false);
   const keyboardAccessoryViewId = "transaction-editor-keyboard-accessory";
 
   const activeColor = type === "income" ? incomeColor : expenseColor;
@@ -359,6 +360,8 @@ export default function TransactionEditor({
             ]}
             value={memo}
             onChangeText={onMemoChange}
+            onFocus={() => setIsMemoFocused(true)}
+            onBlur={() => setIsMemoFocused(false)}
             placeholder="メモを入力（任意）"
             placeholderTextColor={colors.subText}
             multiline
@@ -370,6 +373,16 @@ export default function TransactionEditor({
               Platform.OS === "ios" ? keyboardAccessoryViewId : undefined
             }
           />
+          {Platform.OS === "ios" && isMemoFocused ? (
+            <TouchableOpacity
+              style={[styles.memoDoneButton, { borderColor: colors.border }]}
+              onPress={Keyboard.dismiss}
+            >
+              <Text style={[styles.memoDoneButtonText, { color: colors.tint }]}>
+                メモ入力を完了
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         <ScrollView
@@ -518,7 +531,8 @@ export default function TransactionEditor({
                 </Text>
                 {storeName ? (
                   <TouchableOpacity
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={styles.storeClearButton}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                     onPress={() => onStoreChange(null, "")}
                   >
                     <Text
@@ -965,6 +979,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
   },
+  storeClearButton: {
+    minWidth: 28,
+    minHeight: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   memoInput: {
     borderWidth: 1,
     borderRadius: 8,
@@ -974,6 +994,14 @@ const styles = StyleSheet.create({
     minHeight: 44,
     marginTop: 8,
   },
+  memoDoneButton: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  memoDoneButtonText: { fontSize: 13, fontWeight: "700" },
   keyboardAccessory: {
     paddingHorizontal: 14,
     paddingVertical: 10,

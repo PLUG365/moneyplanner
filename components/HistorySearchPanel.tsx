@@ -1,18 +1,19 @@
+import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import React from "react";
 import {
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 import {
-  buildHistorySearchConditionSummary,
-  type HistorySearchType,
+    buildHistorySearchConditionSummary,
+    type HistorySearchType,
 } from "@/lib/historySearch";
 
 export type HistorySearchDateTarget = "from" | "to";
@@ -123,174 +124,105 @@ export default function HistorySearchPanel({
         { backgroundColor: colors.card, borderColor: colors.border },
       ]}
     >
-      <TouchableOpacity
-        style={styles.searchSummaryHeader}
-        onPress={() => onExpandedChange(!expanded)}
-      >
-        <View style={styles.searchSummaryTextWrap}>
-          <View style={styles.searchSummaryTitleRow}>
-            <Text style={[styles.searchSummaryTitle, { color: colors.text }]}>
-              検索条件
+      <View style={styles.searchSummaryHeaderOuter}>
+        <TouchableOpacity
+          style={styles.searchSummaryHeader}
+          onPress={() => onExpandedChange(!expanded)}
+        >
+          <View style={styles.searchSummaryTextWrap}>
+            <View style={styles.searchSummaryTitleRow}>
+              <Text style={[styles.searchSummaryTitle, { color: colors.text }]}>
+                検索条件
+              </Text>
+              {hasConditions ? (
+                <View
+                  style={[
+                    styles.conditionBadge,
+                    { backgroundColor: colors.tint },
+                  ]}
+                >
+                  <Text style={styles.conditionBadgeText}>{summary.count}</Text>
+                </View>
+              ) : null}
+            </View>
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.searchSummaryLabel,
+                { color: hasConditions ? colors.text : colors.subText },
+              ]}
+            >
+              {summary.label}
             </Text>
-            {hasConditions ? (
-              <View
-                style={[
-                  styles.conditionBadge,
-                  { backgroundColor: colors.tint },
-                ]}
-              >
-                <Text style={styles.conditionBadgeText}>{summary.count}</Text>
-              </View>
-            ) : null}
           </View>
-          <Text
-            numberOfLines={1}
+          <Ionicons
+            name={expanded ? "chevron-up" : "chevron-down"}
+            size={18}
+            color={colors.tint}
+          />
+        </TouchableOpacity>
+        {hasConditions ? (
+          <TouchableOpacity
             style={[
-              styles.searchSummaryLabel,
-              { color: hasConditions ? colors.text : colors.subText },
+              styles.searchClearIconButton,
+              { borderColor: colors.border },
             ]}
+            onPress={onClearConditions}
+            accessibilityLabel="検索条件をクリア"
           >
-            {summary.label}
-          </Text>
-        </View>
-        <Text style={[styles.searchSummaryAction, { color: colors.tint }]}>
-          {expanded ? "閉じる" : "開く"}
-        </Text>
-      </TouchableOpacity>
+            <Ionicons name="close-circle" size={16} color={colors.subText} />
+            <Text
+              style={[styles.searchClearIconLabel, { color: colors.subText }]}
+            >
+              クリア
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
 
       {!expanded ? null : (
         <>
-          <View
-            style={[styles.searchTypeToggle, { borderColor: colors.border }]}
-          >
-            {(
-              [
-                ["expense", "支出"],
-                ["income", "収入"],
-              ] as const
-            ).map(([value, label]) => (
-              <TouchableOpacity
-                key={value}
-                style={[
-                  styles.searchTypeButton,
-                  type === value && { backgroundColor: colors.tint },
-                ]}
-                onPress={() => onTypeChange(value)}
-              >
-                <Text
-                  style={[
-                    styles.searchTypeText,
-                    type === value && { color: "#fff" },
-                  ]}
-                >
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
           <Text style={[styles.searchLabel, { color: colors.subText }]}>
-            カテゴリ
+            種別
           </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.searchChipRow}>
-              <TouchableOpacity
-                style={[
-                  styles.searchChip,
-                  { borderColor: colors.border },
-                  !categoryName && { backgroundColor: colors.tint },
-                ]}
-                onPress={() => {
-                  onCategoryNameChange("");
-                  onBreakdownNameChange("");
-                  onStoreNameChange("");
-                }}
-              >
-                <Text
-                  style={[
-                    styles.searchChipText,
-                    { color: categoryName ? colors.text : "#fff" },
-                  ]}
-                >
-                  指定なし
-                </Text>
-              </TouchableOpacity>
-              {categoryOptions.map((name) => (
+            <View style={[styles.searchChipRow, { marginBottom: 2 }]}>
+              {(
+                [
+                  ["all", "指定なし"],
+                  ["expense", "支出"],
+                  ["income", "収入"],
+                ] as const
+              ).map(([value, label]) => (
                 <TouchableOpacity
-                  key={name}
+                  key={value}
                   style={[
                     styles.searchChip,
-                    { borderColor: colors.border },
-                    categoryName === name && { backgroundColor: colors.tint },
+                    {
+                      borderColor: type === value ? colors.tint : colors.border,
+                      backgroundColor:
+                        type === value ? colors.tint : "transparent",
+                    },
                   ]}
-                  onPress={() => {
-                    onCategoryNameChange(name);
-                    onBreakdownNameChange("");
-                    onStoreNameChange("");
-                  }}
+                  onPress={() => onTypeChange(value)}
                 >
                   <Text
                     style={[
                       styles.searchChipText,
-                      { color: categoryName === name ? "#fff" : colors.text },
+                      { color: type === value ? "#fff" : colors.subText },
                     ]}
                   >
-                    {name}
+                    {label}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
           </ScrollView>
 
-          <Text style={[styles.searchLabel, { color: colors.subText }]}>
-            内訳
-          </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.searchChipRow}>
-              <TouchableOpacity
-                style={[
-                  styles.searchChip,
-                  { borderColor: colors.border },
-                  !breakdownName && { backgroundColor: colors.tint },
-                ]}
-                onPress={() => onBreakdownNameChange("")}
-              >
-                <Text
-                  style={[
-                    styles.searchChipText,
-                    { color: breakdownName ? colors.text : "#fff" },
-                  ]}
-                >
-                  指定なし
-                </Text>
-              </TouchableOpacity>
-              {breakdownOptions.map((name) => (
-                <TouchableOpacity
-                  key={name}
-                  style={[
-                    styles.searchChip,
-                    { borderColor: colors.border },
-                    breakdownName === name && { backgroundColor: colors.tint },
-                  ]}
-                  onPress={() => onBreakdownNameChange(name)}
-                >
-                  <Text
-                    style={[
-                      styles.searchChipText,
-                      { color: breakdownName === name ? "#fff" : colors.text },
-                    ]}
-                  >
-                    {name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
-
-          {type === "expense" ? (
+          {type === "all" ? null : (
             <>
               <Text style={[styles.searchLabel, { color: colors.subText }]}>
-                お店
+                カテゴリ
               </Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={styles.searchChipRow}>
@@ -298,33 +230,45 @@ export default function HistorySearchPanel({
                     style={[
                       styles.searchChip,
                       { borderColor: colors.border },
-                      !storeName && { backgroundColor: colors.tint },
+                      !categoryName && { backgroundColor: colors.tint },
                     ]}
-                    onPress={() => onStoreNameChange("")}
+                    onPress={() => {
+                      onCategoryNameChange("");
+                      onBreakdownNameChange("");
+                      onStoreNameChange("");
+                    }}
                   >
                     <Text
                       style={[
                         styles.searchChipText,
-                        { color: storeName ? colors.text : "#fff" },
+                        { color: categoryName ? colors.text : "#fff" },
                       ]}
                     >
                       指定なし
                     </Text>
                   </TouchableOpacity>
-                  {storeOptions.map((name) => (
+                  {categoryOptions.map((name) => (
                     <TouchableOpacity
                       key={name}
                       style={[
                         styles.searchChip,
                         { borderColor: colors.border },
-                        storeName === name && { backgroundColor: colors.tint },
+                        categoryName === name && {
+                          backgroundColor: colors.tint,
+                        },
                       ]}
-                      onPress={() => onStoreNameChange(name)}
+                      onPress={() => {
+                        onCategoryNameChange(name);
+                        onBreakdownNameChange("");
+                        onStoreNameChange("");
+                      }}
                     >
                       <Text
                         style={[
                           styles.searchChipText,
-                          { color: storeName === name ? "#fff" : colors.text },
+                          {
+                            color: categoryName === name ? "#fff" : colors.text,
+                          },
                         ]}
                       >
                         {name}
@@ -333,8 +277,119 @@ export default function HistorySearchPanel({
                   ))}
                 </View>
               </ScrollView>
+
+              {!categoryName ? null : (
+                <>
+                  <Text style={[styles.searchLabel, { color: colors.subText }]}>
+                    内訳
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View style={styles.searchChipRow}>
+                      <TouchableOpacity
+                        style={[
+                          styles.searchChip,
+                          { borderColor: colors.border },
+                          !breakdownName && { backgroundColor: colors.tint },
+                        ]}
+                        onPress={() => {
+                          onBreakdownNameChange("");
+                          onStoreNameChange("");
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.searchChipText,
+                            { color: breakdownName ? colors.text : "#fff" },
+                          ]}
+                        >
+                          指定なし
+                        </Text>
+                      </TouchableOpacity>
+                      {breakdownOptions.map((name) => (
+                        <TouchableOpacity
+                          key={name}
+                          style={[
+                            styles.searchChip,
+                            { borderColor: colors.border },
+                            breakdownName === name && {
+                              backgroundColor: colors.tint,
+                            },
+                          ]}
+                          onPress={() => onBreakdownNameChange(name)}
+                        >
+                          <Text
+                            style={[
+                              styles.searchChipText,
+                              {
+                                color:
+                                  breakdownName === name ? "#fff" : colors.text,
+                              },
+                            ]}
+                          >
+                            {name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </>
+              )}
+
+              {!categoryName || type !== "expense" ? null : (
+                <>
+                  <Text style={[styles.searchLabel, { color: colors.subText }]}>
+                    お店
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View style={styles.searchChipRow}>
+                      <TouchableOpacity
+                        style={[
+                          styles.searchChip,
+                          { borderColor: colors.border },
+                          !storeName && { backgroundColor: colors.tint },
+                        ]}
+                        onPress={() => onStoreNameChange("")}
+                      >
+                        <Text
+                          style={[
+                            styles.searchChipText,
+                            { color: storeName ? colors.text : "#fff" },
+                          ]}
+                        >
+                          指定なし
+                        </Text>
+                      </TouchableOpacity>
+                      {storeOptions.map((name) => (
+                        <TouchableOpacity
+                          key={name}
+                          style={[
+                            styles.searchChip,
+                            { borderColor: colors.border },
+                            storeName === name && {
+                              backgroundColor: colors.tint,
+                            },
+                          ]}
+                          onPress={() => onStoreNameChange(name)}
+                        >
+                          <Text
+                            style={[
+                              styles.searchChipText,
+                              {
+                                color:
+                                  storeName === name ? "#fff" : colors.text,
+                              },
+                            ]}
+                          >
+                            {name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </>
+              )}
             </>
-          ) : null}
+          )}
 
           <Text style={[styles.searchLabel, { color: colors.subText }]}>
             メモ
@@ -428,17 +483,6 @@ export default function HistorySearchPanel({
               />
             </View>
           ) : null}
-
-          {hasConditions ? (
-            <TouchableOpacity
-              style={[styles.searchClearButton, { borderColor: colors.border }]}
-              onPress={onClearConditions}
-            >
-              <Text style={[styles.searchClearText, { color: colors.subText }]}>
-                検索条件をクリア
-              </Text>
-            </TouchableOpacity>
-          ) : null}
         </>
       )}
     </View>
@@ -459,12 +503,32 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     marginTop: 8,
   },
+  searchSummaryHeaderOuter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   searchSummaryHeader: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
   },
   searchSummaryTextWrap: { flex: 1, minWidth: 0 },
+  searchClearIconButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginLeft: 8,
+  },
+  searchClearIconLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
   searchSummaryTitleRow: {
     flexDirection: "row",
     alignItems: "center",

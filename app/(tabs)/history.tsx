@@ -61,6 +61,10 @@ import {
     resolveTransactionMasterSelection,
 } from "@/lib/transactionCopy";
 import { buildStoreEditResolution } from "@/lib/transactionStoreEdit";
+import {
+    fromYearMonthDate as fromYearMonthDateString,
+    toYearMonthDate as toYearMonthDateString,
+} from "@/lib/yearMonthDateRange";
 
 type ViewMode = "list" | "calendar";
 const WRITE_ACK_TIMEOUT_MS = 900;
@@ -163,7 +167,7 @@ export default function HistoryScreen() {
   const [showUncopiedModal, setShowUncopiedModal] = useState(false);
   const [uncopiedRecords, setUncopiedRecords] = useState<UncopiedRecord[]>([]);
   const [historySearchType, setHistorySearchType] =
-    useState<HistorySearchType>("expense");
+    useState<HistorySearchType>("all");
   const [historySearchCategoryName, setHistorySearchCategoryName] =
     useState("");
   const [historySearchBreakdownName, setHistorySearchBreakdownName] =
@@ -202,8 +206,8 @@ export default function HistoryScreen() {
     buildFirestoreQueryKey(householdId, "transactions", monthScope),
     () => {
       if (!householdId) return null;
-      const from = `${monthScope}-01`;
-      const to = `${monthScope}-31`;
+      const from = fromYearMonthDateString(year, month);
+      const to = toYearMonthDateString(year, month);
       return householdCollection(householdId, "transactions")
         .where("date", ">=", from)
         .where("date", "<=", to)
@@ -368,6 +372,7 @@ export default function HistoryScreen() {
     setHistorySearchToDate(parsed.toDate || null);
     setSearchDatePickerTarget(null);
     setIsHistorySearchExpanded(parsed.expandSearch);
+    clearCalendarSelection();
   }, [
     drilldownAt,
     drilldownCategoryName,
@@ -378,6 +383,7 @@ export default function HistoryScreen() {
   ]);
 
   const clearHistorySearchConditions = () => {
+    setHistorySearchType("all");
     setHistorySearchCategoryName("");
     setHistorySearchBreakdownName("");
     setHistorySearchStoreName("");
@@ -389,7 +395,13 @@ export default function HistoryScreen() {
 
   const handleHistorySearchTypeChange = (nextType: HistorySearchType) => {
     setHistorySearchType(nextType);
-    clearHistorySearchConditions();
+    setHistorySearchCategoryName("");
+    setHistorySearchBreakdownName("");
+    setHistorySearchStoreName("");
+    setHistorySearchMemoQuery("");
+    setHistorySearchFromDate(null);
+    setHistorySearchToDate(null);
+    setSearchDatePickerTarget(null);
   };
 
   useFocusEffect(
@@ -431,6 +443,29 @@ export default function HistoryScreen() {
     clearCalendarSelection();
   };
 
+  const handleSwitchToCalendarView = () => {
+    setViewMode("calendar");
+    setSearchDatePickerTarget(null);
+    // カレンダー表示時は検索条件を非適用にする
+    setHistorySearchType("all");
+    setHistorySearchCategoryName("");
+    setHistorySearchBreakdownName("");
+    setHistorySearchStoreName("");
+    setHistorySearchMemoQuery("");
+    setHistorySearchFromDate(null);
+    setHistorySearchToDate(null);
+  };
+
+  const handleHistoryScrollBeginDrag = () => {
+    setShowMonthPicker(false);
+    setSearchDatePickerTarget(null);
+  };
+
+  const handleSwitchToListView = () => {
+    setViewMode("list");
+    clearCalendarSelection();
+  };
+
   const handleDelete = (tx: Transaction) => {
     Alert.alert(
       "削除確認",
@@ -449,6 +484,15 @@ export default function HistoryScreen() {
         },
       ],
     );
+  };
+
+  const handleDeleteFromEditModal = () => {
+    if (!editingTx) return;
+    const targetTx = editingTx;
+    setShowEditModal(false);
+    setEditingTx(null);
+    setEditingTxId(null);
+    handleDelete(targetTx);
   };
 
   const exitSelectionMode = () => {
@@ -488,6 +532,7 @@ export default function HistoryScreen() {
 
     let copied = 0;
     let skipped = 0;
+    let fallbackCount = 0;
     const failed: UncopiedRecord[] = [];
     const sourceMap = new Map(transactions.map((tx) => [tx.id, tx]));
 
@@ -518,6 +563,10 @@ export default function HistoryScreen() {
           breakdownName: tx.breakdownName,
         });
         continue;
+      }
+
+      if (target.accountFallback) {
+        fallbackCount += 1;
       }
 
       await waitForPendingWrite(
@@ -571,13 +620,18 @@ export default function HistoryScreen() {
       return;
     }
     if (failed.length > 0 || skipped > 0) {
-      Alert.alert(
-        "一括コピー完了",
-        `${copied}件コピーしました（${Math.max(failed.length, skipped)}件未コピー）`,
-      );
+      let message = `${copied}件コピーしました（${Math.max(failed.length, skipped)}件未コピー）`;
+      if (fallbackCount > 0) {
+        message += `\n口座が存在しない${fallbackCount}件は既定口座で登録されました。`;
+      }
+      Alert.alert("一括コピー完了", message);
       return;
     }
-    Alert.alert("一括コピー完了", `${copied}件コピーしました`);
+    let message = `${copied}件コピーしました`;
+    if (fallbackCount > 0) {
+      message += `\n口座が存在しない${fallbackCount}件は既定口座で登録されました。`;
+    }
+    Alert.alert("一括コピー完了", message);
   };
 
   const syncEditCategories = (
@@ -848,12 +902,6 @@ export default function HistoryScreen() {
                   編集
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.deleteButton, { borderColor: colors.border }]}
-                onPress={() => handleDelete(tx)}
-              >
-                <Text style={styles.deleteButtonText}>削除</Text>
-              </TouchableOpacity>
             </View>
           ) : null}
         </View>
@@ -884,7 +932,7 @@ export default function HistoryScreen() {
             styles.segmentButton,
             viewMode === "list" && { backgroundColor: colors.tint },
           ]}
-          onPress={() => setViewMode("list")}
+          onPress={handleSwitchToListView}
         >
           <Text
             style={[
@@ -900,7 +948,7 @@ export default function HistoryScreen() {
             styles.segmentButton,
             viewMode === "calendar" && { backgroundColor: colors.tint },
           ]}
-          onPress={() => setViewMode("calendar")}
+          onPress={handleSwitchToCalendarView}
         >
           <Text
             style={[
@@ -1018,6 +1066,7 @@ export default function HistoryScreen() {
           styles.scrollContent,
           isSelectionMode && { paddingBottom: 180 },
         ]}
+        onScrollBeginDrag={handleHistoryScrollBeginDrag}
       >
         {viewMode === "list" ? (
           // --- リストビュー ---
@@ -1259,17 +1308,22 @@ export default function HistoryScreen() {
               <Text style={[styles.modalTitle, { color: colors.text }]}>
                 記録を編集
               </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowEditModal(false);
-                  setEditingTx(null);
-                  setEditingTxId(null);
-                }}
-              >
-                <Text style={[styles.modalClose, { color: colors.tint }]}>
-                  閉じる
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.modalHeaderActions}>
+                <TouchableOpacity onPress={handleDeleteFromEditModal}>
+                  <Text style={styles.modalDeleteText}>削除</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowEditModal(false);
+                    setEditingTx(null);
+                    setEditingTxId(null);
+                  }}
+                >
+                  <Text style={[styles.modalClose, { color: colors.tint }]}>
+                    閉じる
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={styles.modalEditorContainer}>
@@ -1586,8 +1640,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
+  modalHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
   modalTitle: { fontSize: 17, fontWeight: "700" },
   modalClose: { fontSize: 14, fontWeight: "600" },
+  modalDeleteText: { fontSize: 14, fontWeight: "700", color: "#C62828" },
   modalEditorContainer: { flex: 1, minHeight: 0 },
   typeToggle: {
     flexDirection: "row",

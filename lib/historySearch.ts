@@ -1,4 +1,4 @@
-export type HistorySearchType = "income" | "expense";
+export type HistorySearchType = "income" | "expense" | "all";
 
 export type HistorySearchCriteria = {
   type: HistorySearchType;
@@ -45,7 +45,7 @@ export function filterHistoryTransactions<T extends SearchableTransaction>(
   const toDate = criteria.toDate?.trim() ?? "";
 
   return transactions.filter((transaction) => {
-    if (transaction.type !== criteria.type) {
+    if (criteria.type !== "all" && transaction.type !== criteria.type) {
       return false;
     }
 
@@ -71,11 +71,7 @@ export function filterHistoryTransactions<T extends SearchableTransaction>(
       return false;
     }
 
-    if (
-      criteria.type === "expense" &&
-      storeName &&
-      normalizeOptional(transaction.storeName) !== storeName
-    ) {
+    if (storeName && normalizeOptional(transaction.storeName) !== storeName) {
       return false;
     }
 
@@ -94,6 +90,8 @@ export function buildHistorySearchConditionSummary(
 
   if (criteria.type === "income") {
     parts.push("収入");
+  } else if (criteria.type === "expense") {
+    parts.push("支出");
   }
   if (criteria.categoryName?.trim()) {
     parts.push(criteria.categoryName.trim());
@@ -101,7 +99,7 @@ export function buildHistorySearchConditionSummary(
   if (criteria.breakdownName?.trim()) {
     parts.push(criteria.breakdownName.trim());
   }
-  if (criteria.type === "expense" && criteria.storeName?.trim()) {
+  if (criteria.storeName?.trim()) {
     parts.push(criteria.storeName.trim());
   }
   if (criteria.memoQuery?.trim()) {
@@ -116,11 +114,6 @@ export function buildHistorySearchConditionSummary(
 
   return {
     count: parts.length,
-    label:
-      criteria.type === "expense" && parts.length === 0
-        ? "支出 / 条件なし"
-        : parts.length > 0
-          ? parts.join(" / ")
-          : "条件なし",
+    label: parts.length > 0 ? parts.join(" / ") : "条件なし",
   };
 }

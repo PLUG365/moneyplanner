@@ -55,6 +55,7 @@ test("resolveTransactionCopyTarget keeps valid current ids", () => {
     categoryId: "cat-food",
     breakdownId: "bd-dinner",
     accountId: "wallet",
+    accountFallback: false,
   });
 });
 
@@ -90,6 +91,7 @@ test("resolveTransactionCopyTarget falls back to snapshot names", () => {
     categoryId: "cat-food",
     breakdownId: "bd-dinner",
     accountId: "wallet",
+    accountFallback: false,
   });
 });
 

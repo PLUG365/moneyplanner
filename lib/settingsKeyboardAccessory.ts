@@ -102,7 +102,7 @@ export function getSettingsKeyboardAccessoryPreview(
     case "account-balance": {
       const formatted = formatAccountBalanceInputDisplay(inputs.accountBalance);
       return {
-        title: "口座残高",
+        title: "初期残高",
         text: formatted || "初期残高を入力",
         isPlaceholder: !formatted,
       };

@@ -32,6 +32,16 @@ service cloud.firestore {
         && notRemoved(getAfter(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid)).data);
     }
 
+    function inviteCodeUsableForHousehold(code, householdId) {
+      return code is string
+        && exists(/databases/$(database)/documents/inviteCodes/$(code))
+        && get(/databases/$(database)/documents/inviteCodes/$(code)).data.householdId == householdId
+        && (!('disabledAt' in get(/databases/$(database)/documents/inviteCodes/$(code)).data)
+          || get(/databases/$(database)/documents/inviteCodes/$(code)).data.disabledAt == null)
+        && (!('expiresAt' in get(/databases/$(database)/documents/inviteCodes/$(code)).data)
+          || get(/databases/$(database)/documents/inviteCodes/$(code)).data.expiresAt > request.time);
+    }
+
     // ユーザードキュメント: 本人のみ読み書き可
     match /users/{userId} {
       allow read, write: if signedIn() && request.auth.uid == userId;
@@ -44,6 +54,9 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.householdId is string
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.disabledAt == null
         && (
           activeMember(request.resource.data.householdId)
           || createsOwnHouseholdInvite(request.resource.data.householdId)
@@ -61,9 +74,45 @@ service cloud.firestore {
       match /members/{userId} {
         allow read: if activeMember(householdId);
         allow create: if signedIn()
-          && request.auth.uid == userId
-          && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId == householdId;
+          && (
+            activeMember(householdId)
+            || (
+              request.auth.uid == userId
+              && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId == householdId
+            )
+          );
         allow update: if activeMember(householdId);
+        allow delete: if activeMember(householdId);
+      }
+
+      match /joinRequests/{userId} {
+        allow read: if activeMember(householdId)
+          || (signedIn() && request.auth.uid == userId);
+
+        allow create: if signedIn()
+          && request.auth.uid == userId
+          && request.resource.data.uid == userId
+          && request.resource.data.status == "pending"
+          && request.resource.data.inviteCode is string
+          && inviteCodeUsableForHousehold(request.resource.data.inviteCode, householdId)
+          && request.resource.data.displayName is string
+          && request.resource.data.displayName.size() > 0
+          && request.resource.data.displayName.size() <= 20;
+
+        allow update: if (
+            signedIn()
+            && request.auth.uid == userId
+            && resource.data.status == "pending"
+            && request.resource.data.status == "pending"
+            && request.resource.data.uid == userId
+            && request.resource.data.inviteCode is string
+            && inviteCodeUsableForHousehold(request.resource.data.inviteCode, householdId)
+            && request.resource.data.displayName is string
+            && request.resource.data.displayName.size() > 0
+            && request.resource.data.displayName.size() <= 20
+          )
+          || activeMember(householdId);
+
         allow delete: if activeMember(householdId);
       }
 

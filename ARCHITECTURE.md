@@ -101,6 +101,7 @@ erDiagram
         string displayName
         Timestamp joinedAt
         Timestamp removedAt
+        boolean rejoinDisabled
     }
 
     transactions {
@@ -168,20 +169,32 @@ erDiagram
     - householdId: string
     - displayName: string
     - createdAt: Timestamp
+    - inviteJoinFailedAttempts?: number （招待コード失敗回数）
+    - inviteJoinCooldownUntil?: Timestamp （クールダウン終了時刻）
+    - inviteJoinLastFailedAt?: Timestamp
 
 /households/{householdId}
     - createdBy: string (userId)
     - inviteCode: string (6文字、参加用)
     - createdAt: Timestamp
 
+/inviteCodes/{code}
+    - householdId: string
+    - createdBy: string
+    - createdAt: Timestamp
+    - expiresAt: Timestamp
+    - disabledAt?: Timestamp
+
     /members/{userId}
         - displayName: string
         - joinedAt: Timestamp
         - removedAt?: Timestamp
+        - rejoinDisabled?: boolean （解除済みメンバーの再参加抑止フラグ）
 
-    /joinRequests/{requestId} (参加承認制を実装する場合の予定コレクション。現行フローでは未使用)
+    /joinRequests/{requestId} （参加承認フローで使用中）
         - uid: string
         - displayName: string
+        - inviteCode: string
         - status: pending | approved | rejected
         - requestedAt, reviewedAt?: Timestamp
 
@@ -221,6 +234,11 @@ erDiagram
 | ---- | ---------------------------------------------------------------------------- |
 | 収入 | 給与所得・賞与・臨時収入・配当金                                             |
 | 支出 | 食費・日用雑貨・住まい・通信・交通・教育・クルマ・税金・大型出費・その他など |
+
+### 月次日付レンジ方針
+
+- 取引・予算系の月次クエリは `YYYY-MM-31` 固定ではなく、`lib/yearMonthDateRange.ts` で開始日・終了日を生成する
+- 2月、うるう年を含む月境界を同一ルールで扱い、`lib/yearMonthDateRange.test.ts` で検証する
 
 ---
 

@@ -1,6 +1,7 @@
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
-import { createHousehold, joinHousehold } from "@/lib/household";
+import { createHousehold, requestJoinHousehold } from "@/lib/household";
+import { validateJoinDisplayName } from "@/lib/householdJoinRequestValidation";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
@@ -16,15 +17,23 @@ import {
 export default function HouseholdScreen() {
   const [mode, setMode] = useState<"choose" | "join">("choose");
   const [inviteCode, setInviteCode] = useState("");
+  const [createDisplayName, setCreateDisplayName] = useState("");
+  const [joinDisplayName, setJoinDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
   const [createdCode, setCreatedCode] = useState<string | null>(null);
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
 
   const handleCreate = async () => {
+    const validationError = validateJoinDisplayName(createDisplayName);
+    if (validationError) {
+      Alert.alert("入力エラー", validationError);
+      return;
+    }
+
     setLoading(true);
     try {
-      const code = await createHousehold();
+      const code = await createHousehold(createDisplayName);
       setCreatedCode(code);
     } catch (e: any) {
       Alert.alert("エラー", e.message);
@@ -38,10 +47,21 @@ export default function HouseholdScreen() {
       Alert.alert("入力エラー", "招待コードを入力してください");
       return;
     }
+    const validationError = validateJoinDisplayName(joinDisplayName);
+    if (validationError) {
+      Alert.alert("入力エラー", validationError);
+      return;
+    }
     setLoading(true);
     try {
-      await joinHousehold(inviteCode);
-      router.replace("/(tabs)");
+      await requestJoinHousehold(inviteCode, joinDisplayName);
+      Alert.alert(
+        "参加リクエストを送信しました",
+        "世帯メンバーの承認後に参加できます。承認されるまでお待ちください。",
+      );
+      setInviteCode("");
+      setJoinDisplayName("");
+      setMode("choose");
     } catch (e: any) {
       Alert.alert("エラー", e.message);
     } finally {
@@ -89,6 +109,21 @@ export default function HouseholdScreen() {
         <Text style={[styles.subtitle, { color: colors.subText }]}>
           家族から受け取った招待コードを入力してください
         </Text>
+        <TextInput
+          style={[
+            styles.nicknameInput,
+            {
+              color: colors.text,
+              borderColor: colors.border,
+              backgroundColor: colors.card,
+            },
+          ]}
+          value={joinDisplayName}
+          onChangeText={setJoinDisplayName}
+          placeholder="ニックネーム（20文字以内）"
+          placeholderTextColor={colors.subText}
+          maxLength={20}
+        />
         <TextInput
           style={[
             styles.input,
@@ -139,6 +174,21 @@ export default function HouseholdScreen() {
       <Text style={[styles.subtitle, { color: colors.subText }]}>
         家計簿データは世帯単位で共有されます
       </Text>
+      <TextInput
+        style={[
+          styles.nicknameInput,
+          {
+            color: colors.text,
+            borderColor: colors.border,
+            backgroundColor: colors.card,
+          },
+        ]}
+        value={createDisplayName}
+        onChangeText={setCreateDisplayName}
+        placeholder="ニックネーム（20文字以内）"
+        placeholderTextColor={colors.subText}
+        maxLength={20}
+      />
 
       {loading ? (
         <ActivityIndicator
@@ -207,8 +257,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 20,
     textAlign: "center",
-    letterSpacing: 4,
-    marginBottom: 8,
+    letterSpacing: 2,
+    marginBottom: 10,
+  },
+  nicknameInput: {
+    width: "100%",
+    maxWidth: 280,
+    height: 52,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    textAlign: "left",
+    letterSpacing: 0,
+    marginBottom: 10,
   },
   button: {
     width: 280,

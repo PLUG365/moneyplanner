@@ -93,6 +93,8 @@ rulesTest("active members can create a replacement invite code", async () => {
       householdId: HOUSEHOLD_ID,
       createdBy: "alice",
       createdAt: "2026-04-26T00:00:00.000Z",
+      expiresAt: new Date("2026-06-01T00:00:00.000Z"),
+      disabledAt: null,
     }),
   );
 });
@@ -121,6 +123,8 @@ rulesTest(
       householdId,
       createdBy: "dana",
       createdAt: "2026-04-26T00:00:00.000Z",
+      expiresAt: new Date("2026-06-01T00:00:00.000Z"),
+      disabledAt: null,
     });
 
     await assertSucceeds(batch.commit());
@@ -137,10 +141,120 @@ rulesTest(
         householdId: HOUSEHOLD_ID,
         createdBy: "charlie",
         createdAt: "2026-04-26T00:00:00.000Z",
+        expiresAt: new Date("2026-06-01T00:00:00.000Z"),
+        disabledAt: null,
       }),
     );
   },
 );
+
+rulesTest("non-members can create a pending join request", async () => {
+  const db = testEnv!.authenticatedContext("charlie").firestore();
+
+  await assertSucceeds(
+    setDoc(doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"), {
+      uid: "charlie",
+      inviteCode: "123456",
+      displayName: "Charlie",
+      status: "pending",
+      requestedAt: "2026-05-10T00:00:00.000Z",
+    }),
+  );
+});
+
+rulesTest("join request with expired invite code is rejected", async () => {
+  await testEnv!.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, "inviteCodes", "123456"), {
+      householdId: HOUSEHOLD_ID,
+      createdBy: "alice",
+      createdAt: "2026-04-01T00:00:00.000Z",
+      expiresAt: new Date("2026-04-30T00:00:00.000Z"),
+      disabledAt: null,
+    });
+  });
+
+  const db = testEnv!.authenticatedContext("charlie").firestore();
+  await assertFails(
+    setDoc(doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"), {
+      uid: "charlie",
+      inviteCode: "123456",
+      displayName: "Charlie",
+      status: "pending",
+      requestedAt: "2026-05-10T00:00:00.000Z",
+    }),
+  );
+});
+
+rulesTest("join request with disabled invite code is rejected", async () => {
+  await testEnv!.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, "inviteCodes", "123456"), {
+      householdId: HOUSEHOLD_ID,
+      createdBy: "alice",
+      createdAt: "2026-04-01T00:00:00.000Z",
+      expiresAt: new Date("2026-06-01T00:00:00.000Z"),
+      disabledAt: new Date("2026-05-01T00:00:00.000Z"),
+    });
+  });
+
+  const db = testEnv!.authenticatedContext("charlie").firestore();
+  await assertFails(
+    setDoc(doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"), {
+      uid: "charlie",
+      inviteCode: "123456",
+      displayName: "Charlie",
+      status: "pending",
+      requestedAt: "2026-05-10T00:00:00.000Z",
+    }),
+  );
+});
+
+rulesTest("active members can review join requests", async () => {
+  await testEnv!.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(
+      doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"),
+      {
+        uid: "charlie",
+        displayName: "Charlie",
+        status: "pending",
+        requestedAt: "2026-05-10T00:00:00.000Z",
+      },
+    );
+  });
+
+  const db = testEnv!.authenticatedContext("alice").firestore();
+  await assertSucceeds(
+    updateDoc(doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"), {
+      status: "approved",
+      reviewedBy: "alice",
+    }),
+  );
+});
+
+rulesTest("requester cannot self-approve join request", async () => {
+  await testEnv!.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(
+      doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"),
+      {
+        uid: "charlie",
+        displayName: "Charlie",
+        status: "pending",
+        requestedAt: "2026-05-10T00:00:00.000Z",
+      },
+    );
+  });
+
+  const db = testEnv!.authenticatedContext("charlie").firestore();
+  await assertFails(
+    updateDoc(doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"), {
+      status: "approved",
+      reviewedBy: "charlie",
+    }),
+  );
+});
 
 rulesTest(
   "active members can delete household data before deleting the household document",
@@ -177,6 +291,13 @@ async function seedHousehold() {
       name: "テスト世帯",
       inviteCode: "123456",
       createdBy: "alice",
+    });
+    await setDoc(doc(db, "inviteCodes", "123456"), {
+      householdId: HOUSEHOLD_ID,
+      createdBy: "alice",
+      createdAt: "2026-04-26T00:00:00.000Z",
+      expiresAt: new Date("2026-06-01T00:00:00.000Z"),
+      disabledAt: null,
     });
     await setDoc(doc(db, "users", "alice"), { householdId: HOUSEHOLD_ID });
     await setDoc(doc(db, "users", "bob"), { householdId: HOUSEHOLD_ID });

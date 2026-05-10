@@ -68,11 +68,19 @@ test("filterHistoryTransactions filters by selected category, breakdown, and sto
   );
 });
 
-test("filterHistoryTransactions ignores store condition for income search", () => {
+test("filterHistoryTransactions applies store condition to income search", () => {
+  // income-salary has empty storeName, so specifying a store filters it out
   assert.deepEqual(
     filterHistoryTransactions(transactions, {
       type: "income",
       storeName: "駅前スーパー",
+    }).map((tx) => tx.id),
+    [],
+  );
+  // without store condition, income is returned normally
+  assert.deepEqual(
+    filterHistoryTransactions(transactions, {
+      type: "income",
     }).map((tx) => tx.id),
     ["income-salary"],
   );
@@ -119,10 +127,17 @@ test("filterHistoryTransactions ignores blank conditions", () => {
   );
 });
 
-test("buildHistorySearchConditionSummary reports no active conditions for default expense search", () => {
+test("buildHistorySearchConditionSummary reports expense type as one condition", () => {
   assert.deepEqual(buildHistorySearchConditionSummary({ type: "expense" }), {
+    count: 1,
+    label: "支出",
+  });
+});
+
+test("buildHistorySearchConditionSummary reports no conditions for all type", () => {
+  assert.deepEqual(buildHistorySearchConditionSummary({ type: "all" }), {
     count: 0,
-    label: "支出 / 条件なし",
+    label: "条件なし",
   });
 });
 

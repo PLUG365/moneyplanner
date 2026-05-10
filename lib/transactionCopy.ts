@@ -57,6 +57,7 @@ export type CopyTarget = {
   categoryId: string;
   breakdownId: string | null;
   accountId: string;
+  accountFallback: boolean;
 };
 
 function normalize(value: string): string {
@@ -139,13 +140,17 @@ export function resolveTransactionCopyTarget(
       (candidate) => candidate.id === context.defaultAccountId,
     ) ?? context.accounts[0];
 
+  const resolvedAccountId =
+    account?.id ??
+    accountByName?.id ??
+    defaultAccount?.id ??
+    context.defaultAccountId;
+  const accountFallback = !account && !accountByName;
+
   return {
     categoryId: selection.categoryId,
     breakdownId: selection.breakdownId,
-    accountId:
-      account?.id ??
-      accountByName?.id ??
-      defaultAccount?.id ??
-      context.defaultAccountId,
+    accountId: resolvedAccountId,
+    accountFallback,
   };
 }

@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  formatAccountBalanceInputDisplay,
-  formatBudgetInputDisplay,
-  formatYenDisplay,
-  getSettingsKeyboardAccessoryPreview,
-  normalizeAccountBalanceInput,
-  normalizeBudgetInput,
-  normalizeSignedYenInput,
-  resolveAccountBalanceInput,
-  resolveBudgetInput,
+    formatAccountBalanceInputDisplay,
+    formatBudgetInputDisplay,
+    formatYenDisplay,
+    getSettingsKeyboardAccessoryPreview,
+    normalizeAccountBalanceInput,
+    normalizeBudgetInput,
+    normalizeSignedYenInput,
+    resolveAccountBalanceInput,
+    resolveBudgetInput,
 } from "./settingsKeyboardAccessory";
 
 test("formatYenDisplay formats raw digits as yen", () => {
@@ -128,7 +128,7 @@ test("getSettingsKeyboardAccessoryPreview returns placeholder for empty account 
   );
 
   assert.deepEqual(preview, {
-    title: "口座残高",
+    title: "初期残高",
     text: "初期残高を入力",
     isPlaceholder: true,
   });

@@ -319,6 +319,7 @@ export default function RecordScreen() {
       let nextToastVariant: ToastVariant = "info";
       if (
         afterStatus &&
+        !afterStatus.fromCache &&
         (afterStatus.level === "warning" || afterStatus.level === "exceeded")
       ) {
         const percent = Math.round(afterStatus.usageRate * 100);

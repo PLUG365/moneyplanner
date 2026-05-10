@@ -1,24 +1,24 @@
 import { router, useFocusEffect, type Href } from "expo-router";
 import React, {
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 import {
-    Alert,
-    Animated,
-    InputAccessoryView,
-    Keyboard,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Animated,
+  InputAccessoryView,
+  Keyboard,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -27,81 +27,89 @@ import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useCollection } from "@/hooks/useFirestore";
 import {
-    ACCOUNT_DELETION_CONFIRMATION_TEXT,
-    isAccountDeletionConfirmationValid,
+  ACCOUNT_DELETION_CONFIRMATION_TEXT,
+  isAccountDeletionConfirmationValid,
 } from "@/lib/accountDeletion";
 import {
-    deleteCurrentUserAccount,
-    getCurrentUser,
-    reauthenticateCurrentUserWithApple,
-    signOut,
+  deleteCurrentUserAccount,
+  getCurrentUser,
+  reauthenticateCurrentUserWithApple,
+  signOut,
 } from "@/lib/auth";
 import {
-    moveCategoryInDisplayOrder,
-    type CategoryMoveDirection,
+  moveCategoryInDisplayOrder,
+  type CategoryMoveDirection,
 } from "@/lib/categoryOrdering";
 import { exportCSV } from "@/lib/csvExport";
 import {
-    Account,
-    addAccount,
-    addBreakdown,
-    addCategory,
-    Breakdown,
-    Category,
-    DEFAULT_ACCOUNT_ID,
-    deleteAccountAndMoveToDefault,
-    deleteBreakdown,
-    deleteCategory,
-    deleteHouseholdDataAndCurrentUserProfile,
-    deleteMonthlyBudget,
-    getAccounts,
-    getBreakdownsByCategory,
-    getCategories,
-    getMonthlyBudgets,
-    householdCollection,
-    mapAccount,
-    reconcileAccountBalancesFromTransactions,
-    resetCategoryAndBreakdownsToDefault,
-    resetFirestoreForDevelopment,
-    setMonthlyBudget,
-    TransactionType,
-    updateAccountBalance,
-    updateAccountName,
-    updateBreakdown,
-    updateCategory,
-    updateCategoryDisplayOrders,
+  Account,
+  addAccount,
+  addBreakdown,
+  addCategory,
+  Breakdown,
+  Category,
+  DEFAULT_ACCOUNT_ID,
+  deleteAccountAndMoveToDefault,
+  deleteBreakdown,
+  deleteCategory,
+  deleteHouseholdDataAndCurrentUserProfile,
+  deleteMonthlyBudget,
+  getAccounts,
+  getAllTransactions,
+  getBreakdownsByCategory,
+  getCategories,
+  getCategoryDeletionImpact,
+  getMonthlyBudgets,
+  householdCollection,
+  mapAccount,
+  reconcileAccountBalancesFromTransactions,
+  resetCategoryAndBreakdownsToDefault,
+  resetFirestoreForDevelopment,
+  setMonthlyBudget,
+  TransactionType,
+  updateAccountBalance,
+  updateAccountName,
+  updateBreakdown,
+  updateCategory,
+  updateCategoryDisplayOrders,
 } from "@/lib/firestore";
 import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
 import {
-    getHouseholdId,
-    getHouseholdMembers,
-    getInviteCode,
-    regenerateInviteCode,
-    removeHouseholdMember,
-    type HouseholdMember,
+  approveJoinRequest,
+  getHouseholdId,
+  getHouseholdMembers,
+  getInviteCode,
+  getPendingJoinRequests,
+  HouseholdJoinRequest,
+  regenerateInviteCode,
+  rejectJoinRequest,
+  removeHouseholdMember,
+  type HouseholdMember,
 } from "@/lib/household";
+import { waitForPendingWrite } from "@/lib/pendingWrite";
 import { buildBudgetInputMap } from "@/lib/settingsBudgetEditor";
 import { getMemberRemovalActionLabel } from "@/lib/settingsHouseholdMembers";
 import {
-    formatAccountBalanceInputDisplay,
-    formatBudgetInputDisplay,
-    formatYenDisplay,
-    getSettingsKeyboardAccessoryPreview,
-    resolveAccountBalanceInput,
-    resolveBudgetInput,
-    type SettingsKeyboardField,
+  formatAccountBalanceInputDisplay,
+  formatBudgetInputDisplay,
+  getSettingsKeyboardAccessoryPreview,
+  resolveAccountBalanceInput,
+  resolveBudgetInput,
+  type SettingsKeyboardField,
 } from "@/lib/settingsKeyboardAccessory";
 import {
-    buildAccountEditorDraft,
-    buildBreakdownEditorDraft,
-    buildCategoryEditorDraft,
-    buildEditorMeta,
-    buildEmptyAccountEditorDraft,
-    buildEmptyBreakdownEditorDraft,
-    buildEmptyCategoryEditorDraft,
-    type SettingsManagerTab,
+  buildAccountEditorDraft,
+  buildBreakdownEditorDraft,
+  buildCategoryEditorDraft,
+  buildEditorMeta,
+  buildEmptyAccountEditorDraft,
+  buildEmptyBreakdownEditorDraft,
+  buildEmptyCategoryEditorDraft,
+  type SettingsManagerTab,
 } from "@/lib/settingsManagerEditor";
 import { getSettingsWriteAvailability } from "@/lib/settingsWriteAvailability";
+
+const WRITE_ACK_TIMEOUT_MS = 900;
 
 const PRESET_COLORS = [
   "#1565C0",
@@ -188,6 +196,9 @@ export default function SettingsScreen() {
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>(
     [],
   );
+  const [pendingJoinRequests, setPendingJoinRequests] = useState<
+    HouseholdJoinRequest[]
+  >([]);
   const [householdLoading, setHouseholdLoading] = useState(false);
   const [regeneratingInviteCode, setRegeneratingInviteCode] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -227,6 +238,12 @@ export default function SettingsScreen() {
     if (!isSettingsWriteDisabled) return true;
     showSettingsOfflineAlert();
     return false;
+  };
+
+  const closeTransientInputs = () => {
+    setActiveKeyboardField(null);
+    setNumericInputTarget(null);
+    Keyboard.dismiss();
   };
 
   const load = useCallback(async () => {
@@ -269,18 +286,24 @@ export default function SettingsScreen() {
       if (!nextHouseholdId) {
         setInviteCode(null);
         setHouseholdMembers([]);
+        setPendingJoinRequests([]);
         return;
       }
 
-      const [nextInviteCode, nextMembers] = await Promise.all([
-        getInviteCode(nextHouseholdId),
-        getHouseholdMembers(nextHouseholdId),
-      ]);
+      const [nextInviteCode, nextMembers, nextJoinRequests] = await Promise.all(
+        [
+          getInviteCode(nextHouseholdId),
+          getHouseholdMembers(nextHouseholdId),
+          getPendingJoinRequests(nextHouseholdId),
+        ],
+      );
       setInviteCode(nextInviteCode);
       setHouseholdMembers(nextMembers);
+      setPendingJoinRequests(nextJoinRequests);
     } catch {
       setInviteCode(null);
       setHouseholdMembers([]);
+      setPendingJoinRequests([]);
     } finally {
       setHouseholdLoading(false);
     }
@@ -411,15 +434,32 @@ export default function SettingsScreen() {
 
     const balance = resolveAccountBalanceInput(accountBalanceInput);
     if (balance === null) {
-      Alert.alert("エラー", "残高の入力内容を確認してください");
+      Alert.alert("エラー", "初期残高の入力内容を確認してください");
       return;
     }
 
-    if (accountEditingId) {
-      await updateAccountName(accountEditingId, trimmed);
-      await updateAccountBalance(accountEditingId, balance);
-    } else {
-      await addAccount(trimmed, balance);
+    try {
+      if (accountEditingId) {
+        await waitForPendingWrite(
+          updateAccountName(accountEditingId, trimmed),
+          WRITE_ACK_TIMEOUT_MS,
+        );
+        await waitForPendingWrite(
+          updateAccountBalance(accountEditingId, balance),
+          WRITE_ACK_TIMEOUT_MS,
+        );
+      } else {
+        await waitForPendingWrite(
+          addAccount(trimmed, balance),
+          WRITE_ACK_TIMEOUT_MS,
+        );
+      }
+    } catch (error) {
+      Alert.alert(
+        "エラー",
+        error instanceof Error ? error.message : "保存に失敗しました",
+      );
+      return;
     }
 
     await load();
@@ -445,9 +485,15 @@ export default function SettingsScreen() {
       Alert.alert("削除不可", "既定口座は削除できません");
       return;
     }
+
+    const initialBalanceWarning =
+      account.initialBalance !== null && account.initialBalance !== 0
+        ? `\n\n⚠️ 初期残高 ¥${account.initialBalance.toLocaleString()} は引き継がれません。`
+        : "";
+
     Alert.alert(
       "口座を削除",
-      `「${account.name}」の取引は既定口座へ移管されます。\n\n削除口座の現在の残高は既定口座に加算されません。移管される取引の収支のみが既定口座の残高に反映されます。`,
+      `「${account.name}」の取引は既定口座へ移管されます。\n\n削除口座の現在の残高は既定口座に加算されません。移管される取引の収支のみが既定口座の残高に反映されます。${initialBalanceWarning}`,
 
       [
         { text: "キャンセル", style: "cancel" },
@@ -455,9 +501,21 @@ export default function SettingsScreen() {
           text: "削除",
           style: "destructive",
           onPress: async () => {
-            await deleteAccountAndMoveToDefault(account.id);
-            await load();
-            resetAccountForm();
+            try {
+              await waitForPendingWrite(
+                deleteAccountAndMoveToDefault(account.id),
+                WRITE_ACK_TIMEOUT_MS,
+              );
+              await load();
+              resetAccountForm();
+            } catch (error) {
+              Alert.alert(
+                "エラー",
+                error instanceof Error
+                  ? error.message
+                  : "口座削除に失敗しました",
+              );
+            }
           },
         },
       ],
@@ -484,37 +542,57 @@ export default function SettingsScreen() {
       return;
     }
 
-    let savedCategoryId: string;
-    if (categoryEditingId) {
-      await updateCategory(categoryEditingId, trimmed, categoryColorInput);
-      savedCategoryId = categoryEditingId;
-    } else {
-      savedCategoryId = await addCategory(
-        trimmed,
-        activeType,
-        categoryColorInput,
-      );
+    const shouldSaveBudget =
+      activeType === "expense" && categoryBudgetInput.trim().length > 0;
+    const parsedBudgetAmount = shouldSaveBudget
+      ? resolveBudgetInput(categoryBudgetInput)
+      : null;
+    if (shouldSaveBudget && parsedBudgetAmount === null) {
+      Alert.alert("エラー", "予算額の入力内容を確認してください");
+      return;
     }
 
-    if (activeType === "expense") {
-      if (!categoryBudgetInput) {
-        await deleteMonthlyBudget(savedCategoryId);
+    let savedCategoryId: string;
+    try {
+      if (categoryEditingId) {
+        await waitForPendingWrite(
+          updateCategory(categoryEditingId, trimmed, categoryColorInput),
+          WRITE_ACK_TIMEOUT_MS,
+        );
+        savedCategoryId = categoryEditingId;
       } else {
-        const amount = resolveBudgetInput(categoryBudgetInput);
-        if (amount === null) {
-          Alert.alert("エラー", "予算額の入力内容を確認してください");
-          return;
-        }
-        if (amount >= 0) {
-          await setMonthlyBudget(savedCategoryId, amount);
+        const result = await waitForPendingWrite(
+          addCategory(trimmed, activeType, categoryColorInput),
+          WRITE_ACK_TIMEOUT_MS,
+        );
+        savedCategoryId =
+          result.status === "acknowledged" ? result.value : "unknown";
+      }
+
+      if (activeType === "expense") {
+        if (!categoryBudgetInput) {
+          await waitForPendingWrite(
+            deleteMonthlyBudget(savedCategoryId),
+            WRITE_ACK_TIMEOUT_MS,
+          );
+        } else if (parsedBudgetAmount !== null && parsedBudgetAmount >= 0) {
+          await waitForPendingWrite(
+            setMonthlyBudget(savedCategoryId, parsedBudgetAmount),
+            WRITE_ACK_TIMEOUT_MS,
+          );
         }
       }
-    }
 
-    await load();
-    await loadBudgetEditor();
-    resetCategoryForm();
-    setShowEditorModal(false);
+      await load();
+      await loadBudgetEditor();
+      resetCategoryForm();
+      setShowEditorModal(false);
+    } catch (error) {
+      Alert.alert(
+        "エラー",
+        error instanceof Error ? error.message : "保存に失敗しました",
+      );
+    }
   };
 
   const handleEditCategory = (cat: Category) => {
@@ -529,40 +607,78 @@ export default function SettingsScreen() {
     setShowEditorModal(true);
   };
 
-  const handleDeleteCategory = (cat: Category) => {
+  const handleDeleteCategory = async (cat: Category) => {
     if (!guardSettingsWrite()) return;
 
-    Alert.alert("削除確認", `「${cat.name}」を削除しますか？`, [
-      { text: "キャンセル", style: "cancel" },
-      {
-        text: "削除",
-        style: "destructive",
-        onPress: () => {
-          setCategories((prev) => prev.filter((item) => item.id !== cat.id));
-          setBreakdowns((prev) =>
-            prev.filter((item) => item.categoryId !== cat.id),
-          );
-          setBudgetInputs((prev) => {
-            const next = { ...prev };
-            delete next[cat.id];
-            return next;
-          });
-          if (selectedCategoryId === cat.id) {
-            setSelectedCategoryId(null);
-          }
-          void deleteCategory(cat.id)
-            .then(async () => {
+    let impactText =
+      "履歴一覧のカテゴリ名表示は残りますが、カテゴリ管理・予算管理の対象から外れます。";
+    try {
+      const impact = await getCategoryDeletionImpact(cat.id);
+      const lines: string[] = [];
+      lines.push(
+        "履歴一覧のカテゴリ名表示は残ります（取引スナップショット）。",
+      );
+      lines.push("このカテゴリはカテゴリ管理・予算管理の対象から外れます。");
+      lines.push(
+        "既存取引のカテゴリ連携は解除されるため、編集時は再選択が必要になる場合があります。",
+      );
+      lines.push(
+        `過去 ${impact.transactionCount} 件の取引でカテゴリ連携が解除されます。`,
+      );
+      if (impact.breakdownCount > 0) {
+        lines.push(`内訳 ${impact.breakdownCount} 件が削除されます。`);
+      }
+      if (impact.hasBudget) {
+        lines.push("このカテゴリの予算設定は削除されます。");
+      }
+      impactText = lines.join("\n");
+    } catch {
+      impactText =
+        "履歴一覧のカテゴリ名表示は残りますが、カテゴリ管理・予算管理の対象から外れ、既存取引とのカテゴリ連携が解除されます。";
+    }
+
+    Alert.alert(
+      "削除確認",
+      `「${cat.name}」を削除しますか？\n\n${impactText}`,
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "削除",
+          style: "destructive",
+          onPress: async () => {
+            setCategories((prev) => prev.filter((item) => item.id !== cat.id));
+            setBreakdowns((prev) =>
+              prev.filter((item) => item.categoryId !== cat.id),
+            );
+            setBudgetInputs((prev) => {
+              const next = { ...prev };
+              delete next[cat.id];
+              return next;
+            });
+            if (selectedCategoryId === cat.id) {
+              setSelectedCategoryId(null);
+            }
+            try {
+              await waitForPendingWrite(
+                deleteCategory(cat.id),
+                WRITE_ACK_TIMEOUT_MS,
+              );
               await load();
               await loadBudgetEditor();
-            })
-            .catch(() => {
-              Alert.alert("エラー", "カテゴリ削除に失敗しました");
-              void load();
-              void loadBudgetEditor();
-            });
+            } catch (error) {
+              Alert.alert(
+                "エラー",
+                error instanceof Error
+                  ? error.message
+                  : "カテゴリ削除に失敗しました",
+              );
+              await load();
+              await loadBudgetEditor();
+            }
+          },
         },
-      },
-    ]);
+      ],
+    );
   };
 
   const handleSaveBreakdown = async () => {
@@ -578,15 +694,28 @@ export default function SettingsScreen() {
       return;
     }
 
-    if (breakdownEditingId) {
-      await updateBreakdown(breakdownEditingId, trimmed);
-    } else {
-      await addBreakdown(selectedCategoryId, trimmed);
-    }
+    try {
+      if (breakdownEditingId) {
+        await waitForPendingWrite(
+          updateBreakdown(breakdownEditingId, trimmed),
+          WRITE_ACK_TIMEOUT_MS,
+        );
+      } else {
+        await waitForPendingWrite(
+          addBreakdown(selectedCategoryId, trimmed),
+          WRITE_ACK_TIMEOUT_MS,
+        );
+      }
 
-    await reloadBreakdowns(selectedCategoryId);
-    resetBreakdownForm();
-    setShowEditorModal(false);
+      await reloadBreakdowns(selectedCategoryId);
+      resetBreakdownForm();
+      setShowEditorModal(false);
+    } catch (error) {
+      Alert.alert(
+        "エラー",
+        error instanceof Error ? error.message : "保存に失敗しました",
+      );
+    }
   };
 
   const handleEditBreakdown = (item: Breakdown) => {
@@ -607,14 +736,21 @@ export default function SettingsScreen() {
       {
         text: "削除",
         style: "destructive",
-        onPress: () => {
+        onPress: async () => {
           setBreakdowns((prev) => prev.filter((row) => row.id !== item.id));
-          void deleteBreakdown(item.id)
-            .then(() => reloadBreakdowns(selectedCategoryId))
-            .catch(() => {
-              Alert.alert("エラー", "内訳削除に失敗しました");
-              void reloadBreakdowns(selectedCategoryId);
-            });
+          try {
+            await waitForPendingWrite(
+              deleteBreakdown(item.id),
+              WRITE_ACK_TIMEOUT_MS,
+            );
+            await reloadBreakdowns(selectedCategoryId);
+          } catch (error) {
+            Alert.alert(
+              "エラー",
+              error instanceof Error ? error.message : "内訳削除に失敗しました",
+            );
+            await reloadBreakdowns(selectedCategoryId);
+          }
         },
       },
     ]);
@@ -654,7 +790,7 @@ export default function SettingsScreen() {
     resetCategoryForm();
     resetBreakdownForm();
     resetAccountForm();
-    setActiveKeyboardField(null);
+    closeTransientInputs();
     setShowEditorModal(false);
     setManagerMode("category");
     setManagerTab("category");
@@ -670,7 +806,7 @@ export default function SettingsScreen() {
     resetCategoryForm();
     resetBreakdownForm();
     resetAccountForm();
-    setActiveKeyboardField(null);
+    closeTransientInputs();
     setShowEditorModal(false);
     setManagerMode("account");
     setManagerTab("account");
@@ -678,8 +814,7 @@ export default function SettingsScreen() {
   };
 
   const handleCloseManagerModal = () => {
-    setActiveKeyboardField(null);
-    Keyboard.dismiss();
+    closeTransientInputs();
     setShowEditorModal(false);
     setShowManagerModal(false);
   };
@@ -724,8 +859,7 @@ export default function SettingsScreen() {
   };
 
   const handleCloseEditorModal = () => {
-    setActiveKeyboardField(null);
-    Keyboard.dismiss();
+    closeTransientInputs();
     setShowEditorModal(false);
     if (managerTab === "category") {
       resetCategoryForm();
@@ -741,9 +875,30 @@ export default function SettingsScreen() {
   const handleExportCSV = async () => {
     setExporting(true);
     try {
-      await exportCSV();
-    } catch {
-      Alert.alert("エラー", "CSV出力に失敗しました");
+      const transactions = await getAllTransactions();
+      if (transactions.length === 0) {
+        Alert.alert("CSV出力", "出力対象のデータがありません");
+        return;
+      }
+
+      await exportCSV(transactions);
+    } catch (error) {
+      if (error instanceof Error) {
+        const message = error.message || "CSV出力に失敗しました";
+        const normalized = message.toLowerCase();
+        if (
+          normalized.includes("cancel") ||
+          normalized.includes("canceled") ||
+          normalized.includes("cancelled") ||
+          message.includes("キャンセル")
+        ) {
+          Alert.alert("CSV出力", "CSV共有をキャンセルしました");
+        } else {
+          Alert.alert("エラー", `CSV出力に失敗しました\n${message}`);
+        }
+      } else {
+        Alert.alert("エラー", "CSV出力に失敗しました");
+      }
     } finally {
       setExporting(false);
     }
@@ -771,8 +926,14 @@ export default function SettingsScreen() {
     setDeletingAccount(true);
     try {
       await reauthenticateCurrentUserWithApple();
-      await deleteHouseholdDataAndCurrentUserProfile();
-      await deleteCurrentUserAccount();
+      await waitForPendingWrite(
+        deleteHouseholdDataAndCurrentUserProfile(),
+        WRITE_ACK_TIMEOUT_MS,
+      );
+      await waitForPendingWrite(
+        deleteCurrentUserAccount(),
+        WRITE_ACK_TIMEOUT_MS,
+      );
       router.replace("/auth" as Href);
     } catch (error) {
       Alert.alert(
@@ -794,9 +955,17 @@ export default function SettingsScreen() {
       return;
     }
 
+    const otherMemberCount = householdMembers.filter(
+      (member) => member.uid !== currentUser.uid,
+    ).length;
+    const memberWarning =
+      otherMemberCount > 0
+        ? `この世帯には他のメンバーが ${otherMemberCount} 名います。実行すると他メンバーの家計データも消えます。`
+        : "この操作は世帯データを完全に削除します。";
+
     Alert.alert(
       "認証解除と全データ削除",
-      "世帯の共有データをすべて削除し、現在のアカウントを削除します。削除前に必要なデータはCSVで書き出してください。",
+      `${memberWarning}\n\n世帯の共有データをすべて削除し、現在のアカウントを削除します。削除前に必要なデータはCSVで書き出してください。`,
       [
         { text: "キャンセル", style: "cancel" },
         {
@@ -828,10 +997,15 @@ export default function SettingsScreen() {
     if (!householdId) return;
 
     const isSelf = currentUser?.uid === member.uid;
+    const otherActiveMembers = householdMembers.filter(
+      (row) => row.uid !== currentUser?.uid,
+    ).length;
     Alert.alert(
       isSelf ? "世帯から退出" : "メンバーを解除",
       isSelf
-        ? "世帯から退出します。世帯データは削除されません。実行しますか？"
+        ? otherActiveMembers === 0
+          ? "最後のメンバーとして退出すると、世帯データは全削除されます。実行しますか？"
+          : "世帯から退出します。世帯データは削除されません。実行しますか？"
         : `「${member.displayName}」を世帯から解除します。解除されたメンバーは次回アクセス時に世帯データへアクセスできなくなります。`,
       [
         { text: "キャンセル", style: "cancel" },
@@ -840,16 +1014,27 @@ export default function SettingsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await removeHouseholdMember(householdId, member.uid);
+              await waitForPendingWrite(
+                removeHouseholdMember(householdId, member.uid),
+                WRITE_ACK_TIMEOUT_MS,
+              );
               if (isSelf) {
                 router.replace("/household" as Href);
                 return;
               }
               await loadHouseholdInfo();
-            } catch {
+              Alert.alert(
+                "メンバーを解除しました",
+                "再参加を防ぐため、必要に応じて招待コードを再発行してください。",
+              );
+            } catch (error) {
               Alert.alert(
                 "エラー",
-                isSelf ? "退出に失敗しました" : "解除に失敗しました",
+                error instanceof Error
+                  ? error.message
+                  : isSelf
+                    ? "退出に失敗しました"
+                    : "解除に失敗しました",
               );
             }
           },
@@ -868,7 +1053,7 @@ export default function SettingsScreen() {
 
     Alert.alert(
       "招待コードを再発行",
-      "現在の招待コードを無効にし、新しいコードを発行します。すでに共有済みの古いコードでは参加できなくなります。",
+      "現在の招待コードを無効にし、新しいコードを発行します。すでに共有済みの古いコードでは参加できなくなります。現在のメンバーには影響しません。",
       [
         { text: "キャンセル", style: "cancel" },
         {
@@ -877,10 +1062,28 @@ export default function SettingsScreen() {
           onPress: async () => {
             setRegeneratingInviteCode(true);
             try {
-              const nextInviteCode = await regenerateInviteCode(householdId);
-              setInviteCode(nextInviteCode);
-              Alert.alert("完了", "招待コードを再発行しました");
+              const result = await waitForPendingWrite(
+                regenerateInviteCode(householdId),
+                WRITE_ACK_TIMEOUT_MS,
+              );
+              const nextInviteCode =
+                result.status === "acknowledged" ? result.value : null;
+              if (nextInviteCode) {
+                setInviteCode(nextInviteCode);
+                Alert.alert("完了", "招待コードを再発行しました");
+              } else {
+                Alert.alert(
+                  "エラー",
+                  "招待コードの再発行に失敗しました（同期待ち）",
+                );
+              }
             } catch (error) {
+              try {
+                const currentCode = await getInviteCode(householdId);
+                if (currentCode) {
+                  setInviteCode(currentCode);
+                }
+              } catch {}
               Alert.alert(
                 "エラー",
                 error instanceof Error
@@ -889,6 +1092,75 @@ export default function SettingsScreen() {
               );
             } finally {
               setRegeneratingInviteCode(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleApproveJoinRequest = async (request: HouseholdJoinRequest) => {
+    if (!guardSettingsWrite()) return;
+    if (!householdId) {
+      Alert.alert("エラー", "世帯情報を確認できません");
+      return;
+    }
+
+    Alert.alert(
+      "参加リクエスト承認",
+      `「${request.displayName}」を世帯へ参加させますか？`,
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "承認",
+          onPress: async () => {
+            try {
+              await waitForPendingWrite(
+                approveJoinRequest(householdId, request.uid),
+                WRITE_ACK_TIMEOUT_MS,
+              );
+              await loadHouseholdInfo();
+              Alert.alert("完了", "参加リクエストを承認しました");
+            } catch (error) {
+              Alert.alert(
+                "エラー",
+                error instanceof Error ? error.message : "承認に失敗しました",
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleRejectJoinRequest = async (request: HouseholdJoinRequest) => {
+    if (!guardSettingsWrite()) return;
+    if (!householdId) {
+      Alert.alert("エラー", "世帯情報を確認できません");
+      return;
+    }
+
+    Alert.alert(
+      "参加リクエスト却下",
+      `「${request.displayName}」の参加リクエストを却下しますか？`,
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "却下",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await waitForPendingWrite(
+                rejectJoinRequest(householdId, request.uid),
+                WRITE_ACK_TIMEOUT_MS,
+              );
+              await loadHouseholdInfo();
+              Alert.alert("完了", "参加リクエストを却下しました");
+            } catch (error) {
+              Alert.alert(
+                "エラー",
+                error instanceof Error ? error.message : "却下に失敗しました",
+              );
             }
           },
         },
@@ -1063,36 +1335,122 @@ export default function SettingsScreen() {
             メンバー情報がありません
           </Text>
         ) : (
-          householdMembers.map((member) => (
+          householdMembers.map((member) => {
+            const isSelf = member.uid === currentUser?.uid;
+            return (
+              <View
+                key={member.uid}
+                style={[
+                  styles.memberRow,
+                  {
+                    borderColor: isSelf ? colors.tint : colors.border,
+                    backgroundColor: isSelf
+                      ? colors.tint + "12"
+                      : colors.background,
+                  },
+                ]}
+              >
+                <View style={styles.memberInfoWrap}>
+                  <View style={styles.memberNameRow}>
+                    <Text style={[styles.itemName, { color: colors.text }]}>
+                      {member.displayName}
+                    </Text>
+                    {isSelf ? (
+                      <Text
+                        style={[
+                          styles.selfBadge,
+                          {
+                            color: colors.tint,
+                            borderColor: colors.tint,
+                          },
+                        ]}
+                      >
+                        自分
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Text
+                    style={[styles.memberUidText, { color: colors.subText }]}
+                    numberOfLines={1}
+                  >
+                    {member.uid}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.memberActionButton,
+                    {
+                      borderColor: isSelf ? "#D97A00" : "#C62828",
+                      backgroundColor: isSelf ? "#FFF4E5" : "#FFEBEE",
+                    },
+                    isSettingsWriteDisabled && styles.disabledControl,
+                  ]}
+                  onPress={() => handleRemoveMember(member)}
+                  disabled={isSettingsWriteDisabled}
+                >
+                  <Text
+                    style={[
+                      styles.memberActionText,
+                      { color: isSelf ? "#B36A00" : "#B71C1C" },
+                      isSettingsWriteDisabled && { color: colors.subText },
+                    ]}
+                  >
+                    {getMemberRemovalActionLabel(currentUser?.uid, member.uid)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })
+        )}
+
+        <Text style={[styles.groupLabel, { color: colors.subText }]}>
+          参加リクエスト
+        </Text>
+        {pendingJoinRequests.length === 0 ? (
+          <Text style={[styles.emptyText, { color: colors.subText }]}>
+            承認待ちの参加リクエストはありません
+          </Text>
+        ) : (
+          pendingJoinRequests.map((request) => (
             <View
-              key={member.uid}
-              style={[styles.memberRow, { borderColor: colors.border }]}
+              key={request.uid}
+              style={[styles.requestRow, { borderColor: colors.border }]}
             >
               <View style={styles.memberInfoWrap}>
                 <Text style={[styles.itemName, { color: colors.text }]}>
-                  {member.displayName}
-                  {member.uid === currentUser?.uid ? "（自分）" : ""}
+                  {request.displayName}
                 </Text>
                 <Text
                   style={[styles.memberUidText, { color: colors.subText }]}
                   numberOfLines={1}
                 >
-                  {member.uid}
+                  {request.uid}
                 </Text>
               </View>
-              <TouchableOpacity
-                onPress={() => handleRemoveMember(member)}
-                disabled={isSettingsWriteDisabled}
-              >
-                <Text
+              <View style={styles.requestActions}>
+                <TouchableOpacity
                   style={[
-                    styles.itemDelete,
-                    isSettingsWriteDisabled && { color: colors.subText },
+                    styles.requestButton,
+                    styles.requestApproveButton,
+                    isSettingsWriteDisabled && styles.disabledControl,
                   ]}
+                  onPress={() => handleApproveJoinRequest(request)}
+                  disabled={isSettingsWriteDisabled}
                 >
-                  {getMemberRemovalActionLabel(currentUser?.uid, member.uid)}
-                </Text>
-              </TouchableOpacity>
+                  <Text style={styles.requestApproveText}>承認</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.requestButton,
+                    styles.requestRejectButton,
+                    isSettingsWriteDisabled && styles.disabledControl,
+                  ]}
+                  onPress={() => handleRejectJoinRequest(request)}
+                  disabled={isSettingsWriteDisabled}
+                >
+                  <Text style={styles.requestRejectText}>却下</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ))
         )}
@@ -1854,7 +2212,7 @@ export default function SettingsScreen() {
                           { color: colors.subText },
                         ]}
                       >
-                        残高を0にする
+                        初期残高を0にする
                       </Text>
                     </TouchableOpacity>
                     {isSettingsWriteDisabled ? (
@@ -1915,28 +2273,29 @@ export default function SettingsScreen() {
             </Animated.View>
           </View>
         )}
-        <MoneyInputModal
-          visible={numericInputTarget !== null}
-          title={
-            numericInputTarget === "account-balance" ? "初期残高" : "月次予算"
-          }
-          value={numericModalValue}
-          placeholder={
-            numericInputTarget === "account-balance" ? "¥0" : "予算なし"
-          }
-          colors={colors}
-          allowOperators
-          allowNegative={numericInputTarget === "account-balance"}
-          onChange={handleNumericModalChange}
-          emptyValue={numericInputTarget === "account-balance" ? 0 : null}
-          onInvalidExpression={() =>
-            Alert.alert("エラー", "計算式を確認してください")
-          }
-          onCancel={() => setNumericInputTarget(null)}
-          onConfirm={() => setNumericInputTarget(null)}
-          useNativeModal={false}
-        />
       </Modal>
+
+      <MoneyInputModal
+        visible={numericInputTarget !== null}
+        title={
+          numericInputTarget === "account-balance" ? "初期残高" : "月次予算"
+        }
+        value={numericModalValue}
+        placeholder={
+          numericInputTarget === "account-balance" ? "¥0" : "予算なし"
+        }
+        colors={colors}
+        allowOperators
+        allowNegative={numericInputTarget === "account-balance"}
+        onChange={handleNumericModalChange}
+        emptyValue={numericInputTarget === "account-balance" ? 0 : null}
+        onInvalidExpression={() =>
+          Alert.alert("エラー", "計算式を確認してください")
+        }
+        onCancel={() => setNumericInputTarget(null)}
+        onConfirm={() => setNumericInputTarget(null)}
+        useNativeModal={false}
+      />
 
       {Platform.OS === "ios" ? (
         <InputAccessoryView nativeID={KEYBOARD_ACCESSORY_VIEW_ID}>
@@ -2046,8 +2405,58 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 8,
   },
+  memberNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   memberInfoWrap: { flex: 1, minWidth: 0 },
   memberUidText: { fontSize: 11, marginTop: 2 },
+  selfBadge: {
+    fontSize: 11,
+    fontWeight: "700",
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  memberActionButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  memberActionText: { fontSize: 13, fontWeight: "700" },
+  requestRow: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  requestActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  requestButton: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  requestApproveButton: {
+    borderColor: "#2E7D32",
+    backgroundColor: "#E8F5E9",
+  },
+  requestRejectButton: {
+    borderColor: "#C62828",
+    backgroundColor: "#FFEBEE",
+  },
+  requestApproveText: { color: "#1B5E20", fontSize: 13, fontWeight: "700" },
+  requestRejectText: { color: "#B71C1C", fontSize: 13, fontWeight: "700" },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
