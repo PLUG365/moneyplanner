@@ -12,6 +12,7 @@ import {
     doc,
     getDoc,
     setDoc,
+    setLogLevel,
     updateDoc,
     writeBatch,
 } from "firebase/firestore";
@@ -19,6 +20,8 @@ import {
 const PROJECT_ID = "moneyplanner-rules-test";
 const HOUSEHOLD_ID = "household-a";
 const hasFirestoreEmulator = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
+
+setLogLevel("silent");
 
 let testEnv: RulesTestEnvironment | undefined;
 
@@ -233,6 +236,46 @@ rulesTest("active members can review join requests", async () => {
   );
 });
 
+rulesTest(
+  "active members can approve requests and create member docs",
+  async () => {
+    await testEnv!.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(
+        doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"),
+        {
+          uid: "charlie",
+          displayName: "Charlie",
+          status: "pending",
+          requestedAt: "2026-05-10T00:00:00.000Z",
+        },
+      );
+    });
+
+    const db = testEnv!.authenticatedContext("alice").firestore();
+    const batch = writeBatch(db);
+    batch.set(
+      doc(db, "households", HOUSEHOLD_ID, "members", "charlie"),
+      {
+        displayName: "Charlie",
+        joinedAt: "2026-05-10T00:05:00.000Z",
+      },
+      { merge: true },
+    );
+    batch.set(
+      doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"),
+      {
+        status: "approved",
+        reviewedAt: "2026-05-10T00:05:00.000Z",
+        reviewedBy: "alice",
+      },
+      { merge: true },
+    );
+
+    await assertSucceeds(batch.commit());
+  },
+);
+
 rulesTest("requester cannot self-approve join request", async () => {
   await testEnv!.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
@@ -253,6 +296,79 @@ rulesTest("requester cannot self-approve join request", async () => {
       status: "approved",
       reviewedBy: "charlie",
     }),
+  );
+});
+
+rulesTest("requester can resubmit join request after rejection", async () => {
+  await testEnv!.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(
+      doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"),
+      {
+        uid: "charlie",
+        displayName: "Charlie",
+        inviteCode: "123456",
+        status: "rejected",
+        requestedAt: "2026-05-09T00:00:00.000Z",
+        reviewedAt: "2026-05-09T00:10:00.000Z",
+        reviewedBy: "alice",
+      },
+    );
+  });
+
+  const db = testEnv!.authenticatedContext("charlie").firestore();
+  await assertSucceeds(
+    setDoc(doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"), {
+      uid: "charlie",
+      inviteCode: "123456",
+      displayName: "Charlie",
+      status: "pending",
+      requestedAt: "2026-05-10T00:00:00.000Z",
+    }),
+  );
+});
+
+rulesTest("requester can cancel their own pending join request", async () => {
+  await testEnv!.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(
+      doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"),
+      {
+        uid: "charlie",
+        displayName: "Charlie",
+        inviteCode: "123456",
+        status: "pending",
+        requestedAt: "2026-05-10T00:00:00.000Z",
+      },
+    );
+  });
+
+  const db = testEnv!.authenticatedContext("charlie").firestore();
+  await assertSucceeds(
+    deleteDoc(doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie")),
+  );
+});
+
+rulesTest("requester cannot cancel an approved join request", async () => {
+  await testEnv!.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(
+      doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"),
+      {
+        uid: "charlie",
+        displayName: "Charlie",
+        inviteCode: "123456",
+        status: "approved",
+        requestedAt: "2026-05-10T00:00:00.000Z",
+        reviewedAt: "2026-05-10T00:05:00.000Z",
+        reviewedBy: "alice",
+      },
+    );
+  });
+
+  const db = testEnv!.authenticatedContext("charlie").firestore();
+  await assertFails(
+    deleteDoc(doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie")),
   );
 });
 

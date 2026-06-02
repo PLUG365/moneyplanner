@@ -1,9 +1,17 @@
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
-import { createHousehold, requestJoinHousehold } from "@/lib/household";
+import {
+    cancelJoinRequest,
+    clearPendingHouseholdId,
+    completeJoinAfterApproval,
+    createHousehold,
+    getPendingHouseholdId,
+    requestJoinHousehold,
+    watchJoinRequestApproval,
+} from "@/lib/household";
 import { validateJoinDisplayName } from "@/lib/householdJoinRequestValidation";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -14,17 +22,128 @@ import {
     View,
 } from "react-native";
 
+function resolveHouseholdErrorMessage(error: unknown): string {
+  const code =
+    typeof error === "object" &&
+    error !== null &&
+    typeof (error as { code?: unknown }).code === "string"
+      ? String((error as { code?: unknown }).code)
+      : "";
+
+  const message =
+    error instanceof Error
+      ? String(error.message ?? "")
+      : typeof error === "object" &&
+          error !== null &&
+          typeof (error as { message?: unknown }).message === "string"
+        ? String((error as { message?: unknown }).message)
+        : "不明なエラーが発生しました";
+
+  if (/permission[-_ ]denied|PERMISSION_DENIED/i.test(`${code} ${message}`)) {
+    return "参加リクエストの送信に失敗しました。作成者側の設定画面で参加リクエスト状態を確認し、必要なら招待コードを再発行してから再試行してください。";
+  }
+
+  return message;
+}
+
 export default function HouseholdScreen() {
-  const [mode, setMode] = useState<"choose" | "join">("choose");
+  const [mode, setMode] = useState<"choose" | "join" | "waiting">("choose");
   const [inviteCode, setInviteCode] = useState("");
   const [createDisplayName, setCreateDisplayName] = useState("");
   const [joinDisplayName, setJoinDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [checkingPending, setCheckingPending] = useState(true);
   const [createdCode, setCreatedCode] = useState<string | null>(null);
+  const [pendingHouseholdId, setPendingHouseholdId] = useState<string | null>(
+    null,
+  );
+  const unsubscribeRef = useRef<(() => void) | null>(null);
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
 
+  const stopWatching = useCallback(() => {
+    unsubscribeRef.current?.();
+    unsubscribeRef.current = null;
+  }, []);
+
+  const startWatching = useCallback(
+    (householdId: string, fallbackDisplayName: string) => {
+      stopWatching();
+      unsubscribeRef.current = watchJoinRequestApproval(
+        householdId,
+        async (approvedDisplayName) => {
+          stopWatching();
+          setLoading(true);
+          try {
+            await completeJoinAfterApproval(
+              householdId,
+              approvedDisplayName || fallbackDisplayName,
+            );
+            router.replace("/(tabs)");
+          } catch (error: unknown) {
+            Alert.alert("エラー", resolveHouseholdErrorMessage(error));
+          } finally {
+            setLoading(false);
+          }
+        },
+        async () => {
+          stopWatching();
+          setPendingHouseholdId(null);
+          setMode("choose");
+          await clearPendingHouseholdId().catch(() => undefined);
+          Alert.alert(
+            "参加リクエストが却下されました",
+            "別の招待コードで再度お試しください。",
+          );
+        },
+        async () => {
+          stopWatching();
+          setPendingHouseholdId(null);
+          setMode("choose");
+          await clearPendingHouseholdId().catch(() => undefined);
+        },
+      );
+    },
+    [stopWatching],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+
+    const restorePendingRequest = async () => {
+      const householdId = await getPendingHouseholdId().catch(() => null);
+      if (!mounted || !householdId) return;
+
+      setPendingHouseholdId(householdId);
+      setMode("waiting");
+      startWatching(householdId, "");
+      if (mounted) setCheckingPending(false);
+    };
+
+    restorePendingRequest().finally(() => {
+      if (mounted) setCheckingPending(false);
+    });
+
+    return () => {
+      mounted = false;
+      stopWatching();
+    };
+  }, [startWatching, stopWatching]);
+
+  const blockIfPending = (): boolean => {
+    if (checkingPending) return true;
+    if (!pendingHouseholdId) return false;
+
+    Alert.alert(
+      "参加リクエスト送信中",
+      "承認待ちの参加リクエストがあります。承認されるまでお待ちください。",
+    );
+    return true;
+  };
+
   const handleCreate = async () => {
+    if (blockIfPending()) return;
+
     const validationError = validateJoinDisplayName(createDisplayName);
     if (validationError) {
       Alert.alert("入力エラー", validationError);
@@ -35,14 +154,16 @@ export default function HouseholdScreen() {
     try {
       const code = await createHousehold(createDisplayName);
       setCreatedCode(code);
-    } catch (e: any) {
-      Alert.alert("エラー", e.message);
+    } catch (error: unknown) {
+      Alert.alert("エラー", resolveHouseholdErrorMessage(error));
     } finally {
       setLoading(false);
     }
   };
 
   const handleJoin = async () => {
+    if (blockIfPending()) return;
+
     if (inviteCode.trim().length === 0) {
       Alert.alert("入力エラー", "招待コードを入力してください");
       return;
@@ -52,26 +173,68 @@ export default function HouseholdScreen() {
       Alert.alert("入力エラー", validationError);
       return;
     }
+
     setLoading(true);
     try {
-      await requestJoinHousehold(inviteCode, joinDisplayName);
-      Alert.alert(
-        "参加リクエストを送信しました",
-        "世帯メンバーの承認後に参加できます。承認されるまでお待ちください。",
+      const householdId = await requestJoinHousehold(
+        inviteCode,
+        joinDisplayName,
       );
+      const fallbackDisplayName = joinDisplayName;
       setInviteCode("");
       setJoinDisplayName("");
-      setMode("choose");
-    } catch (e: any) {
-      Alert.alert("エラー", e.message);
+      setPendingHouseholdId(householdId);
+      setMode("waiting");
+      startWatching(householdId, fallbackDisplayName);
+    } catch (error: unknown) {
+      Alert.alert("エラー", resolveHouseholdErrorMessage(error));
     } finally {
       setLoading(false);
     }
   };
 
+  const handleCancelJoinRequest = () => {
+    if (!pendingHouseholdId) return;
+
+    Alert.alert(
+      "参加リクエストをキャンセル",
+      "承認待ちの参加リクエストを取り消しますか？",
+      [
+        { text: "戻る", style: "cancel" },
+        {
+          text: "キャンセルする",
+          style: "destructive",
+          onPress: async () => {
+            const householdId = pendingHouseholdId;
+            stopWatching();
+            setLoading(true);
+            try {
+              await cancelJoinRequest(householdId);
+              setPendingHouseholdId(null);
+              setMode("choose");
+            } catch (error: unknown) {
+              Alert.alert("エラー", resolveHouseholdErrorMessage(error));
+              startWatching(householdId, "");
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleContinue = () => {
     router.replace("/(tabs)");
   };
+
+  if (checkingPending) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.tint} />
+      </View>
+    );
+  }
 
   if (createdCode) {
     return (
@@ -98,6 +261,37 @@ export default function HouseholdScreen() {
         >
           <Text style={styles.buttonText}>はじめる</Text>
         </Pressable>
+      </View>
+    );
+  }
+
+  if (mode === "waiting") {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ActivityIndicator
+          size="large"
+          color={colors.tint}
+          style={{ marginBottom: 24 }}
+        />
+        <Text style={[styles.title, { color: colors.text }]}>承認待ち</Text>
+        <Text style={[styles.subtitle, { color: colors.subText }]}>
+          世帯メンバーが参加リクエストを承認するまでお待ちください。承認されると自動的に参加完了します。
+        </Text>
+        {loading ? null : (
+          <>
+            <Text style={[styles.waitingNote, { color: colors.subText }]}>
+              この画面を閉じても、次回起動時に承認待ち状態を再開します。
+            </Text>
+            <Pressable
+              onPress={handleCancelJoinRequest}
+              style={styles.linkButton}
+            >
+              <Text style={[styles.linkText, { color: colors.tint }]}>
+                申請をキャンセル
+              </Text>
+            </Pressable>
+          </>
+        )}
       </View>
     );
   }
@@ -235,6 +429,12 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 32,
     lineHeight: 22,
+  },
+  waitingNote: {
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 19,
+    maxWidth: 280,
   },
   codeBox: {
     borderWidth: 2,

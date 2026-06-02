@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import HistorySearchPanel, {
     type HistorySearchDateTarget,
 } from "@/components/HistorySearchPanel";
+import MonthPickerModal from "@/components/MonthPickerModal";
 import TransactionEditor from "@/components/TransactionEditor";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { Colors } from "@/constants/Colors";
@@ -45,12 +46,7 @@ import {
     filterHistoryTransactions,
     type HistorySearchType,
 } from "@/lib/historySearch";
-import {
-    formatYearMonthLabel,
-    fromYearMonthDate,
-    shiftYearMonth,
-    toYearMonthDate,
-} from "@/lib/monthPicker";
+import { formatYearMonthLabel, shiftYearMonth } from "@/lib/monthPicker";
 import { waitForPendingWrite } from "@/lib/pendingWrite";
 import { buildRecordCategoryOptions } from "@/lib/recordOptions";
 import { resolveTransactionAmountInput } from "@/lib/transactionAmountInput";
@@ -431,13 +427,6 @@ export default function HistoryScreen() {
 
   const nextMonth = () => {
     const next = shiftYearMonth(year, month, 1);
-    setYear(next.year);
-    setMonth(next.month);
-    clearCalendarSelection();
-  };
-
-  const handleCalendarMonthChange = (selected: Date) => {
-    const next = fromYearMonthDate(selected);
     setYear(next.year);
     setMonth(next.month);
     clearCalendarSelection();
@@ -989,48 +978,19 @@ export default function HistoryScreen() {
       ) : null}
 
       {viewMode === "calendar" && showMonthPicker ? (
-        Platform.OS === "ios" ? (
-          <View
-            style={[
-              styles.inlineDatePickerWrap,
-              { borderColor: colors.border, marginHorizontal: 12 },
-            ]}
-          >
-            <View
-              style={[
-                styles.inlineDatePickerHeader,
-                { borderBottomColor: colors.border },
-              ]}
-            >
-              <TouchableOpacity onPress={() => setShowMonthPicker(false)}>
-                <Text style={[styles.datePickerDone, { color: colors.tint }]}>
-                  完了
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <DateTimePicker
-              value={toYearMonthDate(year, month)}
-              mode="date"
-              display="spinner"
-              locale="ja-JP"
-              onChange={(_, selected) => {
-                if (selected) handleCalendarMonthChange(selected);
-              }}
-            />
-          </View>
-        ) : (
-          <DateTimePicker
-            value={toYearMonthDate(year, month)}
-            mode="date"
-            display="default"
-            onChange={(event, selected) => {
-              setShowMonthPicker(false);
-              if (event.type === "set" && selected) {
-                handleCalendarMonthChange(selected);
-              }
-            }}
-          />
-        )
+        <MonthPickerModal
+          visible={showMonthPicker}
+          colors={colors}
+          year={year}
+          month={month}
+          title="表示月を選択"
+          onClose={() => setShowMonthPicker(false)}
+          onChange={(nextYear, nextMonth) => {
+            setYear(nextYear);
+            setMonth(nextMonth);
+            clearCalendarSelection();
+          }}
+        />
       ) : null}
 
       {viewMode === "list" ? (
@@ -1236,6 +1196,15 @@ export default function HistoryScreen() {
                     ]}
                   >
                     <TouchableOpacity
+                      onPress={() => setCopyDate(formatDate(new Date()))}
+                    >
+                      <Text
+                        style={[styles.datePickerToday, { color: colors.tint }]}
+                      >
+                        今日
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
                       onPress={() => setShowCopyDatePicker(false)}
                     >
                       <Text
@@ -1308,22 +1277,26 @@ export default function HistoryScreen() {
               <Text style={[styles.modalTitle, { color: colors.text }]}>
                 記録を編集
               </Text>
-              <View style={styles.modalHeaderActions}>
-                <TouchableOpacity onPress={handleDeleteFromEditModal}>
-                  <Text style={styles.modalDeleteText}>削除</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => {
-                    setShowEditModal(false);
-                    setEditingTx(null);
-                    setEditingTxId(null);
-                  }}
-                >
-                  <Text style={[styles.modalClose, { color: colors.tint }]}>
-                    閉じる
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowEditModal(false);
+                  setEditingTx(null);
+                  setEditingTxId(null);
+                }}
+              >
+                <Text style={[styles.modalClose, { color: colors.tint }]}>
+                  閉じる
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalDeleteCenterRow}>
+              <TouchableOpacity
+                style={styles.modalDeleteButton}
+                onPress={handleDeleteFromEditModal}
+              >
+                <Text style={styles.modalDeleteText}>削除</Text>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.modalEditorContainer}>
@@ -1588,16 +1561,15 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   inlineDatePickerHeader: {
-    alignItems: "flex-end",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  copyModalActions: {
-    marginTop: 14,
-    flexDirection: "row",
-    gap: 10,
-  },
+  datePickerToday: { fontSize: 15, fontWeight: "600" },
+  datePickerDone: { fontSize: 17, fontWeight: "600" },
   copyActionButton: {
     flex: 1,
     borderWidth: 1,
@@ -1607,6 +1579,11 @@ const styles = StyleSheet.create({
   },
   copyActionCancel: { fontSize: 14, fontWeight: "700" },
   copyActionRun: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  copyModalActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 12,
+  },
   uncopiedList: {
     maxHeight: 260,
     marginTop: 8,
@@ -1640,10 +1617,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  modalHeaderActions: {
-    flexDirection: "row",
+  modalDeleteCenterRow: {
     alignItems: "center",
-    gap: 14,
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
+  modalDeleteButton: {
+    minWidth: 120,
+    alignItems: "center",
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#C62828",
   },
   modalTitle: { fontSize: 17, fontWeight: "700" },
   modalClose: { fontSize: 14, fontWeight: "600" },
@@ -1712,5 +1697,4 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  datePickerDone: { fontSize: 17, fontWeight: "600" },
 });

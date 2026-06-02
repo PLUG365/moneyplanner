@@ -21,7 +21,7 @@
 JavaScriptの開発サーバーはローカルPCで起動できます。ただし、React Native Firebase はネイティブモジュールを使うため、実機で動かすアプリ本体は TestFlight または expo-dev-client ビルドが必要です。Expo Go では認証・Firestore・App Checkの実動作確認はできません。
 
 ```bash
-git clone https://github.com/PLUG365/moneyplanner.git
+git clone https://github.com/minoru365/moneyplanner.git
 cd moneyplanner
 npm install
 npx expo start
@@ -31,7 +31,7 @@ npx expo start
 
 Firebase iOS設定ファイル `GoogleService-Info.plist` はGit管理外です。ローカルでネイティブビルドを作る場合はリポジトリ直下に配置し、EAS production buildでは file secret `GOOGLE_SERVICE_INFO_PLIST` から注入します。
 
-TestFlight検証中のビルドは `PLAN.md` の Phase 3-A / Ticket 4 を参照してください。
+TestFlight/dev-client の検証履歴と次の検証対象は [docs/testflight-history.md](docs/testflight-history.md) を参照してください。
 
 ### GitHub Codespaces（ブラウザ上で開発）
 
@@ -58,19 +58,25 @@ npx expo start --tunnel
 
 プロジェクト文書の入口はこのセクションに集約します。文書を追加・分割・統合・名称変更した場合は、この表もあわせて更新してください。
 
-| 文書                                                                 | 役割                                                                               |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| [PLAN.md](PLAN.md)                                                   | 現在の進捗、未完了タスク、次に実施する作業の管理                                   |
-| [ARCHITECTURE.md](ARCHITECTURE.md)                                   | アプリ構成、Firestoreデータモデル、認証/認可、同期方針、主要な技術判断             |
-| [README.md](README.md)                                               | プロジェクト概要、セットアップ、基本的な利用/開発手順、ドキュメント構成の目次      |
-| [CLAUDE.md](CLAUDE.md)                                               | Claude Code向けの作業ルール、開発サーバー制約、リポジトリ固有の注意点              |
-| [.github/copilot-instructions.md](.github/copilot-instructions.md)   | GitHub Copilot向けの作業ルール、Copilot CLI / VS Codeエージェントモードの使い分け  |
-| [docs/decisions/](docs/decisions/)                                   | 重要な設計判断・方針転換・採用/不採用理由の記録                                    |
-| [docs/release-checklist.md](docs/release-checklist.md)               | TestFlight、App Check enforcement、App Store申請、有料化開始前の確認項目           |
-| [docs/testflight-history.md](docs/testflight-history.md)             | TestFlight/dev-clientで実施した実機確認の履歴                                      |
-| [docs/known-issues.md](docs/known-issues.md)                         | 機能実装後レビューで洗い出した未対応の懸念事項（UX整合性・データ整合・誤操作など） |
-| [docs/privacy-and-monetization.md](docs/privacy-and-monetization.md) | 課金、プライバシー、問い合わせ、本番データ閲覧制限の方針                           |
-| [docs/ai-development.md](docs/ai-development.md)                     | AI活用、外部ツール、レビュー、知見退避ルール                                       |
+| 文書                                                                           | 役割                                                                                  |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| [PLAN.md](PLAN.md)                                                             | 現在の進捗、未完了タスク、次に実施する作業の管理                                      |
+| [ARCHITECTURE.md](ARCHITECTURE.md)                                             | アプリ構成、Firestoreデータモデル、認証/認可、同期方針、主要な技術判断                |
+| [README.md](README.md)                                                         | プロジェクト概要、セットアップ、基本的な利用/開発手順、ドキュメント構成の目次         |
+| [CLAUDE.md](CLAUDE.md)                                                         | Claude Code向けの作業ルール、開発サーバー制約、リポジトリ固有の注意点                 |
+| [.github/copilot-instructions.md](.github/copilot-instructions.md)             | GitHub Copilot向けの作業ルール、Copilot CLI / VS Codeエージェントモードの使い分け     |
+| [docs/decisions/](docs/decisions/)                                             | 重要な設計判断・方針転換・採用/不採用理由の記録                                       |
+| [docs/release-checklist.md](docs/release-checklist.md)                         | TestFlight、App Check enforcement、App Store申請、有料化開始前の確認項目              |
+| [docs/testflight-history.md](docs/testflight-history.md)                       | TestFlight/dev-clientで実施した実機確認の履歴                                         |
+| [docs/known-issues.md](docs/known-issues.md)                                   | 機能実装後レビューで洗い出した懸念事項（UX整合性・データ整合・誤操作など）            |
+| [docs/privacy-policy.md](docs/privacy-policy.md)                               | App Store提出用プライバシーポリシー本文                                               |
+| [docs/privacy-and-monetization.md](docs/privacy-and-monetization.md)           | 課金、プライバシー、問い合わせ、本番データ閲覧制限の方針                              |
+| [docs/app-store-submission-draft.md](docs/app-store-submission-draft.md)       | App Store提出メタデータ（栄養表示・出典・課金/返金説明など）のドラフト                |
+| [docs/firestore-read-and-index-plan.md](docs/firestore-read-and-index-plan.md) | Firestore読み取り回数の見積もり、必要インデックス、課金アラートランブック             |
+| [docs/operations-release-gate.md](docs/operations-release-gate.md)             | リリース前後の運用・監視・障害対応ルール                                              |
+| [docs/operations-data-access-policy.md](docs/operations-data-access-policy.md) | 開発者によるユーザーデータ閲覧制限、サポート対応時のログ取扱方針                      |
+| [docs/dependency-audit-2026-05-10.md](docs/dependency-audit-2026-05-10.md)     | 依存ライブラリ監査結果と更新履歴                                                      |
+| [docs/ai-development.md](docs/ai-development.md)                               | AI活用、外部ツール、レビュー、知見退避ルール                                          |
 
 ## 技術スタック
 
@@ -85,6 +91,6 @@ npx expo start --tunnel
 ## 開発フェーズ
 
 - ✅ Phase 1 — コア機能（完了）
-- ✅ Phase 2 — 予算/アラート・ライフプラン（完了、公的データ同梱更新は継続タスク）
-- 🚧 Phase 3 — Cloud Firestore + Apple Sign-Inによる家族共有（実装済み、TestFlight検証中）
+- ✅ Phase 2 — 予算/アラート（完了。ライフプラン機能は廃止 → [docs/decisions/plan-feature-retirement.md](docs/decisions/plan-feature-retirement.md)）
+- 🚧 Phase 3 — Cloud Firestore + Apple Sign-Inによる家族共有（実装済み、TestFlight build 24 で招待コード参加承認フローを検証予定）
 - 🔲 Phase 4 — App Store配布

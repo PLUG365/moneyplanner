@@ -3,25 +3,25 @@ import { getHouseholdDeletionCollectionNames } from "./accountDeletion";
 import { getCurrentUser } from "./auth";
 import { getSnapshotDataOrNull } from "./firestoreSnapshot";
 import {
-    normalizeJoinDisplayName,
-    validateJoinDisplayName,
+  normalizeJoinDisplayName,
+  validateJoinDisplayName,
 } from "./householdJoinRequestValidation";
 import {
-    isActiveHouseholdMember,
-    mapHouseholdMember,
+  isActiveHouseholdMember,
+  mapHouseholdMember,
 } from "./householdMembership";
 import {
-    buildInviteCodeExpiryDate,
-    createReplacementInviteCode,
-    isInviteCodeFormat,
-    resolveInviteCodeState,
+  buildInviteCodeExpiryDate,
+  createReplacementInviteCode,
+  isInviteCodeFormat,
+  resolveInviteCodeState,
 } from "./inviteCode";
 import {
-    buildInviteJoinFailurePatch,
-    buildInviteJoinResetPatch,
-    getInviteJoinCooldownRemainingMs,
-    isInviteJoinCooldownActive,
-    parseInviteJoinAttemptState,
+  buildInviteJoinFailurePatch,
+  buildInviteJoinResetPatch,
+  getInviteJoinCooldownRemainingMs,
+  isInviteJoinCooldownActive,
+  parseInviteJoinAttemptState,
 } from "./inviteJoinRateLimit";
 import { createStoredMemberProfile } from "./memberProfile";
 
@@ -37,6 +37,69 @@ export interface HouseholdJoinRequest {
   status: "pending" | "approved" | "rejected";
 }
 
+export interface HouseholdInviteCodeInfo {
+  code: string;
+  expiresAt: Date | null;
+  state: "active" | "expired" | "disabled";
+}
+
+function isPermissionDeniedError(error: unknown): boolean {
+  if (error == null) return false;
+
+  const asRecord =
+    typeof error === "object"
+      ? (error as { code?: unknown; message?: unknown })
+      : null;
+
+  const code =
+    typeof asRecord?.code === "string"
+      ? asRecord.code
+      : error instanceof Error &&
+          typeof (error as Error & { code?: unknown }).code === "string"
+        ? String((error as Error & { code?: unknown }).code)
+        : "";
+
+  const message =
+    typeof asRecord?.message === "string"
+      ? asRecord.message
+      : error instanceof Error
+        ? String(error.message ?? "")
+        : typeof error === "string"
+          ? error
+          : "";
+
+  return /permission[-_ ]denied|PERMISSION_DENIED|insufficient permissions/i.test(
+    `${code} ${message}`,
+  );
+}
+
+function parseTimestampLikeToDate(value: unknown): Date | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Date(value);
+  }
+  if (typeof value === "string") {
+    const ms = Date.parse(value);
+    return Number.isNaN(ms) ? null : new Date(ms);
+  }
+  if (typeof value === "object") {
+    const maybeTimestamp = value as {
+      toDate?: () => Date;
+      toMillis?: () => number;
+    };
+    if (typeof maybeTimestamp.toDate === "function") {
+      const date = maybeTimestamp.toDate();
+      return date instanceof Date ? date : null;
+    }
+    if (typeof maybeTimestamp.toMillis === "function") {
+      const ms = maybeTimestamp.toMillis();
+      return Number.isFinite(ms) ? new Date(ms) : null;
+    }
+  }
+  return null;
+}
+
 /**
  * 新しい世帯を作成し、現在のユーザーを紐付ける
  */
@@ -48,6 +111,17 @@ export async function createHousehold(displayName: string): Promise<string> {
   const validationError = validateJoinDisplayName(normalizedDisplayName);
   if (validationError) {
     throw new Error(validationError);
+  }
+
+  const currentUserDoc = await firestore()
+    .collection("users")
+    .doc(user.uid)
+    .get();
+  const currentUserData = getSnapshotDataOrNull(currentUserDoc);
+  if (typeof currentUserData?.pendingHouseholdId === "string") {
+    throw new Error(
+      "承認待ちの参加リクエストがあります。承認されるまでお待ちください。",
+    );
   }
 
   const inviteCode = createReplacementInviteCode();
@@ -163,93 +237,87 @@ export async function joinHousehold(inviteCode: string): Promise<void> {
 export async function requestJoinHousehold(
   inviteCode: string,
   displayName: string,
-): Promise<void> {
-  const user = getCurrentUser();
-  if (!user) throw new Error("未ログインです");
+): Promise<string> {
+  try {
+    const user = getCurrentUser();
+    if (!user) throw new Error("未ログインです");
 
-  const userRef = firestore().collection("users").doc(user.uid);
-  const currentUserDoc = await userRef.get();
-  const currentUserData = getSnapshotDataOrNull(currentUserDoc);
-  const attemptState = parseInviteJoinAttemptState(currentUserData ?? {});
-  if (isInviteJoinCooldownActive(attemptState)) {
-    const remainingMs = getInviteJoinCooldownRemainingMs(attemptState);
-    const remainingMinutes = Math.max(1, Math.ceil(remainingMs / 60000));
-    throw new Error(
-      `招待コードの試行回数が上限に達しました。${remainingMinutes}分後に再試行してください。`,
-    );
-  }
+    const userRef = firestore().collection("users").doc(user.uid);
+    const currentUserDoc = await userRef.get();
+    const currentUserData = getSnapshotDataOrNull(currentUserDoc);
+    if (typeof currentUserData?.pendingHouseholdId === "string") {
+      throw new Error(
+        "承認待ちの参加リクエストがあります。承認されるまでお待ちください。",
+      );
+    }
 
-  const failJoinAttempt = async (message: string): Promise<never> => {
-    const failurePatch = buildInviteJoinFailurePatch(attemptState);
-    await userRef.set(
-      {
-        inviteJoinFailedAttempts: failurePatch.failedAttempts,
-        inviteJoinLastFailedAt: firestore.FieldValue.serverTimestamp(),
-        inviteJoinCooldownUntil:
-          failurePatch.cooldownUntil === null
-            ? firestore.FieldValue.delete()
-            : failurePatch.cooldownUntil,
-      },
-      { merge: true },
-    );
+    const attemptState = parseInviteJoinAttemptState(currentUserData ?? {});
+    if (isInviteJoinCooldownActive(attemptState)) {
+      const remainingMs = getInviteJoinCooldownRemainingMs(attemptState);
+      const remainingMinutes = Math.max(1, Math.ceil(remainingMs / 60000));
+      throw new Error(
+        `招待コードの試行回数が上限に達しました。${remainingMinutes}分後に再試行してください。`,
+      );
+    }
 
-    throw new Error(message);
-  };
+    const failJoinAttempt = async (message: string): Promise<never> => {
+      const failurePatch = buildInviteJoinFailurePatch(attemptState);
+      await userRef.set(
+        {
+          inviteJoinFailedAttempts: failurePatch.failedAttempts,
+          inviteJoinLastFailedAt: firestore.FieldValue.serverTimestamp(),
+          inviteJoinCooldownUntil:
+            failurePatch.cooldownUntil === null
+              ? firestore.FieldValue.delete()
+              : failurePatch.cooldownUntil,
+        },
+        { merge: true },
+      );
 
-  const normalizedName = normalizeJoinDisplayName(displayName);
-  const validationError = validateJoinDisplayName(normalizedName);
-  if (validationError) {
-    throw new Error(validationError);
-  }
+      throw new Error(message);
+    };
 
-  const code = inviteCode.trim().toUpperCase();
-  if (!isInviteCodeFormat(code)) {
-    return failJoinAttempt("招待コードの形式が正しくありません");
-  }
+    const normalizedName = normalizeJoinDisplayName(displayName);
+    const validationError = validateJoinDisplayName(normalizedName);
+    if (validationError) {
+      throw new Error(validationError);
+    }
 
-  const inviteDoc = await firestore().collection("inviteCodes").doc(code).get();
-  const inviteData = getSnapshotDataOrNull(inviteDoc);
-  const householdId = inviteData?.householdId;
-  if (!householdId) {
-    return failJoinAttempt("招待コードが見つかりません");
-  }
+    const code = inviteCode.trim().toUpperCase();
+    if (!isInviteCodeFormat(code)) {
+      return failJoinAttempt("招待コードの形式が正しくありません");
+    }
 
-  const inviteState = resolveInviteCodeState(inviteData ?? {});
-  if (inviteState === "disabled") {
-    return failJoinAttempt(
-      "この招待コードは無効です。最新のコードを確認してください。",
-    );
-  }
-  if (inviteState === "expired") {
-    return failJoinAttempt(
-      "この招待コードは有効期限切れです。再発行を依頼してください。",
-    );
-  }
+    const inviteDoc = await firestore()
+      .collection("inviteCodes")
+      .doc(code)
+      .get();
+    const inviteData = getSnapshotDataOrNull(inviteDoc);
+    const householdId = inviteData?.householdId;
+    if (!householdId) {
+      return failJoinAttempt("招待コードが見つかりません");
+    }
 
-  const householdSnap = await firestore()
-    .collection("households")
-    .doc(householdId)
-    .get();
-  const currentInviteCode = householdSnap.data()?.inviteCode;
-  if (currentInviteCode !== code) {
-    return failJoinAttempt(
-      "招待コードが無効です。再発行されている可能性があります。",
-    );
-  }
+    const inviteState = resolveInviteCodeState(inviteData ?? {});
+    if (inviteState === "disabled") {
+      return failJoinAttempt(
+        "この招待コードは無効です。最新のコードを確認してください。",
+      );
+    }
+    if (inviteState === "expired") {
+      return failJoinAttempt(
+        "この招待コードは有効期限切れです。再発行を依頼してください。",
+      );
+    }
 
-  if (currentUserData?.householdId === householdId) {
-    throw new Error("すでにこの世帯に参加しています");
-  }
+    if (currentUserData?.householdId === householdId) {
+      throw new Error("すでにこの世帯に参加しています");
+    }
 
-  const resetPatch = buildInviteJoinResetPatch();
-  const batch = firestore().batch();
-  batch.set(
-    firestore()
-      .collection("households")
-      .doc(householdId)
-      .collection("joinRequests")
-      .doc(user.uid),
-    {
+    const resetPatch = buildInviteJoinResetPatch();
+    const batch = firestore().batch();
+
+    const joinRequestData = {
       uid: user.uid,
       displayName: normalizedName,
       inviteCode: code,
@@ -257,19 +325,37 @@ export async function requestJoinHousehold(
       requestedAt: firestore.FieldValue.serverTimestamp(),
       reviewedAt: firestore.FieldValue.delete(),
       reviewedBy: firestore.FieldValue.delete(),
-    },
-    { merge: true },
-  );
-  batch.set(
-    userRef,
-    {
-      inviteJoinFailedAttempts: resetPatch.failedAttempts,
-      inviteJoinCooldownUntil: firestore.FieldValue.delete(),
-    },
-    { merge: true },
-  );
+    };
 
-  await batch.commit();
+    batch.set(
+      firestore()
+        .collection("households")
+        .doc(householdId)
+        .collection("joinRequests")
+        .doc(user.uid),
+      joinRequestData,
+      { merge: true },
+    );
+    batch.set(
+      userRef,
+      {
+        inviteJoinFailedAttempts: resetPatch.failedAttempts,
+        inviteJoinCooldownUntil: firestore.FieldValue.delete(),
+        pendingHouseholdId: householdId,
+      },
+      { merge: true },
+    );
+
+    await batch.commit();
+    return householdId;
+  } catch (error) {
+    if (isPermissionDeniedError(error)) {
+      throw new Error(
+        "参加リクエストの送信に失敗しました。作成者側の設定画面で参加リクエスト状態を確認し、必要なら招待コードを再発行してから再試行してください。",
+      );
+    }
+    throw error;
+  }
 }
 
 export async function getPendingJoinRequests(
@@ -303,7 +389,6 @@ export async function approveJoinRequest(
   const householdRef = firestore().collection("households").doc(householdId);
   const requestRef = householdRef.collection("joinRequests").doc(requestUserId);
   const memberRef = householdRef.collection("members").doc(requestUserId);
-  const userRef = firestore().collection("users").doc(requestUserId);
 
   const requestSnap = await requestRef.get();
   const requestData = getSnapshotDataOrNull(requestSnap);
@@ -327,15 +412,6 @@ export async function approveJoinRequest(
 
   const batch = firestore().batch();
   batch.set(
-    userRef,
-    {
-      householdId,
-      displayName,
-      createdAt: firestore.FieldValue.serverTimestamp(),
-    },
-    { merge: true },
-  );
-  batch.set(
     memberRef,
     {
       displayName,
@@ -355,6 +431,128 @@ export async function approveJoinRequest(
   );
 
   await batch.commit();
+}
+
+export async function completeJoinAfterApproval(
+  householdId: string,
+  displayName: string,
+): Promise<void> {
+  const user = getCurrentUser();
+  if (!user) throw new Error("未ログインです");
+
+  const requestRef = firestore()
+    .collection("households")
+    .doc(householdId)
+    .collection("joinRequests")
+    .doc(user.uid);
+  const requestSnap = await requestRef.get();
+  const requestData = getSnapshotDataOrNull(requestSnap);
+  if (!requestData || requestData.status !== "approved") {
+    throw new Error("参加リクエストがまだ承認されていません");
+  }
+
+  const normalizedDisplayName = normalizeJoinDisplayName(
+    String(requestData.displayName ?? displayName),
+  );
+  const validationError = validateJoinDisplayName(normalizedDisplayName);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  await firestore().collection("users").doc(user.uid).set(
+    {
+      householdId,
+      displayName: normalizedDisplayName,
+      pendingHouseholdId: firestore.FieldValue.delete(),
+      createdAt: firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export function watchJoinRequestApproval(
+  householdId: string,
+  onApproved: (displayName: string) => void,
+  onRejected: () => void,
+  onCanceled: () => void = onRejected,
+): () => void {
+  const user = getCurrentUser();
+  if (!user) return () => {};
+
+  const ref = firestore()
+    .collection("households")
+    .doc(householdId)
+    .collection("joinRequests")
+    .doc(user.uid);
+
+  return ref.onSnapshot((snap) => {
+    const data = getSnapshotDataOrNull(snap);
+    if (!data) {
+      onCanceled();
+      return;
+    }
+    if (data.status === "approved") {
+      onApproved(String(data.displayName ?? ""));
+    } else if (data.status === "rejected") {
+      onRejected();
+    }
+  });
+}
+
+export async function cancelJoinRequest(householdId: string): Promise<void> {
+  const user = getCurrentUser();
+  if (!user) throw new Error("未ログインです");
+
+  const userRef = firestore().collection("users").doc(user.uid);
+  const requestRef = firestore()
+    .collection("households")
+    .doc(householdId)
+    .collection("joinRequests")
+    .doc(user.uid);
+
+  const requestSnap = await requestRef.get();
+  const requestData = getSnapshotDataOrNull(requestSnap);
+  if (requestData?.status === "approved") {
+    throw new Error("すでに承認済みのためキャンセルできません");
+  }
+
+  const batch = firestore().batch();
+  if (requestData) {
+    batch.delete(requestRef);
+  }
+  batch.set(
+    userRef,
+    {
+      pendingHouseholdId: firestore.FieldValue.delete(),
+    },
+    { merge: true },
+  );
+
+  await batch.commit();
+}
+
+export async function getPendingHouseholdId(): Promise<string | null> {
+  const user = getCurrentUser();
+  if (!user) return null;
+
+  const userSnap = await firestore().collection("users").doc(user.uid).get();
+  const userData = getSnapshotDataOrNull(userSnap);
+  const householdId = userData?.pendingHouseholdId;
+  return typeof householdId === "string" && householdId.length > 0
+    ? householdId
+    : null;
+}
+
+export async function clearPendingHouseholdId(): Promise<void> {
+  const user = getCurrentUser();
+  if (!user) throw new Error("未ログインです");
+
+  await firestore().collection("users").doc(user.uid).set(
+    {
+      pendingHouseholdId: firestore.FieldValue.delete(),
+    },
+    { merge: true },
+  );
 }
 
 export async function rejectJoinRequest(
@@ -431,6 +629,28 @@ export async function getInviteCode(
   if (!data) return null;
 
   return data.inviteCode ?? null;
+}
+
+/**
+ * 世帯の招待コードと有効期限情報を取得
+ */
+export async function getInviteCodeInfo(
+  householdId: string,
+): Promise<HouseholdInviteCodeInfo | null> {
+  const code = await getInviteCode(householdId);
+  if (!code) return null;
+
+  const inviteCodeDoc = await firestore()
+    .collection("inviteCodes")
+    .doc(code)
+    .get();
+  const inviteCodeData = getSnapshotDataOrNull(inviteCodeDoc);
+
+  return {
+    code,
+    expiresAt: parseTimestampLikeToDate(inviteCodeData?.expiresAt),
+    state: resolveInviteCodeState(inviteCodeData ?? {}),
+  };
 }
 
 /**

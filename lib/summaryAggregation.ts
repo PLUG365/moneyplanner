@@ -78,6 +78,7 @@ export function buildBudgetStatusesFromData(input: {
   transactions: SummaryTransaction[];
   budgets: BudgetSource[];
   categories: CategorySource[];
+  fromCache?: boolean;
 }): BudgetStatus[] {
   const categoryMap = new Map<string, { name: string; color: string }>();
   const expenseCategoryIdByName = new Map<string, string>();
@@ -119,6 +120,7 @@ export function buildBudgetStatusesFromData(input: {
       usageRate,
       level:
         usageRate >= 1 ? "exceeded" : usageRate >= 0.8 ? "warning" : "none",
+      fromCache: input.fromCache ?? false,
     });
   }
 

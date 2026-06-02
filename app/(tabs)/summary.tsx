@@ -1,8 +1,6 @@
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { router, type Href } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
-    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -10,6 +8,7 @@ import {
     View,
 } from "react-native";
 
+import MonthPickerModal from "@/components/MonthPickerModal";
 import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
@@ -30,8 +29,7 @@ import { buildHistoryDrilldownParams } from "@/lib/historyDrilldown";
 import {
     formatYearMonthLabel,
     fromYearMonthDate,
-    shiftYearMonth,
-    toYearMonthDate,
+    shiftYearMonth
 } from "@/lib/monthPicker";
 import {
     buildBudgetStatusesFromData,
@@ -116,6 +114,10 @@ export default function SummaryScreen() {
         transactions: transactionSubscription.data,
         budgets: budgetSubscription.data,
         categories: categorySubscription.data,
+        fromCache:
+          transactionSubscription.fromCache ||
+          budgetSubscription.fromCache ||
+          categorySubscription.fromCache,
       }),
     [
       budgetSubscription.data,
@@ -299,48 +301,18 @@ export default function SummaryScreen() {
       </View>
 
       {showPeriodPicker ? (
-        Platform.OS === "ios" ? (
-          <View
-            style={[
-              styles.inlineDatePickerWrap,
-              { borderColor: colors.border, marginHorizontal: 12 },
-            ]}
-          >
-            <View
-              style={[
-                styles.inlineDatePickerHeader,
-                { borderBottomColor: colors.border },
-              ]}
-            >
-              <TouchableOpacity onPress={() => setShowPeriodPicker(false)}>
-                <Text style={[styles.datePickerDone, { color: colors.tint }]}>
-                  完了
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <DateTimePicker
-              value={toYearMonthDate(year, month)}
-              mode="date"
-              display="spinner"
-              locale="ja-JP"
-              onChange={(_, selected) => {
-                if (selected) handlePeriodPickerChange(selected);
-              }}
-            />
-          </View>
-        ) : (
-          <DateTimePicker
-            value={toYearMonthDate(year, month)}
-            mode="date"
-            display="default"
-            onChange={(event, selected) => {
-              setShowPeriodPicker(false);
-              if (event.type === "set" && selected) {
-                handlePeriodPickerChange(selected);
-              }
-            }}
-          />
-        )
+        <MonthPickerModal
+          visible={showPeriodPicker}
+          colors={colors}
+          year={year}
+          month={month}
+          title="集計月を選択"
+          onClose={() => setShowPeriodPicker(false)}
+          onChange={(nextYear, nextMonth) => {
+            setYear(nextYear);
+            setMonth(nextMonth);
+          }}
+        />
       ) : null}
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -970,11 +942,4 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: "hidden",
   },
-  inlineDatePickerHeader: {
-    alignItems: "flex-end",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  datePickerDone: { fontSize: 17, fontWeight: "600" },
 });

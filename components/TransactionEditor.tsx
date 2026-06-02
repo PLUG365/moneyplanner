@@ -446,6 +446,15 @@ export default function TransactionEditor({
                       { borderBottomColor: colors.border },
                     ]}
                   >
+                    <TouchableOpacity
+                      onPress={() => onDateChange(formatDate(new Date()))}
+                    >
+                      <Text
+                        style={[styles.datePickerToday, { color: colors.tint }]}
+                      >
+                        今日
+                      </Text>
+                    </TouchableOpacity>
                     <TouchableOpacity onPress={() => setShowDatePicker(false)}>
                       <Text
                         style={[styles.datePickerDone, { color: colors.tint }]}
@@ -1027,10 +1036,12 @@ const styles = StyleSheet.create({
   },
   datePickerHeader: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    alignItems: "center",
+    justifyContent: "space-between",
     padding: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  datePickerToday: { fontSize: 15, fontWeight: "600" },
   datePickerDone: { fontSize: 17, fontWeight: "600" },
   fullModalContainer: { flex: 1 },
   fullModalHeader: {

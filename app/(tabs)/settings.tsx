@@ -1,24 +1,25 @@
 import { router, useFocusEffect, type Href } from "expo-router";
 import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
 } from "react";
 import {
-  Alert,
-  Animated,
-  InputAccessoryView,
-  Keyboard,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActionSheetIOS,
+    Alert,
+    Animated,
+    InputAccessoryView,
+    Keyboard,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -27,85 +28,82 @@ import { Colors } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { useCollection } from "@/hooks/useFirestore";
 import {
-  ACCOUNT_DELETION_CONFIRMATION_TEXT,
-  isAccountDeletionConfirmationValid,
+    ACCOUNT_DELETION_CONFIRMATION_TEXT,
+    isAccountDeletionConfirmationValid,
 } from "@/lib/accountDeletion";
 import {
-  deleteCurrentUserAccount,
-  getCurrentUser,
-  reauthenticateCurrentUserWithApple,
-  signOut,
+    deleteCurrentUserAccount,
+    getCurrentUser,
+    reauthenticateCurrentUserWithApple,
+    signOut,
 } from "@/lib/auth";
-import {
-  moveCategoryInDisplayOrder,
-  type CategoryMoveDirection,
-} from "@/lib/categoryOrdering";
+import { } from "@/lib/categoryOrdering";
 import { exportCSV } from "@/lib/csvExport";
 import {
-  Account,
-  addAccount,
-  addBreakdown,
-  addCategory,
-  Breakdown,
-  Category,
-  DEFAULT_ACCOUNT_ID,
-  deleteAccountAndMoveToDefault,
-  deleteBreakdown,
-  deleteCategory,
-  deleteHouseholdDataAndCurrentUserProfile,
-  deleteMonthlyBudget,
-  getAccounts,
-  getAllTransactions,
-  getBreakdownsByCategory,
-  getCategories,
-  getCategoryDeletionImpact,
-  getMonthlyBudgets,
-  householdCollection,
-  mapAccount,
-  reconcileAccountBalancesFromTransactions,
-  resetCategoryAndBreakdownsToDefault,
-  resetFirestoreForDevelopment,
-  setMonthlyBudget,
-  TransactionType,
-  updateAccountBalance,
-  updateAccountName,
-  updateBreakdown,
-  updateCategory,
-  updateCategoryDisplayOrders,
+    Account,
+    addAccount,
+    addBreakdown,
+    addCategory,
+    Breakdown,
+    Category,
+    DEFAULT_ACCOUNT_ID,
+    deleteAccountAndMoveToDefault,
+    deleteBreakdown,
+    deleteCategory,
+    deleteHouseholdDataAndCurrentUserProfile,
+    deleteMonthlyBudget,
+    getAccounts,
+    getAllTransactions,
+    getBreakdownsByCategory,
+    getCategories,
+    getCategoryDeletionImpact,
+    getMonthlyBudgets,
+    householdCollection,
+    mapAccount,
+    reconcileAccountBalancesFromTransactions,
+    resetCategoryAndBreakdownsToDefault,
+    resetFirestoreForDevelopment,
+    setMonthlyBudget,
+    TransactionType,
+    updateAccountBalance,
+    updateAccountName,
+    updateBreakdown,
+    updateCategory,
+    updateCategoryDisplayOrders,
 } from "@/lib/firestore";
 import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
 import {
-  approveJoinRequest,
-  getHouseholdId,
-  getHouseholdMembers,
-  getInviteCode,
-  getPendingJoinRequests,
-  HouseholdJoinRequest,
-  regenerateInviteCode,
-  rejectJoinRequest,
-  removeHouseholdMember,
-  type HouseholdMember,
+    approveJoinRequest,
+    getHouseholdId,
+    getHouseholdMembers,
+    getInviteCode,
+    getPendingJoinRequests,
+    HouseholdJoinRequest,
+    regenerateInviteCode,
+    rejectJoinRequest,
+    removeHouseholdMember,
+    type HouseholdMember,
 } from "@/lib/household";
 import { waitForPendingWrite } from "@/lib/pendingWrite";
 import { buildBudgetInputMap } from "@/lib/settingsBudgetEditor";
 import { getMemberRemovalActionLabel } from "@/lib/settingsHouseholdMembers";
 import {
-  formatAccountBalanceInputDisplay,
-  formatBudgetInputDisplay,
-  getSettingsKeyboardAccessoryPreview,
-  resolveAccountBalanceInput,
-  resolveBudgetInput,
-  type SettingsKeyboardField,
+    formatAccountBalanceInputDisplay,
+    formatBudgetInputDisplay,
+    getSettingsKeyboardAccessoryPreview,
+    resolveAccountBalanceInput,
+    resolveBudgetInput,
+    type SettingsKeyboardField,
 } from "@/lib/settingsKeyboardAccessory";
 import {
-  buildAccountEditorDraft,
-  buildBreakdownEditorDraft,
-  buildCategoryEditorDraft,
-  buildEditorMeta,
-  buildEmptyAccountEditorDraft,
-  buildEmptyBreakdownEditorDraft,
-  buildEmptyCategoryEditorDraft,
-  type SettingsManagerTab,
+    buildAccountEditorDraft,
+    buildBreakdownEditorDraft,
+    buildCategoryEditorDraft,
+    buildEditorMeta,
+    buildEmptyAccountEditorDraft,
+    buildEmptyBreakdownEditorDraft,
+    buildEmptyCategoryEditorDraft,
+    type SettingsManagerTab,
 } from "@/lib/settingsManagerEditor";
 import { getSettingsWriteAvailability } from "@/lib/settingsWriteAvailability";
 
@@ -331,18 +329,20 @@ export default function SettingsScreen() {
     [categories, selectedCategoryId],
   );
 
-  const handleMoveCategory = async (
+  const handleMoveCategoryToIndex = async (
     categoryId: string,
-    direction: CategoryMoveDirection,
+    toIndex: number,
   ) => {
     if (!guardSettingsWrite()) return;
 
-    const movedVisibleCategories = moveCategoryInDisplayOrder(
-      visibleCategories,
-      categoryId,
-      direction,
-    );
-    const movedQueue = [...movedVisibleCategories];
+    const sorted = [...visibleCategories];
+    const fromIndex = sorted.findIndex((c) => c.id === categoryId);
+    if (fromIndex < 0 || fromIndex === toIndex) return;
+
+    const [moved] = sorted.splice(fromIndex, 1);
+    sorted.splice(toIndex, 0, moved);
+
+    const movedQueue = [...sorted];
     const nextCategories = categories.map((category) =>
       category.type === activeType
         ? (movedQueue.shift() ?? category)
@@ -350,8 +350,28 @@ export default function SettingsScreen() {
     );
 
     setCategories(nextCategories);
-    await updateCategoryDisplayOrders(movedVisibleCategories);
+    await updateCategoryDisplayOrders(sorted);
     await load();
+  };
+
+  const handleOpenCategoryOrderPicker = (
+    categoryId: string,
+    currentIndex: number,
+  ) => {
+    if (isSettingsWriteDisabled) return;
+    const positionOptions = visibleCategories.map((_, i) => `${i + 1}番目`);
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        options: [...positionOptions, "キャンセル"],
+        cancelButtonIndex: positionOptions.length,
+        title: "並び順を選択",
+      },
+      (buttonIndex) => {
+        if (buttonIndex === positionOptions.length) return;
+        if (buttonIndex === currentIndex) return;
+        void handleMoveCategoryToIndex(categoryId, buttonIndex);
+      },
+    );
   };
 
   const isEditingCurrentTab =
@@ -1648,51 +1668,26 @@ export default function SettingsScreen() {
                       key={cat.id}
                       style={[styles.itemRow, { borderColor: colors.border }]}
                     >
-                      <View style={styles.reorderButtons}>
-                        <TouchableOpacity
+                      <TouchableOpacity
+                        style={[
+                          styles.orderBadge,
+                          { borderColor: colors.border },
+                          isSettingsWriteDisabled && { opacity: 0.35 },
+                        ]}
+                        disabled={isSettingsWriteDisabled}
+                        onPress={() =>
+                          handleOpenCategoryOrderPicker(cat.id, categoryIndex)
+                        }
+                      >
+                        <Text
                           style={[
-                            styles.reorderButton,
-                            { borderColor: colors.border },
-                            (categoryIndex === 0 ||
-                              isSettingsWriteDisabled) && { opacity: 0.35 },
+                            styles.orderBadgeText,
+                            { color: colors.tint },
                           ]}
-                          disabled={
-                            categoryIndex === 0 || isSettingsWriteDisabled
-                          }
-                          onPress={() => handleMoveCategory(cat.id, "up")}
                         >
-                          <Text
-                            style={[
-                              styles.reorderButtonText,
-                              { color: colors.tint },
-                            ]}
-                          >
-                            ↑
-                          </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[
-                            styles.reorderButton,
-                            { borderColor: colors.border },
-                            (categoryIndex === visibleCategories.length - 1 ||
-                              isSettingsWriteDisabled) && { opacity: 0.35 },
-                          ]}
-                          disabled={
-                            categoryIndex === visibleCategories.length - 1 ||
-                            isSettingsWriteDisabled
-                          }
-                          onPress={() => handleMoveCategory(cat.id, "down")}
-                        >
-                          <Text
-                            style={[
-                              styles.reorderButtonText,
-                              { color: colors.tint },
-                            ]}
-                          >
-                            ↓
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
+                          {categoryIndex + 1}
+                        </Text>
+                      </TouchableOpacity>
                       <View
                         style={[
                           styles.categoryDot,
@@ -2528,20 +2523,16 @@ const styles = StyleSheet.create({
   },
   accountInfoWrap: { flex: 1 },
   accountBalanceText: { fontSize: 12, marginTop: 2 },
-  reorderButtons: {
-    flexDirection: "column",
-    gap: 4,
-    marginRight: 8,
-  },
-  reorderButton: {
-    width: 28,
-    height: 24,
+  orderBadge: {
+    width: 30,
+    height: 30,
     borderWidth: 1,
-    borderRadius: 7,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
+    marginRight: 8,
   },
-  reorderButtonText: { fontSize: 14, fontWeight: "700" },
+  orderBadgeText: { fontSize: 14, fontWeight: "700" },
   categoryDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
   itemName: { flex: 1, fontSize: 15 },
   itemAction: { fontSize: 13, fontWeight: "600", marginRight: 10 },

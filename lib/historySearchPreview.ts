@@ -3,7 +3,7 @@ import type { HistorySearchType } from "./historySearch";
 export type HistorySearchPreviewTransaction = {
   id: string;
   date: string;
-  type: HistorySearchType;
+  type: "income" | "expense";
   amount: number;
   categoryName: string;
   breakdownName: string;

@@ -521,7 +521,6 @@ const DEFAULT_CATEGORIES: {
     color: "#9E9D24",
     breakdowns: ["その他", "プレゼント", "飲み会", "ご祝儀・香典"],
   },
-  { name: "立替金返済", type: "expense", color: "#F9A825", breakdowns: [] },
   {
     name: "税金",
     type: "expense",
@@ -775,12 +774,16 @@ export async function resetCategoryAndBreakdownsToDefault(): Promise<void> {
     categoryIdByTransactionId,
   );
 
+  const deleteOp =
+    (doc: FirebaseFirestoreTypes.QueryDocumentSnapshot): BatchOp =>
+    (batch) =>
+      batch.delete(doc.ref);
   const cleanupOps: BatchOp[] = [
-    ...oldUsageSnap.docs.map((doc) => (batch) => batch.delete(doc.ref)),
-    ...oldStoreSnap.docs.map((doc) => (batch) => batch.delete(doc.ref)),
-    ...oldBreakdownSnap.docs.map((doc) => (batch) => batch.delete(doc.ref)),
-    ...oldCategorySnap.docs.map((doc) => (batch) => batch.delete(doc.ref)),
-    ...oldBudgetSnap.docs.map((doc) => (batch) => batch.delete(doc.ref)),
+    ...oldUsageSnap.docs.map(deleteOp),
+    ...oldStoreSnap.docs.map(deleteOp),
+    ...oldBreakdownSnap.docs.map(deleteOp),
+    ...oldCategorySnap.docs.map(deleteOp),
+    ...oldBudgetSnap.docs.map(deleteOp),
   ];
   await commitBatchOps(cleanupOps);
 }
@@ -1333,30 +1336,34 @@ export async function updateAccountBalance(
 ): Promise<void> {
   const hDoc = await householdDoc();
   const accountRef = hDoc.collection("accounts").doc(id);
-  const txCollectionRef = hDoc.collection("transactions");
+
+  // RNFBのTransaction.getはDocumentReferenceのみ対応のため、
+  // 取引コレクションのクエリはトランザクション外で先に読み取る。
+  // 読み取りと書き込みの間に他メンバーが取引を追加する微小な競合余地は
+  // 残るが、次回のreconcileAccountBalancesFromTransactionsで補正される。
+  const txQuerySnap = await hDoc
+    .collection("transactions")
+    .where("accountId", "==", id)
+    .get();
+
+  let transactionNet = 0;
+  for (const doc of txQuerySnap.docs) {
+    const txData = doc.data();
+    const amount = Number(txData.amount ?? 0);
+    const type = txData.type as TransactionType | undefined;
+
+    if (type === "income") {
+      transactionNet += amount;
+    } else if (type === "expense") {
+      transactionNet -= amount;
+    }
+  }
+
+  const initialBalance = balance - transactionNet;
 
   await firestore().runTransaction(async (tx) => {
-    // トランザクション内で最新の取引データを読み取る（race condition防止）
-    const txSnap = await tx.get(txCollectionRef.where("accountId", "==", id));
-    const transactionDocs = txSnap.docs;
-
-    // 最新の取引 net を計算
-    let transactionNet = 0;
-    for (const doc of transactionDocs) {
-      const txData = doc.data();
-      const amount = Number(txData.amount ?? 0);
-      const type = txData.type as TransactionType | undefined;
-
-      if (type === "income") {
-        transactionNet += amount;
-      } else if (type === "expense") {
-        transactionNet -= amount;
-      }
-    }
-
-    // initialBalance = balance - transactionNet
-    const initialBalance = balance - transactionNet;
-
+    // 口座ドキュメント自体の同時編集はトランザクション再試行で防ぐ
+    await tx.get(accountRef);
     tx.update(accountRef, {
       balance,
       initialBalance,
@@ -1723,6 +1730,10 @@ export async function getMonthBudgetStatuses(
     categories: categoriesSnap.docs.map((doc) =>
       mapCategory(doc.id, doc.data()),
     ),
+    fromCache:
+      budgetsSnap.metadata.fromCache ||
+      categoriesSnap.metadata.fromCache ||
+      txSnap.metadata.fromCache,
   });
 }
 

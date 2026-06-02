@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import React from "react";
+import React, { useRef } from "react";
 import {
     Platform,
     ScrollView,
@@ -109,6 +109,26 @@ export default function HistorySearchPanel({
     toDate,
   });
   const hasConditions = summary.count > 0;
+
+  // 別のピッカーが開いている状態で切り替えるときは一度閉じてからフレームをまたいで開く
+  const pendingTarget = useRef<HistorySearchDateTarget | null>(null);
+  const openDatePicker = (target: HistorySearchDateTarget) => {
+    if (datePickerTarget !== null && datePickerTarget !== target) {
+      // 現在開いているピッカーをまず閉じる
+      pendingTarget.current = target;
+      onDatePickerTargetChange(null);
+      // 次のフレームで新しいピッカーを開く
+      requestAnimationFrame(() => {
+        onDatePickerTargetChange(pendingTarget.current);
+        pendingTarget.current = null;
+      });
+    } else if (datePickerTarget === target) {
+      // 同じボタンを再タップで閉じる
+      onDatePickerTargetChange(null);
+    } else {
+      onDatePickerTargetChange(target);
+    }
+  };
 
   const getDatePickerValue = (target: HistorySearchDateTarget): Date =>
     toLocalDate(
@@ -413,7 +433,7 @@ export default function HistorySearchPanel({
           <View style={styles.searchDateRow}>
             <TouchableOpacity
               style={[styles.searchDateButton, { borderColor: colors.border }]}
-              onPress={() => onDatePickerTargetChange("from")}
+              onPress={() => openDatePicker("from")}
             >
               <Text style={[styles.searchDateText, { color: colors.text }]}>
                 {`開始: ${fromDate ? displayDate(fromDate) : "未指定"}`}
@@ -421,7 +441,7 @@ export default function HistorySearchPanel({
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.searchDateButton, { borderColor: colors.border }]}
-              onPress={() => onDatePickerTargetChange("to")}
+              onPress={() => openDatePicker("to")}
             >
               <Text style={[styles.searchDateText, { color: colors.text }]}>
                 {`終了: ${toDate ? displayDate(toDate) : "未指定"}`}
@@ -457,13 +477,33 @@ export default function HistorySearchPanel({
                     未指定にする
                   </Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => onDatePickerTargetChange(null)}
-                >
-                  <Text style={[styles.datePickerDone, { color: colors.tint }]}>
-                    完了
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.inlineDatePickerHeaderActions}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const today = formatDate(new Date());
+                      if (datePickerTarget === "from") {
+                        onFromDateChange(today);
+                      } else {
+                        onToDateChange(today);
+                      }
+                    }}
+                  >
+                    <Text
+                      style={[styles.datePickerToday, { color: colors.tint }]}
+                    >
+                      今日
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => onDatePickerTargetChange(null)}
+                  >
+                    <Text
+                      style={[styles.datePickerDone, { color: colors.tint }]}
+                    >
+                      完了
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
               <DateTimePicker
                 value={getDatePickerValue(datePickerTarget)}
@@ -600,10 +640,18 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   inlineDatePickerHeader: {
-    alignItems: "flex-end",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  inlineDatePickerHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  datePickerToday: { fontSize: 15, fontWeight: "600" },
   datePickerDone: { fontSize: 17, fontWeight: "600" },
 });

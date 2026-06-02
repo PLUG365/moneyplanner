@@ -119,6 +119,7 @@ erDiagram
         string storeId FK
         string storeNameSnapshot
         string memo
+        string createdBy
         Timestamp createdAt
         Timestamp updatedAt
     }
@@ -152,14 +153,53 @@ erDiagram
         number amount
     }
 
+    stores {
+        string id PK
+        string name
+        string categoryId FK
+        Timestamp lastUsedAt
+    }
+
+    storeCategoryUsage {
+        string id PK "storeId_categoryId"
+        string storeId FK
+        string categoryId FK
+        Timestamp lastUsedAt
+    }
+
+    inviteCodes {
+        string code PK
+        string householdId FK
+        string createdBy
+        Timestamp createdAt
+        Timestamp expiresAt
+        Timestamp disabledAt
+    }
+
+    joinRequests {
+        string requestId PK
+        string uid
+        string displayName
+        string inviteCode
+        string status "pending / approved / rejected"
+        Timestamp requestedAt
+        Timestamp reviewedAt
+    }
+
     users }o--|| households : "householdId"
     households ||--o{ members : "members"
     households ||--o{ transactions : "transactions"
     households ||--o{ categories : "categories"
+    households ||--o{ accounts : "accounts"
+    households ||--o{ stores : "stores"
+    households ||--o{ storeCategoryUsage : "storeCategoryUsage"
+    households ||--o{ joinRequests : "joinRequests"
+    households ||--|| inviteCodes : "inviteCode"
     categories ||--o{ breakdowns : "categoryId"
     categories ||--o{ budgets : "categoryId"
     categories ||--o{ transactions : "categoryId"
     accounts ||--o{ transactions : "accountId"
+    stores ||--o{ transactions : "storeId"
 ```
 
 ### Firestore コレクション詳細
@@ -173,17 +213,19 @@ erDiagram
     - inviteJoinCooldownUntil?: Timestamp （クールダウン終了時刻）
     - inviteJoinLastFailedAt?: Timestamp
 
-/households/{householdId}
-    - createdBy: string (userId)
-    - inviteCode: string (6文字、参加用)
-    - createdAt: Timestamp
-
-/inviteCodes/{code}
+/inviteCodes/{code}                              # トップレベルコレクション
     - householdId: string
     - createdBy: string
     - createdAt: Timestamp
     - expiresAt: Timestamp
     - disabledAt?: Timestamp
+
+/households/{householdId}
+    - createdBy: string (userId)
+    - inviteCode: string (6文字、参加用)
+    - createdAt: Timestamp
+
+    # 以下、すべて /households/{householdId} 配下のサブコレクション
 
     /members/{userId}
         - displayName: string
@@ -326,54 +368,41 @@ sequenceDiagram
 
 ## ファイルツリー
 
+詳細なファイル単位の役割はコードを正とし、ここでは主要ディレクトリの責務だけを示す。
+
 ```text
 moneyplanner/
-├── app/
-│   ├── _layout.tsx          # ルートレイアウト・認証ガード
-│   ├── +not-found.tsx
-│   ├── auth.tsx             # Apple Sign-Inログイン
-│   ├── household.tsx        # 世帯作成・招待コード参加
-│   └── (tabs)/
-│       ├── _layout.tsx      # タブ定義
-│       ├── index.tsx        # 記録
-│       ├── history.tsx      # 履歴
-│       ├── summary.tsx      # 集計
-│       └── settings.tsx     # 設定
-├── lib/
-│   ├── firestore.ts         # Firestore操作・型定義
-│   ├── auth.ts              # Firebase Auth / Apple Sign-In
-│   ├── household.ts         # 世帯作成・参加・メンバー管理
-│   ├── appCheck.ts          # Firebase App Check初期化
-│   ├── summaryAggregation.ts # 集計ロジック
-│   ├── transactionBalance.ts # 取引更新時の口座残高調整
-│   └── csvExport.ts         # CSV生成・共有
-├── components/
-│   ├── HapticTab.tsx
-│   ├── ThemedText.tsx
-│   ├── ThemedView.tsx
-│   └── ui/
-│       ├── IconSymbol.tsx
-│       ├── IconSymbol.ios.tsx
-│       ├── TabBarBackground.tsx
-│       └── TabBarBackground.ios.tsx
-├── constants/
-│   └── Colors.ts
-├── hooks/
-│   ├── useFirestore.ts      # Firestoreリアルタイムリスナー
-│   ├── useColorScheme.ts
-│   └── useThemeColor.ts
-├── assets/
-│   ├── fonts/SpaceMono-Regular.ttf
-│   └── images/（アイコン類）
+├── app/                     # expo-routerのルート（auth, household, (tabs)/...、dev-ui-preview）
+├── lib/                     # ドメインロジック（Firestore CRUD、認証、世帯、集計、CSV、入力検証など）
+├── components/              # 再利用UIコンポーネント（TransactionEditor、MoneyInputModal等）
+├── constants/               # カラーパレット、固定値
+├── hooks/                   # useFirestore（リアルタイムリスナー）、useColorScheme等
+├── assets/                  # フォント、アイコン
 ├── firestore.rules          # Firestore Security Rules
-├── firestore.rules.test.ts  # Rulesエミュレータテスト
+├── firestore.rules.test.ts  # Rules エミュレータテスト
 ├── firebase.json            # Firestore Emulator設定
-├── app.config.js            # EAS secretのGoogleService plist注入
-├── eas.json                 # EAS Build設定
-├── CLAUDE.md                # 開発ガイドライン
-├── PLAN.md                  # 開発ロードマップ
+├── app.config.js            # EAS secret から GoogleService-Info.plist 注入
+├── eas.json                 # EAS Build プロファイル（development/preview/production）
+├── PLAN.md                  # 進捗とタスク
+├── README.md                # プロジェクト概要・ドキュメント目次
 └── ARCHITECTURE.md          # このファイル
 ```
+
+主要モジュールの責務:
+
+| ディレクトリ/ファイル                                      | 責務                                                                  |
+| ---------------------------------------------------------- | --------------------------------------------------------------------- |
+| `lib/firestore.ts`                                         | Firestore CRUD 全体（取引/カテゴリ/口座/予算/世帯設定）と型定義の中心 |
+| `lib/auth.ts`                                              | Firebase Auth + Apple Sign-In                                         |
+| `lib/household.ts`                                         | 世帯作成・招待コード・参加リクエスト・メンバー管理                    |
+| `lib/summaryAggregation.ts`                                | 月次/年次集計・予算進捗の純関数集計ロジック                           |
+| `lib/csvExport.ts`                                         | CSV生成・共有                                                         |
+| `lib/historySearch.ts`                                     | 履歴フィルタリング条件                                                |
+| `lib/moneyInput.ts`                                        | 金額入力の正規化・四則演算評価                                        |
+| `hooks/useFirestore.ts`                                    | Firestore リアルタイム購読 + fromCache メタデータ                     |
+| `components/TransactionEditor.tsx`                         | 記録/履歴編集の共通フォーム                                           |
+| `components/MoneyInputModal.tsx` / `NumericInputModal.tsx` | 金額・数値入力モーダル（共通部品）                                    |
+| `components/HistorySearchPanel.tsx`                        | 履歴の検索条件パネル                                                  |
 
 ---
 

@@ -121,10 +121,10 @@
 
 ```
 # moneyplanner向け使用例
-/research How does expo-camera integrate with Claude Vision API for receipt OCR?
-/research Best practices for iCloud Drive file sync in React Native / Expo
-/research Comparing expo-sqlite v16 openDatabaseSync vs WAL mode performance
-/research EAS Build configuration for App Store submission with Expo SDK 54
+/research Firestore read/write cost optimization patterns for household budget apps
+/research Firebase App Check enforcement migration strategy with phased rollout in production
+/research Expo SDK 55 migration checklist for React Native Firebase apps (54 → 55)
+/research App Store submission requirements for finance apps with shared household data
 ```
 
 ### moneyplanner での推奨ワークフローパターン

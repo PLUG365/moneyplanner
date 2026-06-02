@@ -102,9 +102,8 @@ service cloud.firestore {
         allow update: if (
             signedIn()
             && request.auth.uid == userId
-            && resource.data.status == "pending"
-            && request.resource.data.status == "pending"
             && request.resource.data.uid == userId
+            && request.resource.data.status == "pending"
             && request.resource.data.inviteCode is string
             && inviteCodeUsableForHousehold(request.resource.data.inviteCode, householdId)
             && request.resource.data.displayName is string
@@ -113,7 +112,12 @@ service cloud.firestore {
           )
           || activeMember(householdId);
 
-        allow delete: if activeMember(householdId);
+        allow delete: if activeMember(householdId)
+          || (
+            signedIn()
+            && request.auth.uid == userId
+            && (resource.data.status == "pending" || resource.data.status == "rejected")
+          );
       }
 
       // 世帯配下の全サブコレクション: 自世帯メンバーのみ
