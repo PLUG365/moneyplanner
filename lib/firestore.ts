@@ -15,6 +15,7 @@ import {
     buildStoreMasterRestorePlan,
     buildTransactionMasterRelinkPatch,
 } from "./masterRelink";
+import { buildStoreOptionsForCategory, findStoreByName } from "./storeOptions";
 import {
     buildBudgetStatusesFromData,
     buildMonthCategorySummaryFromTransactions,
@@ -409,6 +410,18 @@ function mapStore(
     id,
     name: data.name,
     categoryId: data.categoryId ?? null,
+    lastUsedAt: toISOString(data.lastUsedAt),
+  };
+}
+
+function mapStoreCategoryUsage(data: FirebaseFirestoreTypes.DocumentData): {
+  storeId: string;
+  categoryId: string;
+  lastUsedAt: string;
+} {
+  return {
+    storeId: data.storeId,
+    categoryId: data.categoryId,
     lastUsedAt: toISOString(data.lastUsedAt),
   };
 }
@@ -1481,15 +1494,21 @@ export async function getStoresByCategory(
   categoryId?: string | null,
 ): Promise<Store[]> {
   const hDoc = await householdDoc();
-  const storesSnap = await hDoc.collection("stores").get();
-  return storesSnap.docs
-    .map((doc) => mapStore(doc.id, doc.data()))
-    .filter((store) => (categoryId ? store.categoryId === categoryId : true))
-    .sort((a, b) => {
-      const recency = b.lastUsedAt.localeCompare(a.lastUsedAt);
-      if (recency !== 0) return recency;
-      return a.name.localeCompare(b.name);
-    });
+  const [storesSnap, usageSnap] = await Promise.all([
+    hDoc.collection("stores").get(),
+    categoryId
+      ? hDoc
+          .collection("storeCategoryUsage")
+          .where("categoryId", "==", categoryId)
+          .get()
+      : Promise.resolve(null),
+  ]);
+
+  return buildStoreOptionsForCategory(
+    storesSnap.docs.map((doc) => mapStore(doc.id, doc.data())),
+    usageSnap?.docs.map((doc) => mapStoreCategoryUsage(doc.data())) ?? [],
+    categoryId,
+  );
 }
 
 export async function upsertStore(
@@ -1556,6 +1575,62 @@ export async function upsertStore(
   }
 
   return ref.id;
+}
+
+export async function createStoreMasterWrite(
+  name: string,
+  categoryId?: string | null,
+): Promise<{ storeId: string; pendingWrite: Promise<void> }> {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new Error("お店名を入力してください");
+  }
+
+  const hDoc = await householdDoc();
+  const existingSnap = await hDoc
+    .collection("stores")
+    .where("name", "==", trimmed)
+    .get()
+    .catch(() => null);
+  const existingStore = findStoreByName(
+    trimmed,
+    existingSnap?.docs.map((doc) => mapStore(doc.id, doc.data())) ?? [],
+  );
+  const ref = existingStore
+    ? hDoc.collection("stores").doc(existingStore.id)
+    : hDoc.collection("stores").doc();
+  const batch = firestore().batch();
+
+  if (existingStore) {
+    batch.update(ref, {
+      ...(existingStore.categoryId == null && categoryId != null
+        ? { categoryId }
+        : {}),
+      lastUsedAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+  } else {
+    batch.set(ref, {
+      name: trimmed,
+      categoryId: categoryId ?? null,
+      lastUsedAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  if (categoryId != null) {
+    batch.set(
+      hDoc.collection("storeCategoryUsage").doc(`${ref.id}_${categoryId}`),
+      {
+        storeId: ref.id,
+        categoryId,
+        lastUsedAt: firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+
+  return { storeId: ref.id, pendingWrite: batch.commit() };
 }
 
 // ── Queries ──────────────────────────────────────────

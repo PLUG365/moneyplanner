@@ -27,6 +27,7 @@ import {
     addTransaction,
     Breakdown,
     Category,
+    createStoreMasterWrite,
     DEFAULT_ACCOUNT_ID,
     deleteTransactionFromPrevious,
     householdCollection,
@@ -41,6 +42,10 @@ import {
 } from "@/lib/firestore";
 import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
 import { parseHistoryDrilldownParams } from "@/lib/historyDrilldown";
+import {
+    getHistoryEditEditorBreakdowns,
+    resolveHistoryEditStoreForWrite,
+} from "@/lib/historyEditForm";
 import { buildHistoryListTransactions } from "@/lib/historyList";
 import {
     filterHistoryTransactions,
@@ -736,33 +741,36 @@ export default function HistoryScreen() {
       storeName: editStoreName,
       categoryId: editCategoryId,
     });
-    const resolvedStoreId =
-      storeResolution.kind === "selected" ? storeResolution.storeId : null;
-
-    await waitForPendingWrite(
-      updateTransactionFromPrevious(
-        editingTx,
-        editDate,
-        amount,
-        editType,
-        editCategoryId,
-        editAccountId,
-        editMemo,
-        editBreakdownId,
-        resolvedStoreId,
-        {
-          accountName: selectedEditAccount?.name ?? editingTx.accountName,
-          categoryName: selectedEditCategory?.name ?? editingTx.categoryName,
-          categoryColor: selectedEditCategory?.color ?? editingTx.categoryColor,
-          breakdownName: selectedEditBreakdown?.name ?? editingTx.breakdownName,
-          storeName:
-            storeResolution.kind === "restore"
-              ? storeResolution.storeName
-              : editStoreName,
-        },
-      ),
-      WRITE_ACK_TIMEOUT_MS,
+    const resolvedStore = await resolveHistoryEditStoreForWrite(
+      storeResolution,
+      createStoreMasterWrite,
     );
+    const updateWrite = updateTransactionFromPrevious(
+      editingTx,
+      editDate,
+      amount,
+      editType,
+      editCategoryId,
+      editAccountId,
+      editMemo,
+      editBreakdownId,
+      resolvedStore.storeId,
+      {
+        accountName: selectedEditAccount?.name ?? editingTx.accountName,
+        categoryName: selectedEditCategory?.name ?? editingTx.categoryName,
+        categoryColor: selectedEditCategory?.color ?? editingTx.categoryColor,
+        breakdownName: selectedEditBreakdown?.name ?? editingTx.breakdownName,
+        storeName:
+          storeResolution.kind === "restore"
+            ? storeResolution.storeName
+            : editStoreName,
+      },
+    );
+    const pendingWrites = resolvedStore.pendingWrite
+      ? [resolvedStore.pendingWrite, updateWrite]
+      : [updateWrite];
+
+    await waitForPendingWrite(Promise.all(pendingWrites), WRITE_ACK_TIMEOUT_MS);
 
     setShowEditModal(false);
     setEditingTxId(null);
@@ -1309,7 +1317,7 @@ export default function HistoryScreen() {
                 accounts={editAccounts}
                 accountId={editAccountId}
                 categoryId={editCategoryId}
-                breakdowns={editBreakdowns}
+                breakdowns={getHistoryEditEditorBreakdowns(breakdownOptions)}
                 breakdownId={editBreakdownId}
                 storeId={editStoreId}
                 storeName={editStoreName}

@@ -17,9 +17,9 @@ import {
 
 import MoneyInputModal from "@/components/MoneyInputModal";
 import {
+    createStoreMasterWrite,
     getStoresByCategory,
     TransactionType,
-    upsertStore,
 } from "@/lib/firestore";
 import { formatTransactionAmountInputDisplay } from "@/lib/transactionAmountInput";
 import {
@@ -864,10 +864,12 @@ export default function TransactionEditor({
                 ]}
                 onPress={async () => {
                   const name = storeSearchQuery.trim();
-                  const sid = await upsertStore(
-                    name,
-                    typeof categoryId === "string" ? categoryId : null,
-                  );
+                  const { storeId: sid, pendingWrite } =
+                    await createStoreMasterWrite(
+                      name,
+                      typeof categoryId === "string" ? categoryId : null,
+                    );
+                  void pendingWrite.catch(() => undefined);
                   onStoreChange(sid, name);
                   setShowStoreModal(false);
                 }}
