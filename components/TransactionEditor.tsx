@@ -248,17 +248,20 @@ export default function TransactionEditor({
     setCategorySelectionLoadingId(cat.id);
     try {
       const nextBreakdowns = getBreakdownChoicesForCategory(cat.id, breakdowns);
-      onCategoryChange(cat.id);
-      onBreakdownChange(null);
-      setPendingBreakdown(null);
       setModalBreakdownCategory(cat);
       setModalBreakdownChoices(nextBreakdowns);
 
       if (getCategoryModalNextStep(nextBreakdowns.length) === "close") {
+        // 内訳なしカテゴリは即確定
+        onCategoryChange(cat.id);
+        onBreakdownChange(null);
+        setPendingBreakdown(null);
         closeCategoryPicker();
         return;
       }
 
+      // 内訳ありカテゴリは内訳確定まで親に反映しない
+      // （途中で閉じた場合は選択前の状態を維持する）
       setCategoryModalStep("breakdown");
     } finally {
       setCategorySelectionLoadingId(null);
@@ -266,6 +269,9 @@ export default function TransactionEditor({
   };
 
   const handleBreakdownSelect = (item: Breakdown) => {
+    if (modalBreakdownCategory) {
+      onCategoryChange(modalBreakdownCategory.id);
+    }
     setPendingBreakdown(item);
     onBreakdownChange(item.id);
     closeCategoryPicker();
