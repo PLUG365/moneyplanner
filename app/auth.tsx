@@ -1,5 +1,4 @@
-import { Colors } from "@/constants/Colors";
-import { useColorScheme } from "@/hooks/useColorScheme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { signInWithApple } from "@/lib/auth";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useState } from "react";
@@ -7,8 +6,7 @@ import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
 
 export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
-  const colorScheme = useColorScheme() ?? "light";
-  const colors = Colors[colorScheme];
+  const { colors } = useAppTheme();
 
   const handleSignIn = async () => {
     setLoading(true);
@@ -39,7 +37,7 @@ export default function AuthScreen() {
               AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
             }
             buttonStyle={
-              colorScheme === "dark"
+              colors.mode === "dark"
                 ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
                 : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
             }

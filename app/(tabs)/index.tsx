@@ -18,8 +18,7 @@ import {
 } from "react-native";
 
 import TransactionEditor from "@/components/TransactionEditor";
-import { Colors } from "@/constants/Colors";
-import { useColorScheme } from "@/hooks/useColorScheme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import {
     Account,
@@ -70,8 +69,7 @@ async function withTimeout<T>(
 }
 
 export default function RecordScreen() {
-  const colorScheme = useColorScheme() ?? "light";
-  const colors = Colors[colorScheme];
+  const { colors } = useAppTheme();
   const tabBarHeight = useBottomTabBarHeight();
   const householdId = useHouseholdId();
 
@@ -343,33 +341,23 @@ export default function RecordScreen() {
     }
   };
 
-  const incomeColor = colorScheme === "dark" ? "#9BB8D8" : "#6E8FB5";
-  const expenseColor = colorScheme === "dark" ? "#E8A1AD" : "#C96B7B";
-  const warningColor = colorScheme === "dark" ? "#E8B36B" : "#C98A4B";
-  const exceededColor = colorScheme === "dark" ? "#E8919F" : "#B0556A";
+  const incomeColor = colors.income;
+  const expenseColor = colors.expense;
+  const warningColor = colors.warning;
+  const exceededColor = colors.exceeded;
 
   const getToastCardStyle = () => {
     if (toastVariant === "exceeded") {
-      return {
-        backgroundColor:
-          colorScheme === "dark"
-            ? "rgba(198, 40, 40, 0.95)"
-            : "rgba(198, 40, 40, 0.92)",
-      };
+      return { backgroundColor: colors.exceeded };
     }
     if (toastVariant === "warning") {
-      return {
-        backgroundColor:
-          colorScheme === "dark"
-            ? "rgba(239, 108, 0, 0.95)"
-            : "rgba(239, 108, 0, 0.92)",
-      };
+      return { backgroundColor: colors.warning };
     }
     return {
       backgroundColor:
-        colorScheme === "dark"
-          ? "rgba(33, 33, 33, 0.95)"
-          : "rgba(33, 33, 33, 0.92)",
+        colors.mode === "dark"
+          ? "rgba(58, 51, 49, 0.96)"
+          : "rgba(74, 65, 64, 0.94)",
     };
   };
 

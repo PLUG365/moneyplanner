@@ -12,8 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import HistorySearchPanel, {
   type HistorySearchDateTarget,
 } from "@/components/HistorySearchPanel";
-import { Colors } from "@/constants/Colors";
-import { useColorScheme } from "@/hooks/useColorScheme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import {
   filterHistoryTransactions,
   type HistorySearchType,
@@ -34,8 +33,7 @@ function displayDate(dateStr: string): string {
 }
 
 export default function DevUiPreviewScreen() {
-  const colorScheme = useColorScheme() ?? "light";
-  const colors = Colors[colorScheme];
+  const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
 
   const [searchType, setSearchType] = useState<HistorySearchType>("expense");

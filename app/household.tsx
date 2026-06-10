@@ -1,5 +1,4 @@
-import { Colors } from "@/constants/Colors";
-import { useColorScheme } from "@/hooks/useColorScheme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import {
     cancelJoinRequest,
     clearPendingHouseholdId,
@@ -58,8 +57,7 @@ export default function HouseholdScreen() {
     null,
   );
   const unsubscribeRef = useRef<(() => void) | null>(null);
-  const colorScheme = useColorScheme() ?? "light";
-  const colors = Colors[colorScheme];
+  const { colors } = useAppTheme();
 
   const stopWatching = useCallback(() => {
     unsubscribeRef.current?.();

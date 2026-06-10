@@ -24,8 +24,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import MoneyInputModal from "@/components/MoneyInputModal";
-import { Colors } from "@/constants/Colors";
-import { useColorScheme } from "@/hooks/useColorScheme";
+import { THEME_IDS, THEMES } from "@/constants/Themes";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { useCollection } from "@/hooks/useFirestore";
 import {
     ACCOUNT_DELETION_CONFIRMATION_TEXT,
@@ -132,8 +132,7 @@ const KEYBOARD_ACCESSORY_VIEW_ID = "settings-keyboard-accessory";
 type NumericInputTarget = "category-budget" | "account-balance";
 
 export default function SettingsScreen() {
-  const colorScheme = useColorScheme() ?? "light";
-  const colors = Colors[colorScheme];
+  const { colors, themeId, setThemeId } = useAppTheme();
   const insets = useSafeAreaInsets();
 
   const sheetAnim = useRef(new Animated.Value(600)).current;
@@ -1218,8 +1217,8 @@ export default function SettingsScreen() {
     );
   };
 
-  const incomeColor = colorScheme === "dark" ? "#9BB8D8" : "#6E8FB5";
-  const expenseColor = colorScheme === "dark" ? "#E8A1AD" : "#C96B7B";
+  const incomeColor = colors.income;
+  const expenseColor = colors.expense;
 
   return (
     <ScrollView
@@ -1334,6 +1333,80 @@ export default function SettingsScreen() {
         >
           <Text style={styles.actionButtonText}>口座管理を開く</Text>
         </TouchableOpacity>
+      </View>
+
+      <View
+        style={[
+          styles.section,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          配色テーマ
+        </Text>
+        <Text style={[styles.sectionDescription, { color: colors.subText }]}>
+          アプリ全体の配色を選べます。この端末にのみ保存されます。
+        </Text>
+        <View style={styles.themeGrid}>
+          {THEME_IDS.map((id) => {
+            const theme = THEMES[id];
+            const selected = id === themeId;
+            return (
+              <TouchableOpacity
+                key={id}
+                style={[
+                  styles.themeOption,
+                  {
+                    backgroundColor: theme.background,
+                    borderColor: selected ? colors.tint : colors.border,
+                    borderWidth: selected ? 2 : 1,
+                  },
+                ]}
+                onPress={() => setThemeId(id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+              >
+                <View style={styles.themeSwatchRow}>
+                  <View
+                    style={[
+                      styles.themeSwatch,
+                      {
+                        backgroundColor: theme.card,
+                        borderColor: theme.border,
+                      },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.themeSwatch,
+                      { backgroundColor: theme.tint },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.themeSwatch,
+                      { backgroundColor: theme.income },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.themeSwatch,
+                      { backgroundColor: theme.expense },
+                    ]}
+                  />
+                </View>
+                <Text style={[styles.themeLabel, { color: theme.text }]}>
+                  {theme.label}
+                </Text>
+                {selected ? (
+                  <Text style={[styles.themeSelectedMark, { color: theme.tint }]}>
+                    ✓ 使用中
+                  </Text>
+                ) : null}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
       <View
@@ -2349,6 +2422,31 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 16, fontWeight: "700", marginBottom: 8 },
   sectionDescription: { fontSize: 13, marginBottom: 12, lineHeight: 20 },
+  themeGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  themeOption: {
+    flexBasis: "47%",
+    flexGrow: 1,
+    borderRadius: 12,
+    padding: 12,
+  },
+  themeSwatchRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 8,
+  },
+  themeSwatch: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "transparent",
+  },
+  themeLabel: { fontSize: 14, fontWeight: "700" },
+  themeSelectedMark: { fontSize: 12, fontWeight: "700", marginTop: 4 },
   actionButton: {
     borderRadius: 10,
     paddingVertical: 14,

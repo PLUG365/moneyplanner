@@ -19,8 +19,7 @@ import HistorySearchPanel, {
 import MonthPickerModal from "@/components/MonthPickerModal";
 import TransactionEditor from "@/components/TransactionEditor";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
-import { Colors } from "@/constants/Colors";
-import { useColorScheme } from "@/hooks/useColorScheme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import {
     Account,
@@ -114,8 +113,7 @@ function uniqueNonEmpty(values: (string | null | undefined)[]): string[] {
 }
 
 export default function HistoryScreen() {
-  const colorScheme = useColorScheme() ?? "light";
-  const colors = Colors[colorScheme];
+  const { colors } = useAppTheme();
   const bottomTabOverflow = useBottomTabOverflow();
   const safeAreaInsets = useSafeAreaInsets();
   const householdId = useHouseholdId();
@@ -792,8 +790,8 @@ export default function HistoryScreen() {
     }
   };
 
-  const incomeColor = colorScheme === "dark" ? "#9BB8D8" : "#6E8FB5";
-  const expenseColor = colorScheme === "dark" ? "#E8A1AD" : "#C96B7B";
+  const incomeColor = colors.income;
+  const expenseColor = colors.expense;
 
   const renderTransactionItem = (tx: Transaction) => {
     const isSelected = selectedTxIds.includes(tx.id);

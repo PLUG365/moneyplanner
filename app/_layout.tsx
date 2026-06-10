@@ -9,7 +9,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
 import "react-native-reanimated";
 
-import { useColorScheme } from "@/hooks/useColorScheme";
+import { AppThemeProvider, useAppTheme } from "@/hooks/useAppTheme";
 import { initAppCheck } from "@/lib/appCheck";
 import { waitForAppCheckReadiness } from "@/lib/appCheckReadiness";
 import { useAuth } from "@/lib/auth";
@@ -17,7 +17,15 @@ import { clearHouseholdCache, initFirestore } from "@/lib/firestore";
 import { getHouseholdId } from "@/lib/household";
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  return (
+    <AppThemeProvider>
+      <RootLayoutContent />
+    </AppThemeProvider>
+  );
+}
+
+function RootLayoutContent() {
+  const { colors } = useAppTheme();
   const [loaded] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
   });
@@ -92,7 +100,7 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={colors.mode === "dark" ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="auth" options={{ headerShown: false }} />
         <Stack.Screen name="household" options={{ headerShown: false }} />
@@ -100,7 +108,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="+not-found" />
       </Stack>
-      <StatusBar style="auto" />
+      <StatusBar style={colors.mode === "dark" ? "light" : "dark"} />
     </ThemeProvider>
   );
 }

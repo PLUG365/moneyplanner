@@ -1,21 +1,20 @@
 /**
- * Learn more about light and dark modes:
- * https://docs.expo.dev/guides/color-schemes/
+ * 配色テーマ（hooks/useAppTheme）に追従するテーマカラー取得フック
  */
 
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/useColorScheme';
+import { type AppTheme } from '@/constants/Themes';
+import { useAppTheme } from '@/hooks/useAppTheme';
 
 export function useThemeColor(
   props: { light?: string; dark?: string },
-  colorName: keyof typeof Colors.light & keyof typeof Colors.dark
+  colorName: keyof Omit<AppTheme, 'id' | 'label' | 'mode'>
 ) {
-  const theme = useColorScheme() ?? 'light';
-  const colorFromProps = props[theme];
+  const { colors } = useAppTheme();
+  const colorFromProps = props[colors.mode];
 
   if (colorFromProps) {
     return colorFromProps;
   } else {
-    return Colors[theme][colorName];
+    return colors[colorName];
   }
 }

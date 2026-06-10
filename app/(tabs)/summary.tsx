@@ -9,8 +9,7 @@ import {
 } from "react-native";
 
 import MonthPickerModal from "@/components/MonthPickerModal";
-import { Colors } from "@/constants/Colors";
-import { useColorScheme } from "@/hooks/useColorScheme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import {
     BudgetDefinition,
@@ -59,8 +58,7 @@ const MONTH_LABELS = [
 ];
 
 export default function SummaryScreen() {
-  const colorScheme = useColorScheme() ?? "light";
-  const colors = Colors[colorScheme];
+  const { colors } = useAppTheme();
   const householdId = useHouseholdId();
 
   const now = new Date();
@@ -184,11 +182,12 @@ export default function SummaryScreen() {
     } as Href);
   };
 
-  const incomeColor = colorScheme === "dark" ? "#9BB8D8" : "#6E8FB5";
-  const expenseColor = colorScheme === "dark" ? "#E8A1AD" : "#C96B7B";
-  const warningColor = colorScheme === "dark" ? "#E8B36B" : "#C98A4B";
-  const exceededColor = colorScheme === "dark" ? "#E8919F" : "#B0556A";
-  const safeColor = colorScheme === "dark" ? "#A3C2A0" : "#7BA277";
+  const incomeColor = colors.income;
+  const expenseColor = colors.expense;
+  const warningColor = colors.warning;
+  const exceededColor = colors.exceeded;
+  const safeColor = colors.safe;
+  const statusTintAlpha = colors.mode === "dark" ? "29" : "1A";
 
   const incomeItems = categorySummary.filter((s) => s.type === "income");
   const expenseItems = categorySummary.filter((s) => s.type === "expense");
@@ -205,29 +204,20 @@ export default function SummaryScreen() {
       return {
         label: "超過",
         color: exceededColor,
-        tint:
-          colorScheme === "dark"
-            ? "rgba(255, 138, 128, 0.16)"
-            : "rgba(198, 40, 40, 0.10)",
+        tint: exceededColor + statusTintAlpha,
       };
     }
     if (status.level === "warning") {
       return {
         label: "注意",
         color: warningColor,
-        tint:
-          colorScheme === "dark"
-            ? "rgba(255, 202, 40, 0.16)"
-            : "rgba(239, 108, 0, 0.10)",
+        tint: warningColor + statusTintAlpha,
       };
     }
     return {
       label: "安全",
       color: safeColor,
-      tint:
-        colorScheme === "dark"
-          ? "rgba(129, 199, 132, 0.12)"
-          : "rgba(46, 125, 50, 0.08)",
+      tint: safeColor + statusTintAlpha,
     };
   };
 
@@ -445,10 +435,7 @@ export default function SummaryScreen() {
                       <View
                         style={[
                           styles.progressTrack,
-                          {
-                            backgroundColor:
-                              colorScheme === "dark" ? "#2B2B2B" : "#ECEFF1",
-                          },
+                          { backgroundColor: colors.track },
                         ]}
                       >
                         <View
