@@ -19,6 +19,8 @@ import {
 
 const PROJECT_ID = "moneyplanner-rules-test";
 const HOUSEHOLD_ID = "household-a";
+const FUTURE_EXPIRES_AT = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+const PAST_EXPIRES_AT = new Date(Date.now() - 24 * 60 * 60 * 1000);
 const hasFirestoreEmulator = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
 
 setLogLevel("silent");
@@ -96,7 +98,7 @@ rulesTest("active members can create a replacement invite code", async () => {
       householdId: HOUSEHOLD_ID,
       createdBy: "alice",
       createdAt: "2026-04-26T00:00:00.000Z",
-      expiresAt: new Date("2026-06-01T00:00:00.000Z"),
+      expiresAt: FUTURE_EXPIRES_AT,
       disabledAt: null,
     }),
   );
@@ -126,7 +128,7 @@ rulesTest(
       householdId,
       createdBy: "dana",
       createdAt: "2026-04-26T00:00:00.000Z",
-      expiresAt: new Date("2026-06-01T00:00:00.000Z"),
+      expiresAt: FUTURE_EXPIRES_AT,
       disabledAt: null,
     });
 
@@ -189,7 +191,7 @@ rulesTest(
         householdId: HOUSEHOLD_ID,
         createdBy: "charlie",
         createdAt: "2026-04-26T00:00:00.000Z",
-        expiresAt: new Date("2026-06-01T00:00:00.000Z"),
+        expiresAt: FUTURE_EXPIRES_AT,
         disabledAt: null,
       }),
     );
@@ -217,7 +219,7 @@ rulesTest("join request with expired invite code is rejected", async () => {
       householdId: HOUSEHOLD_ID,
       createdBy: "alice",
       createdAt: "2026-04-01T00:00:00.000Z",
-      expiresAt: new Date("2026-04-30T00:00:00.000Z"),
+      expiresAt: PAST_EXPIRES_AT,
       disabledAt: null,
     });
   });
@@ -241,7 +243,7 @@ rulesTest("join request with disabled invite code is rejected", async () => {
       householdId: HOUSEHOLD_ID,
       createdBy: "alice",
       createdAt: "2026-04-01T00:00:00.000Z",
-      expiresAt: new Date("2026-06-01T00:00:00.000Z"),
+      expiresAt: FUTURE_EXPIRES_AT,
       disabledAt: new Date("2026-05-01T00:00:00.000Z"),
     });
   });
@@ -472,7 +474,7 @@ async function seedHousehold() {
       householdId: HOUSEHOLD_ID,
       createdBy: "alice",
       createdAt: "2026-04-26T00:00:00.000Z",
-      expiresAt: new Date("2026-06-01T00:00:00.000Z"),
+      expiresAt: FUTURE_EXPIRES_AT,
       disabledAt: null,
     });
     await setDoc(doc(db, "users", "alice"), { householdId: HOUSEHOLD_ID });
