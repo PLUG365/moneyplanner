@@ -1317,6 +1317,31 @@ export default function SettingsScreen() {
           { backgroundColor: colors.card, borderColor: colors.border },
         ]}
       >
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          口座設定
+        </Text>
+        <Text style={[styles.sectionDescription, { color: colors.subText }]}>
+          口座の追加・編集・削除ができます。
+        </Text>
+        <TouchableOpacity
+          style={[
+            styles.actionButton,
+            styles.accountManagerButton,
+            isSettingsWriteDisabled && styles.disabledControl,
+          ]}
+          onPress={handleOpenAccountManager}
+          disabled={isSettingsWriteDisabled}
+        >
+          <Text style={styles.actionButtonText}>口座管理を開く</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View
+        style={[
+          styles.section,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
         <Text style={[styles.sectionTitle, { color: colors.text }]}>世帯</Text>
         <Text style={[styles.sectionDescription, { color: colors.subText }]}>
           招待コードと世帯メンバーを確認できます。
@@ -1503,31 +1528,6 @@ export default function SettingsScreen() {
           <Text style={styles.actionButtonText}>
             {deletingAccount ? "削除中..." : "認証解除と全データ削除"}
           </Text>
-        </TouchableOpacity>
-      </View>
-
-      <View
-        style={[
-          styles.section,
-          { backgroundColor: colors.card, borderColor: colors.border },
-        ]}
-      >
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          口座設定
-        </Text>
-        <Text style={[styles.sectionDescription, { color: colors.subText }]}>
-          口座の追加・編集・削除ができます。
-        </Text>
-        <TouchableOpacity
-          style={[
-            styles.actionButton,
-            styles.accountManagerButton,
-            isSettingsWriteDisabled && styles.disabledControl,
-          ]}
-          onPress={handleOpenAccountManager}
-          disabled={isSettingsWriteDisabled}
-        >
-          <Text style={styles.actionButtonText}>口座管理を開く</Text>
         </TouchableOpacity>
       </View>
 
