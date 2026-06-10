@@ -61,7 +61,13 @@ service cloud.firestore {
           activeMember(request.resource.data.householdId)
           || createsOwnHouseholdInvite(request.resource.data.householdId)
         );
-      allow update, delete: if signedIn()
+      // 更新は無効化(disabledAt)等のみ想定。世帯紐付け・発行者・有効期限は改変不可。
+      allow update: if signedIn()
+        && activeMember(resource.data.householdId)
+        && request.resource.data.householdId == resource.data.householdId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.expiresAt == resource.data.expiresAt;
+      allow delete: if signedIn()
         && activeMember(resource.data.householdId);
     }
 
@@ -77,7 +83,10 @@ service cloud.firestore {
           && (
             activeMember(householdId)
             || (
+              // 世帯作成バッチでの自己登録のみ許可。
+              // 既存世帯への参加は承認者（activeMember）が作成する。
               request.auth.uid == userId
+              && getAfter(/databases/$(database)/documents/households/$(householdId)).data.createdBy == request.auth.uid
               && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId == householdId
             )
           );

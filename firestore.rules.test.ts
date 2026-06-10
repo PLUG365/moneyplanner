@@ -134,6 +134,51 @@ rulesTest(
   },
 );
 
+rulesTest("active members can disable an invite code", async () => {
+  const db = testEnv!.authenticatedContext("alice").firestore();
+
+  await assertSucceeds(
+    setDoc(
+      doc(db, "inviteCodes", "123456"),
+      {
+        disabledAt: new Date("2026-05-10T00:00:00.000Z"),
+        updatedAt: "2026-05-10T00:00:00.000Z",
+      },
+      { merge: true },
+    ),
+  );
+});
+
+rulesTest(
+  "active members cannot repoint an invite code to another household",
+  async () => {
+    const db = testEnv!.authenticatedContext("alice").firestore();
+
+    await assertFails(
+      setDoc(
+        doc(db, "inviteCodes", "123456"),
+        { householdId: "household-other" },
+        { merge: true },
+      ),
+    );
+  },
+);
+
+rulesTest(
+  "active members cannot extend an invite code expiry via update",
+  async () => {
+    const db = testEnv!.authenticatedContext("alice").firestore();
+
+    await assertFails(
+      setDoc(
+        doc(db, "inviteCodes", "123456"),
+        { expiresAt: new Date("2027-01-01T00:00:00.000Z") },
+        { merge: true },
+      ),
+    );
+  },
+);
+
 rulesTest(
   "non-members cannot create invite codes for a household",
   async () => {
@@ -273,6 +318,21 @@ rulesTest(
     );
 
     await assertSucceeds(batch.commit());
+  },
+);
+
+rulesTest(
+  "non-member cannot self-add as member by forging their users doc",
+  async () => {
+    const db = testEnv!.authenticatedContext("charlie").firestore();
+    const batch = writeBatch(db);
+    batch.set(doc(db, "users", "charlie"), { householdId: HOUSEHOLD_ID });
+    batch.set(doc(db, "households", HOUSEHOLD_ID, "members", "charlie"), {
+      displayName: "Charlie",
+      joinedAt: "2026-05-10T00:00:00.000Z",
+    });
+
+    await assertFails(batch.commit());
   },
 );
 
