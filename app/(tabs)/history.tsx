@@ -792,8 +792,8 @@ export default function HistoryScreen() {
     }
   };
 
-  const incomeColor = colorScheme === "dark" ? "#42A5F5" : "#1565C0";
-  const expenseColor = colorScheme === "dark" ? "#EF5350" : "#C62828";
+  const incomeColor = colorScheme === "dark" ? "#9BB8D8" : "#6E8FB5";
+  const expenseColor = colorScheme === "dark" ? "#E8A1AD" : "#C96B7B";
 
   const renderTransactionItem = (tx: Transaction) => {
     const isSelected = selectedTxIds.includes(tx.id);
@@ -1501,7 +1501,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 4,
   },
-  deleteButtonText: { fontSize: 12, fontWeight: "700", color: "#C62828" },
+  deleteButtonText: { fontSize: 12, fontWeight: "700", color: "#C25E6E" },
   weekHeader: { flexDirection: "row", marginBottom: 4 },
   weekDay: { flex: 1, textAlign: "center", fontSize: 13, fontWeight: "600" },
   calendarGrid: { flexDirection: "row", flexWrap: "wrap" },
@@ -1636,11 +1636,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#C62828",
+    borderColor: "#C25E6E",
   },
   modalTitle: { fontSize: 17, fontWeight: "700" },
   modalClose: { fontSize: 14, fontWeight: "600" },
-  modalDeleteText: { fontSize: 14, fontWeight: "700", color: "#C62828" },
+  modalDeleteText: { fontSize: 14, fontWeight: "700", color: "#C25E6E" },
   modalEditorContainer: { flex: 1, minHeight: 0 },
   typeToggle: {
     flexDirection: "row",

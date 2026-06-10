@@ -110,21 +110,21 @@ import { getSettingsWriteAvailability } from "@/lib/settingsWriteAvailability";
 const WRITE_ACK_TIMEOUT_MS = 900;
 
 const PRESET_COLORS = [
-  "#1565C0",
-  "#1976D2",
-  "#42A5F5",
-  "#00796B",
-  "#2E7D32",
-  "#C62828",
-  "#AD1457",
-  "#E65100",
-  "#F57F17",
-  "#4527A0",
-  "#6A1B9A",
-  "#37474F",
-  "#757575",
-  "#5D4037",
-  "#00695C",
+  "#6E8FB5",
+  "#88A8C8",
+  "#9BB8D8",
+  "#6E9E94",
+  "#8FAE8B",
+  "#C96B7B",
+  "#C2879F",
+  "#C98A4B",
+  "#D9B36B",
+  "#9C8AC9",
+  "#A88FB8",
+  "#7D8A99",
+  "#A09A94",
+  "#A98E7E",
+  "#7BA277",
 ];
 
 const KEYBOARD_ACCESSORY_VIEW_ID = "settings-keyboard-accessory";
@@ -1218,8 +1218,8 @@ export default function SettingsScreen() {
     );
   };
 
-  const incomeColor = colorScheme === "dark" ? "#42A5F5" : "#1565C0";
-  const expenseColor = colorScheme === "dark" ? "#EF5350" : "#C62828";
+  const incomeColor = colorScheme === "dark" ? "#9BB8D8" : "#6E8FB5";
+  const expenseColor = colorScheme === "dark" ? "#E8A1AD" : "#C96B7B";
 
   return (
     <ScrollView
@@ -1400,8 +1400,8 @@ export default function SettingsScreen() {
                   style={[
                     styles.memberActionButton,
                     {
-                      borderColor: isSelf ? "#D97A00" : "#C62828",
-                      backgroundColor: isSelf ? "#FFF4E5" : "#FFEBEE",
+                      borderColor: isSelf ? "#C98A4B" : "#C25E6E",
+                      backgroundColor: isSelf ? "#F9F0E4" : "#F9E9EC",
                     },
                     isSettingsWriteDisabled && styles.disabledControl,
                   ]}
@@ -2364,7 +2364,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   resetDefaultButton: {
-    backgroundColor: "#EF6C00",
+    backgroundColor: "#C98A4B",
     marginTop: 10,
   },
   accountManagerButton: {
@@ -2443,15 +2443,15 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   requestApproveButton: {
-    borderColor: "#2E7D32",
-    backgroundColor: "#E8F5E9",
+    borderColor: "#7BA277",
+    backgroundColor: "#EEF4ED",
   },
   requestRejectButton: {
-    borderColor: "#C62828",
-    backgroundColor: "#FFEBEE",
+    borderColor: "#C25E6E",
+    backgroundColor: "#F9E9EC",
   },
-  requestApproveText: { color: "#1B5E20", fontSize: 13, fontWeight: "700" },
-  requestRejectText: { color: "#B71C1C", fontSize: 13, fontWeight: "700" },
+  requestApproveText: { color: "#5C7F58", fontSize: 13, fontWeight: "700" },
+  requestRejectText: { color: "#A84A5A", fontSize: 13, fontWeight: "700" },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",

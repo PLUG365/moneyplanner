@@ -184,11 +184,11 @@ export default function SummaryScreen() {
     } as Href);
   };
 
-  const incomeColor = colorScheme === "dark" ? "#42A5F5" : "#1565C0";
-  const expenseColor = colorScheme === "dark" ? "#EF5350" : "#C62828";
-  const warningColor = colorScheme === "dark" ? "#FFCA28" : "#EF6C00";
-  const exceededColor = colorScheme === "dark" ? "#FF8A80" : "#C62828";
-  const safeColor = colorScheme === "dark" ? "#81C784" : "#2E7D32";
+  const incomeColor = colorScheme === "dark" ? "#9BB8D8" : "#6E8FB5";
+  const expenseColor = colorScheme === "dark" ? "#E8A1AD" : "#C96B7B";
+  const warningColor = colorScheme === "dark" ? "#E8B36B" : "#C98A4B";
+  const exceededColor = colorScheme === "dark" ? "#E8919F" : "#B0556A";
+  const safeColor = colorScheme === "dark" ? "#A3C2A0" : "#7BA277";
 
   const incomeItems = categorySummary.filter((s) => s.type === "income");
   const expenseItems = categorySummary.filter((s) => s.type === "expense");

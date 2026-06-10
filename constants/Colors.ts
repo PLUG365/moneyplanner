@@ -1,31 +1,27 @@
-const tintColorLight = '#00796B';
-const tintColorDark = '#4DB6AC';
+// ピオニーテーマ: くすみピンク×温かいベージュのやわらかい配色
+const tintColorLight = '#C96B7B';
+const tintColorDark = '#D98E9C';
 
 export const Colors = {
   light: {
-    text: '#11181C',
-    subText: '#687076',
-    background: '#F5F5F5',
+    text: '#4A4140',
+    subText: '#9C8F8A',
+    background: '#FAF6F3',
     card: '#FFFFFF',
-    border: '#E0E0E0',
+    border: '#F0E2DC',
     tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
+    icon: '#9C8F8A',
+    tabIconDefault: '#9C8F8A',
     tabIconSelected: tintColorLight,
-    income: '#1565C0',
-    expense: '#C62828',
+    income: '#6E8FB5',
+    expense: '#C96B7B',
   },
   dark: {
-    text: '#ECEDEE',
-    subText: '#9BA1A6',
-    background: '#121212',
-    card: '#1E1E1E',
-    border: '#333333',
+    text: '#ECE7E4',
+    subText: '#A89F9B',
+    background: '#1A1716',
+    card: '#242020',
+    border: '#3A3331',
     tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
-    income: '#42A5F5',
-    expense: '#EF5350',
-  },
-};
+    icon: '#A89F9B',
+    tabIconDefault: '#A89F9B',
