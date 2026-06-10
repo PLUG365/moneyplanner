@@ -26,7 +26,11 @@ test("resolveTransactionAmountInput applies arithmetic expressions", () => {
   assert.equal(resolveTransactionAmountInput("12000-3000"), 9000);
   assert.equal(resolveTransactionAmountInput("12000*2"), 24000);
   assert.equal(resolveTransactionAmountInput("12000/2"), 6000);
-  assert.equal(resolveTransactionAmountInput(""), null);
   assert.equal(resolveTransactionAmountInput("12000/0"), null);
   assert.equal(resolveTransactionAmountInput("12000+"), null);
+});
+
+test("resolveTransactionAmountInput treats empty input as zero (issue #1)", () => {
+  assert.equal(resolveTransactionAmountInput(""), 0);
+  assert.equal(resolveTransactionAmountInput("0"), 0);
 });

@@ -13,5 +13,7 @@ export function formatTransactionAmountInputDisplay(input: string): string {
 }
 
 export function resolveTransactionAmountInput(input: string): number | null {
-  return resolveMoneyInput(input, { allowOperators: true, emptyValue: null });
+  // 未入力は0円として扱う（画面表示も「¥0」のため）。
+  // 金額0はメモがある場合のみ登録可（isValidTransactionAmount側で判定）。
+  return resolveMoneyInput(input, { allowOperators: true, emptyValue: 0 });
 }
