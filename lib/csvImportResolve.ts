@@ -60,7 +60,10 @@ export function resolveImportRows(
 
   const categoryByTypeName = new Map<string, ResolveMasterCategory>();
   for (const category of masters.categories) {
-    categoryByTypeName.set(`${category.type}\u0000${category.name.trim()}`, category);
+    categoryByTypeName.set(
+      `${category.type}\u0000${category.name.trim()}`,
+      category,
+    );
   }
 
   const breakdownByCategoryName = new Map<string, ResolveMasterBreakdown>();
@@ -85,7 +88,9 @@ export function resolveImportRows(
       : undefined;
     const breakdown =
       category && row.breakdownName
-        ? breakdownByCategoryName.get(`${category.id}\u0000${row.breakdownName}`)
+        ? breakdownByCategoryName.get(
+            `${category.id}\u0000${row.breakdownName}`,
+          )
         : undefined;
     const store = row.storeName ? storeByName.get(row.storeName) : undefined;
 

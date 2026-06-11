@@ -4,12 +4,12 @@ import * as FileSystem from "expo-file-system/legacy";
 import { CsvImportError, parseImportCsv } from "./csvImportParse";
 import { resolveImportRows } from "./csvImportResolve";
 import {
-  DEFAULT_ACCOUNT_ID,
-  getAccounts,
-  getAllBreakdowns,
-  getCategories,
-  getStoresByCategory,
-  importTransactions,
+    DEFAULT_ACCOUNT_ID,
+    getAccounts,
+    getAllBreakdowns,
+    getCategories,
+    getStoresByCategory,
+    importTransactions,
 } from "./firestore";
 
 export type CsvImportPrepareResult =

@@ -1,113 +1,113 @@
 import { router, useFocusEffect, type Href } from "expo-router";
 import React, {
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 import {
-    ActionSheetIOS,
-    Alert,
-    Animated,
-    InputAccessoryView,
-    Keyboard,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActionSheetIOS,
+  Alert,
+  Animated,
+  InputAccessoryView,
+  Keyboard,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import MoneyInputModal from "@/components/MoneyInputModal";
 import ProgressOverlay, {
-    type ProgressOverlayProgress,
+  type ProgressOverlayProgress,
 } from "@/components/ProgressOverlay";
 import { THEME_IDS, THEMES } from "@/constants/Themes";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useCollection } from "@/hooks/useFirestore";
 import {
-    ACCOUNT_DELETION_CONFIRMATION_TEXT,
-    isAccountDeletionConfirmationValid,
+  ACCOUNT_DELETION_CONFIRMATION_TEXT,
+  isAccountDeletionConfirmationValid,
 } from "@/lib/accountDeletion";
 import {
-    deleteCurrentUserAccount,
-    getCurrentUser,
-    reauthenticateCurrentUserWithApple,
-    signOut,
+  deleteCurrentUserAccount,
+  getCurrentUser,
+  reauthenticateCurrentUserWithApple,
+  signOut,
 } from "@/lib/auth";
 import { } from "@/lib/categoryOrdering";
 import { exportCSV } from "@/lib/csvExport";
 import { formatImportErrors, prepareCsvImport } from "@/lib/csvImport";
 import {
-    Account,
-    addAccount,
-    addBreakdown,
-    addCategory,
-    Breakdown,
-    Category,
-    DEFAULT_ACCOUNT_ID,
-    deleteAccountAndMoveToDefault,
-    deleteBreakdown,
-    deleteCategory,
-    deleteHouseholdDataAndCurrentUserProfile,
-    deleteMonthlyBudget,
-    getAccounts,
-    getAllTransactions,
-    getBreakdownsByCategory,
-    getCategories,
-    getCategoryDeletionImpact,
-    getMonthlyBudgets,
-    householdCollection,
-    mapAccount,
-    reconcileAccountBalancesFromTransactions,
-    resetCategoryAndBreakdownsToDefault,
-    resetFirestoreForDevelopment,
-    setMonthlyBudget,
-    TransactionType,
-    updateAccountBalance,
-    updateAccountName,
-    updateBreakdown,
-    updateCategory,
-    updateCategoryDisplayOrders,
+  Account,
+  addAccount,
+  addBreakdown,
+  addCategory,
+  Breakdown,
+  Category,
+  DEFAULT_ACCOUNT_ID,
+  deleteAccountAndMoveToDefault,
+  deleteBreakdown,
+  deleteCategory,
+  deleteHouseholdDataAndCurrentUserProfile,
+  deleteMonthlyBudget,
+  getAccounts,
+  getAllTransactions,
+  getBreakdownsByCategory,
+  getCategories,
+  getCategoryDeletionImpact,
+  getMonthlyBudgets,
+  householdCollection,
+  mapAccount,
+  reconcileAccountBalancesFromTransactions,
+  resetCategoryAndBreakdownsToDefault,
+  resetFirestoreForDevelopment,
+  setMonthlyBudget,
+  TransactionType,
+  updateAccountBalance,
+  updateAccountName,
+  updateBreakdown,
+  updateCategory,
+  updateCategoryDisplayOrders,
 } from "@/lib/firestore";
 import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
 import {
-    approveJoinRequest,
-    getHouseholdId,
-    getHouseholdMembers,
-    getInviteCode,
-    getPendingJoinRequests,
-    HouseholdJoinRequest,
-    regenerateInviteCode,
-    rejectJoinRequest,
-    removeHouseholdMember,
-    type HouseholdMember,
+  approveJoinRequest,
+  getHouseholdId,
+  getHouseholdMembers,
+  getInviteCode,
+  getPendingJoinRequests,
+  HouseholdJoinRequest,
+  regenerateInviteCode,
+  rejectJoinRequest,
+  removeHouseholdMember,
+  type HouseholdMember,
 } from "@/lib/household";
 import { waitForPendingWrite } from "@/lib/pendingWrite";
 import { buildBudgetInputMap } from "@/lib/settingsBudgetEditor";
 import { getMemberRemovalActionLabel } from "@/lib/settingsHouseholdMembers";
 import {
-    formatAccountBalanceInputDisplay,
-    formatBudgetInputDisplay,
-    getSettingsKeyboardAccessoryPreview,
-    resolveAccountBalanceInput,
-    resolveBudgetInput,
-    type SettingsKeyboardField,
+  formatAccountBalanceInputDisplay,
+  formatBudgetInputDisplay,
+  getSettingsKeyboardAccessoryPreview,
+  resolveAccountBalanceInput,
+  resolveBudgetInput,
+  type SettingsKeyboardField,
 } from "@/lib/settingsKeyboardAccessory";
 import {
-    buildAccountEditorDraft,
-    buildBreakdownEditorDraft,
-    buildCategoryEditorDraft,
-    buildEditorMeta,
-    buildEmptyAccountEditorDraft,
-    buildEmptyBreakdownEditorDraft,
-    buildEmptyCategoryEditorDraft,
-    type SettingsManagerTab,
+  buildAccountEditorDraft,
+  buildBreakdownEditorDraft,
+  buildCategoryEditorDraft,
+  buildEditorMeta,
+  buildEmptyAccountEditorDraft,
+  buildEmptyBreakdownEditorDraft,
+  buildEmptyCategoryEditorDraft,
+  type SettingsManagerTab,
 } from "@/lib/settingsManagerEditor";
 import { getSettingsWriteAvailability } from "@/lib/settingsWriteAvailability";
 
@@ -1510,7 +1510,9 @@ export default function SettingsScreen() {
                   {theme.label}
                 </Text>
                 {selected ? (
-                  <Text style={[styles.themeSelectedMark, { color: theme.tint }]}>
+                  <Text
+                    style={[styles.themeSelectedMark, { color: theme.tint }]}
+                  >
                     ✓ 使用中
                   </Text>
                 ) : null}
@@ -1545,164 +1547,172 @@ export default function SettingsScreen() {
           </Text>
         </TouchableOpacity>
         {householdSectionExpanded ? (
-        <View style={styles.collapsibleBody}>
-        <Text style={[styles.sectionDescription, { color: colors.subText }]}>
-          招待コードと世帯メンバーを確認できます。
-        </Text>
-        <View style={[styles.infoRow, { borderColor: colors.border }]}>
-          <Text style={[styles.infoLabel, { color: colors.subText }]}>
-            招待コード
-          </Text>
-          <Text style={[styles.infoValue, { color: colors.text }]}>
-            {householdLoading ? "読み込み中..." : (inviteCode ?? "未設定")}
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={[
-            styles.actionButton,
-            styles.inviteCodeButton,
-            isSettingsWriteDisabled && styles.disabledControl,
-          ]}
-          onPress={handleRegenerateInviteCode}
-          disabled={
-            isSettingsWriteDisabled ||
-            householdLoading ||
-            regeneratingInviteCode ||
-            !householdId
-          }
-        >
-          <Text style={styles.actionButtonText}>
-            {regeneratingInviteCode ? "再発行中..." : "招待コードを再発行"}
-          </Text>
-        </TouchableOpacity>
-        <Text style={[styles.groupLabel, { color: colors.subText }]}>
-          メンバー
-        </Text>
-        {householdMembers.length === 0 ? (
-          <Text style={[styles.emptyText, { color: colors.subText }]}>
-            メンバー情報がありません
-          </Text>
-        ) : (
-          householdMembers.map((member) => {
-            const isSelf = member.uid === currentUser?.uid;
-            return (
-              <View
-                key={member.uid}
-                style={[
-                  styles.memberRow,
-                  {
-                    borderColor: isSelf ? colors.tint : colors.border,
-                    backgroundColor: isSelf
-                      ? colors.tint + "12"
-                      : colors.background,
-                  },
-                ]}
-              >
-                <View style={styles.memberInfoWrap}>
-                  <View style={styles.memberNameRow}>
-                    <Text style={[styles.itemName, { color: colors.text }]}>
-                      {member.displayName}
-                    </Text>
-                    {isSelf ? (
-                      <Text
-                        style={[
-                          styles.selfBadge,
-                          {
-                            color: colors.tint,
-                            borderColor: colors.tint,
-                          },
-                        ]}
-                      >
-                        自分
-                      </Text>
-                    ) : null}
-                  </View>
-                  <Text
-                    style={[styles.memberUidText, { color: colors.subText }]}
-                    numberOfLines={1}
-                  >
-                    {member.uid}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[
-                    styles.memberActionButton,
-                    {
-                      borderColor: isSelf ? "#C98A4B" : "#C25E6E",
-                      backgroundColor: isSelf ? "#F9F0E4" : "#F9E9EC",
-                    },
-                    isSettingsWriteDisabled && styles.disabledControl,
-                  ]}
-                  onPress={() => handleRemoveMember(member)}
-                  disabled={isSettingsWriteDisabled}
-                >
-                  <Text
+          <View style={styles.collapsibleBody}>
+            <Text
+              style={[styles.sectionDescription, { color: colors.subText }]}
+            >
+              招待コードと世帯メンバーを確認できます。
+            </Text>
+            <View style={[styles.infoRow, { borderColor: colors.border }]}>
+              <Text style={[styles.infoLabel, { color: colors.subText }]}>
+                招待コード
+              </Text>
+              <Text style={[styles.infoValue, { color: colors.text }]}>
+                {householdLoading ? "読み込み中..." : (inviteCode ?? "未設定")}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                styles.inviteCodeButton,
+                isSettingsWriteDisabled && styles.disabledControl,
+              ]}
+              onPress={handleRegenerateInviteCode}
+              disabled={
+                isSettingsWriteDisabled ||
+                householdLoading ||
+                regeneratingInviteCode ||
+                !householdId
+              }
+            >
+              <Text style={styles.actionButtonText}>
+                {regeneratingInviteCode ? "再発行中..." : "招待コードを再発行"}
+              </Text>
+            </TouchableOpacity>
+            <Text style={[styles.groupLabel, { color: colors.subText }]}>
+              メンバー
+            </Text>
+            {householdMembers.length === 0 ? (
+              <Text style={[styles.emptyText, { color: colors.subText }]}>
+                メンバー情報がありません
+              </Text>
+            ) : (
+              householdMembers.map((member) => {
+                const isSelf = member.uid === currentUser?.uid;
+                return (
+                  <View
+                    key={member.uid}
                     style={[
-                      styles.memberActionText,
-                      { color: isSelf ? "#B36A00" : "#B71C1C" },
-                      isSettingsWriteDisabled && { color: colors.subText },
+                      styles.memberRow,
+                      {
+                        borderColor: isSelf ? colors.tint : colors.border,
+                        backgroundColor: isSelf
+                          ? colors.tint + "12"
+                          : colors.background,
+                      },
                     ]}
                   >
-                    {getMemberRemovalActionLabel(currentUser?.uid, member.uid)}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            );
-          })
-        )}
+                    <View style={styles.memberInfoWrap}>
+                      <View style={styles.memberNameRow}>
+                        <Text style={[styles.itemName, { color: colors.text }]}>
+                          {member.displayName}
+                        </Text>
+                        {isSelf ? (
+                          <Text
+                            style={[
+                              styles.selfBadge,
+                              {
+                                color: colors.tint,
+                                borderColor: colors.tint,
+                              },
+                            ]}
+                          >
+                            自分
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Text
+                        style={[
+                          styles.memberUidText,
+                          { color: colors.subText },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {member.uid}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.memberActionButton,
+                        {
+                          borderColor: isSelf ? "#C98A4B" : "#C25E6E",
+                          backgroundColor: isSelf ? "#F9F0E4" : "#F9E9EC",
+                        },
+                        isSettingsWriteDisabled && styles.disabledControl,
+                      ]}
+                      onPress={() => handleRemoveMember(member)}
+                      disabled={isSettingsWriteDisabled}
+                    >
+                      <Text
+                        style={[
+                          styles.memberActionText,
+                          { color: isSelf ? "#B36A00" : "#B71C1C" },
+                          isSettingsWriteDisabled && { color: colors.subText },
+                        ]}
+                      >
+                        {getMemberRemovalActionLabel(
+                          currentUser?.uid,
+                          member.uid,
+                        )}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })
+            )}
 
-        <Text style={[styles.groupLabel, { color: colors.subText }]}>
-          参加リクエスト
-        </Text>
-        {pendingJoinRequests.length === 0 ? (
-          <Text style={[styles.emptyText, { color: colors.subText }]}>
-            承認待ちの参加リクエストはありません
-          </Text>
-        ) : (
-          pendingJoinRequests.map((request) => (
-            <View
-              key={request.uid}
-              style={[styles.requestRow, { borderColor: colors.border }]}
-            >
-              <View style={styles.memberInfoWrap}>
-                <Text style={[styles.itemName, { color: colors.text }]}>
-                  {request.displayName}
-                </Text>
-                <Text
-                  style={[styles.memberUidText, { color: colors.subText }]}
-                  numberOfLines={1}
+            <Text style={[styles.groupLabel, { color: colors.subText }]}>
+              参加リクエスト
+            </Text>
+            {pendingJoinRequests.length === 0 ? (
+              <Text style={[styles.emptyText, { color: colors.subText }]}>
+                承認待ちの参加リクエストはありません
+              </Text>
+            ) : (
+              pendingJoinRequests.map((request) => (
+                <View
+                  key={request.uid}
+                  style={[styles.requestRow, { borderColor: colors.border }]}
                 >
-                  {request.uid}
-                </Text>
-              </View>
-              <View style={styles.requestActions}>
-                <TouchableOpacity
-                  style={[
-                    styles.requestButton,
-                    styles.requestApproveButton,
-                    isSettingsWriteDisabled && styles.disabledControl,
-                  ]}
-                  onPress={() => handleApproveJoinRequest(request)}
-                  disabled={isSettingsWriteDisabled}
-                >
-                  <Text style={styles.requestApproveText}>承認</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.requestButton,
-                    styles.requestRejectButton,
-                    isSettingsWriteDisabled && styles.disabledControl,
-                  ]}
-                  onPress={() => handleRejectJoinRequest(request)}
-                  disabled={isSettingsWriteDisabled}
-                >
-                  <Text style={styles.requestRejectText}>却下</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))
-        )}
-        </View>
+                  <View style={styles.memberInfoWrap}>
+                    <Text style={[styles.itemName, { color: colors.text }]}>
+                      {request.displayName}
+                    </Text>
+                    <Text
+                      style={[styles.memberUidText, { color: colors.subText }]}
+                      numberOfLines={1}
+                    >
+                      {request.uid}
+                    </Text>
+                  </View>
+                  <View style={styles.requestActions}>
+                    <TouchableOpacity
+                      style={[
+                        styles.requestButton,
+                        styles.requestApproveButton,
+                        isSettingsWriteDisabled && styles.disabledControl,
+                      ]}
+                      onPress={() => handleApproveJoinRequest(request)}
+                      disabled={isSettingsWriteDisabled}
+                    >
+                      <Text style={styles.requestApproveText}>承認</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.requestButton,
+                        styles.requestRejectButton,
+                        isSettingsWriteDisabled && styles.disabledControl,
+                      ]}
+                      onPress={() => handleRejectJoinRequest(request)}
+                      disabled={isSettingsWriteDisabled}
+                    >
+                      <Text style={styles.requestRejectText}>却下</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
         ) : null}
       </View>
 
@@ -1731,27 +1741,27 @@ export default function SettingsScreen() {
           </Text>
         </TouchableOpacity>
         {accountSectionExpanded ? (
-        <View style={styles.collapsibleBody}>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.signOutButton]}
-          onPress={handleSignOut}
-        >
-          <Text style={styles.actionButtonText}>ログアウト</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.actionButton,
-            styles.accountDeleteButton,
-            isSettingsWriteDisabled && styles.disabledControl,
-          ]}
-          onPress={handleDeleteAccountAndAllData}
-          disabled={isSettingsWriteDisabled || deletingAccount}
-        >
-          <Text style={styles.actionButtonText}>
-            {deletingAccount ? "削除中..." : "認証解除と全データ削除"}
-          </Text>
-        </TouchableOpacity>
-        </View>
+          <View style={styles.collapsibleBody}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.signOutButton]}
+              onPress={handleSignOut}
+            >
+              <Text style={styles.actionButtonText}>ログアウト</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                styles.accountDeleteButton,
+                isSettingsWriteDisabled && styles.disabledControl,
+              ]}
+              onPress={handleDeleteAccountAndAllData}
+              disabled={isSettingsWriteDisabled || deletingAccount}
+            >
+              <Text style={styles.actionButtonText}>
+                {deletingAccount ? "削除中..." : "認証解除と全データ削除"}
+              </Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
       </View>
 

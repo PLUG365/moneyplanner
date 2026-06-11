@@ -124,9 +124,7 @@ test("parseImportCsv accepts zero amount only when memo is present", () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0].amount, 0);
   assert.equal(rows[0].memo, "残高調整");
-  assert.deepEqual(errors, [
-    { line: 3, message: "金額0の行はメモが必要です" },
-  ]);
+  assert.deepEqual(errors, [{ line: 3, message: "金額0の行はメモが必要です" }]);
 });
 
 test("parseImportCsv reports wrong column count with line number", () => {
@@ -166,12 +164,9 @@ test("parseImportCsv allows empty account/category/breakdown/store/memo", () => 
 });
 
 test("parseImportCsv skips blank lines while preserving line numbers", () => {
-  const text = [
-    HEADER_V2,
-    "",
-    "2026-04-26,支出,家計,食費,,,100,",
-    "",
-  ].join("\n");
+  const text = [HEADER_V2, "", "2026-04-26,支出,家計,食費,,,100,", ""].join(
+    "\n",
+  );
 
   const { rows, errors } = parseImportCsv(text);
   assert.deepEqual(errors, []);
@@ -180,9 +175,10 @@ test("parseImportCsv skips blank lines while preserving line numbers", () => {
 });
 
 test("parseImportCsv trims surrounding whitespace in fields", () => {
-  const text = [HEADER_V2, "2026-04-26, 支出 , 家計 , 食費 ,, , 100 , めも "].join(
-    "\n",
-  );
+  const text = [
+    HEADER_V2,
+    "2026-04-26, 支出 , 家計 , 食費 ,, , 100 , めも ",
+  ].join("\n");
   const { rows, errors } = parseImportCsv(text);
   assert.deepEqual(errors, []);
   assert.equal(rows[0].type, "expense");
