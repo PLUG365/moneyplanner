@@ -4,6 +4,7 @@ export type CsvTransaction = {
   accountName: string;
   categoryName: string;
   breakdownName: string;
+  storeName: string;
   amount: number;
   memo: string;
 };
@@ -17,7 +18,7 @@ function escapeCsvField(value: string): string {
 }
 
 export function buildCsvText(transactions: CsvTransaction[]): string {
-  const header = "日付,種別,口座,カテゴリ,内訳,金額,メモ";
+  const header = "日付,種別,口座,カテゴリ,内訳,店舗,金額,メモ";
   const rows = transactions.map((t) => {
     const type = t.type === "income" ? "収入" : "支出";
     return [
@@ -26,6 +27,7 @@ export function buildCsvText(transactions: CsvTransaction[]): string {
       escapeCsvField(t.accountName ?? ""),
       escapeCsvField(t.categoryName ?? ""),
       escapeCsvField(t.breakdownName ?? ""),
+      escapeCsvField(t.storeName ?? ""),
       String(t.amount),
       escapeCsvField(t.memo ?? ""),
     ].join(",");

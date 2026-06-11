@@ -12,6 +12,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import HistorySearchPanel, {
   type HistorySearchDateTarget,
 } from "@/components/HistorySearchPanel";
+import ProgressOverlay, {
+  type ProgressOverlayProgress,
+} from "@/components/ProgressOverlay";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import {
   filterHistoryTransactions,
@@ -46,6 +49,30 @@ export default function DevUiPreviewScreen() {
   const [datePickerTarget, setDatePickerTarget] =
     useState<HistorySearchDateTarget | null>(null);
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+
+  const [demoProgress, setDemoProgress] =
+    useState<ProgressOverlayProgress | null>(null);
+  const [demoIndeterminateVisible, setDemoIndeterminateVisible] =
+    useState(false);
+
+  const startProgressDemo = () => {
+    const total = 4500;
+    let done = 0;
+    setDemoProgress({ done, total });
+    const timer = setInterval(() => {
+      done += 450;
+      setDemoProgress({ done: Math.min(done, total), total });
+      if (done >= total) {
+        clearInterval(timer);
+        setTimeout(() => setDemoProgress(null), 600);
+      }
+    }, 400);
+  };
+
+  const startIndeterminateDemo = () => {
+    setDemoIndeterminateVisible(true);
+    setTimeout(() => setDemoIndeterminateVisible(false), 3000);
+  };
 
   const options = useMemo(
     () =>
@@ -173,6 +200,24 @@ export default function DevUiPreviewScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
+        <Text style={[styles.resultTitle, { color: colors.subText }]}>
+          進捗オーバーレイ
+        </Text>
+        <View style={styles.demoButtonRow}>
+          <TouchableOpacity
+            style={[styles.demoButton, { backgroundColor: colors.tint }]}
+            onPress={startProgressDemo}
+          >
+            <Text style={styles.demoButtonText}>進捗バーあり</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.demoButton, { backgroundColor: colors.tint }]}
+            onPress={startIndeterminateDemo}
+          >
+            <Text style={styles.demoButtonText}>件数不明</Text>
+          </TouchableOpacity>
+        </View>
+
         <HistorySearchPanel
           colors={colors}
           type={searchType}
@@ -210,6 +255,16 @@ export default function DevUiPreviewScreen() {
           previewTransactions.map(renderTransaction)
         )}
       </ScrollView>
+
+      <ProgressOverlay
+        visible={demoProgress !== null}
+        message="CSVを取り込んでいます…"
+        progress={demoProgress}
+      />
+      <ProgressOverlay
+        visible={demoIndeterminateVisible}
+        message="処理しています…"
+      />
     </View>
   );
 }
@@ -233,6 +288,23 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: "700" },
   subtitle: { fontSize: 12, marginTop: 2 },
   content: { paddingTop: 12, paddingBottom: 40 },
+  demoButtonRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginHorizontal: 12,
+    marginBottom: 16,
+  },
+  demoButton: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  demoButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
   resultTitle: {
     marginHorizontal: 12,
     marginTop: 8,

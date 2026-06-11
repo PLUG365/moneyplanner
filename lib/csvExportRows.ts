@@ -7,6 +7,7 @@ type CsvExportTransaction = {
   accountName?: string | null;
   categoryName?: string | null;
   breakdownName?: string | null;
+  storeName?: string | null;
   amount: number;
   memo?: string | null;
 };
@@ -20,6 +21,7 @@ export function buildCsvRowsFromTransactions(
     accountName: transaction.accountName ?? "",
     categoryName: transaction.categoryName ?? "",
     breakdownName: transaction.breakdownName ?? "",
+    storeName: transaction.storeName ?? "",
     amount: transaction.amount,
     memo: transaction.memo ?? "",
   }));

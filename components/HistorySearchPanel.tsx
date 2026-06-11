@@ -19,6 +19,7 @@ import {
 export type HistorySearchDateTarget = "from" | "to";
 
 type HistorySearchPanelColors = {
+  mode: "light" | "dark";
   text: string;
   subText: string;
   card: string;
@@ -510,6 +511,7 @@ export default function HistorySearchPanel({
                 mode="date"
                 display={Platform.OS === "ios" ? "spinner" : "default"}
                 locale="ja-JP"
+                themeVariant={colors.mode}
                 onChange={(event, selected) => {
                   if (Platform.OS !== "ios") onDatePickerTargetChange(null);
                   if (event.type === "dismissed" || !selected) return;

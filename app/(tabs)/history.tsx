@@ -1225,6 +1225,7 @@ export default function HistoryScreen() {
                     mode="date"
                     display="spinner"
                     locale="ja-JP"
+                    themeVariant={colors.mode}
                     onChange={(_, selected) => {
                       if (selected) setCopyDate(formatDate(selected));
                     }}
@@ -1323,7 +1324,6 @@ export default function HistoryScreen() {
                 incomeColor={incomeColor}
                 expenseColor={expenseColor}
                 bottomInset={safeAreaInsets.bottom + 8}
-                amountInputUseNativeModal={false}
                 onAccountPickerOpen={handleEditAccountPickerOpen}
                 submitLabel="更新する"
                 onTypeChange={handleEditTypeChange}

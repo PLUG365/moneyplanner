@@ -12,6 +12,7 @@ test("buildCsvRowsFromTransactions maps Firestore transaction snapshots to CSV r
       accountName: "家計",
       categoryName: "食費",
       breakdownName: "夕食",
+      storeName: "スーパーA",
       memo: "弁当",
     },
   ]);
@@ -23,6 +24,7 @@ test("buildCsvRowsFromTransactions maps Firestore transaction snapshots to CSV r
       accountName: "家計",
       categoryName: "食費",
       breakdownName: "夕食",
+      storeName: "スーパーA",
       amount: 980,
       memo: "弁当",
     },
@@ -38,6 +40,7 @@ test("buildCsvRowsFromTransactions fills nullable snapshot fields with empty str
       accountName: undefined,
       categoryName: undefined,
       breakdownName: undefined,
+      storeName: undefined,
       memo: undefined,
     },
   ]);
@@ -49,6 +52,7 @@ test("buildCsvRowsFromTransactions fills nullable snapshot fields with empty str
       accountName: "",
       categoryName: "",
       breakdownName: "",
+      storeName: "",
       amount: 1200,
       memo: "",
     },

@@ -71,6 +71,7 @@ lib/
   auth.ts          # 認証ロジック
   household.ts     # 世帯管理
   csvExport.ts     # CSV生成・共有（expo-file-system/legacyを使用）
+  csvImport.ts     # CSV取り込み（検証: csvImportParse.ts / マスタ解決: csvImportResolve.ts）
 app/
   auth.tsx         # ログイン画面
   household.tsx    # 世帯作成/参加画面

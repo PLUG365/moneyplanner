@@ -397,12 +397,14 @@ moneyplanner/
 | `lib/household.ts`                                         | 世帯作成・招待コード・参加リクエスト・メンバー管理                    |
 | `lib/summaryAggregation.ts`                                | 月次/年次集計・予算進捗の純関数集計ロジック                           |
 | `lib/csvExport.ts`                                         | CSV生成・共有                                                         |
+| `lib/csvImport.ts`                                         | CSV取り込み（検証は `csvImportParse.ts`、マスタ解決は Resolve に分離）|
 | `lib/historySearch.ts`                                     | 履歴フィルタリング条件                                                |
 | `lib/moneyInput.ts`                                        | 金額入力の正規化・四則演算評価                                        |
 | `hooks/useFirestore.ts`                                    | Firestore リアルタイム購読 + fromCache メタデータ                     |
 | `components/TransactionEditor.tsx`                         | 記録/履歴編集の共通フォーム                                           |
 | `components/MoneyInputModal.tsx` / `NumericInputModal.tsx` | 金額・数値入力モーダル（共通部品）                                    |
 | `components/HistorySearchPanel.tsx`                        | 履歴の検索条件パネル                                                  |
+| `components/ProgressOverlay.tsx`                           | 重い処理用の進捗オーバーレイ（CSV取り込み等。件数表示/不明の2モード） |
 
 ---
 

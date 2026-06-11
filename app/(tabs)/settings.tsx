@@ -24,6 +24,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import MoneyInputModal from "@/components/MoneyInputModal";
+import ProgressOverlay, {
+    type ProgressOverlayProgress,
+} from "@/components/ProgressOverlay";
 import { THEME_IDS, THEMES } from "@/constants/Themes";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useCollection } from "@/hooks/useFirestore";
@@ -39,6 +42,7 @@ import {
 } from "@/lib/auth";
 import { } from "@/lib/categoryOrdering";
 import { exportCSV } from "@/lib/csvExport";
+import { formatImportErrors, prepareCsvImport } from "@/lib/csvImport";
 import {
     Account,
     addAccount,
@@ -187,6 +191,13 @@ export default function SettingsScreen() {
     useState<NumericInputTarget | null>(null);
 
   const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] =
+    useState<ProgressOverlayProgress | null>(null);
+  // 誤操作防止のため、破壊的操作を含むセクションはデフォルトで閉じる。
+  const [householdSectionExpanded, setHouseholdSectionExpanded] =
+    useState(false);
+  const [accountSectionExpanded, setAccountSectionExpanded] = useState(false);
   const [budgetInputs, setBudgetInputs] = useState<Record<string, string>>({});
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
@@ -891,6 +902,38 @@ export default function SettingsScreen() {
     resetAccountForm();
   };
 
+  // 一覧での誤タップ防止のため、削除は編集画面内からのみ行う。
+  // 既定口座は削除不可のため削除ボタン自体を出さない。
+  const editingAccount = accounts.find((a) => a.id === accountEditingId);
+  const editorDeleteVisible =
+    managerTab === "category"
+      ? categoryEditingId !== null
+      : managerTab === "breakdown"
+        ? breakdownEditingId !== null
+        : editingAccount !== undefined &&
+          !editingAccount.isDefault &&
+          editingAccount.id !== DEFAULT_ACCOUNT_ID;
+
+  const handleDeleteFromEditor = () => {
+    if (managerTab === "category") {
+      const target = categories.find((c) => c.id === categoryEditingId);
+      if (!target) return;
+      handleCloseEditorModal();
+      void handleDeleteCategory(target);
+      return;
+    }
+    if (managerTab === "breakdown") {
+      const target = breakdowns.find((b) => b.id === breakdownEditingId);
+      if (!target) return;
+      handleCloseEditorModal();
+      handleDeleteBreakdown(target);
+      return;
+    }
+    if (!editingAccount) return;
+    handleCloseEditorModal();
+    handleDeleteAccount(editingAccount);
+  };
+
   const handleExportCSV = async () => {
     setExporting(true);
     try {
@@ -920,6 +963,60 @@ export default function SettingsScreen() {
       }
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleImportCSV = async () => {
+    setImporting(true);
+    try {
+      const prepared = await prepareCsvImport();
+      if (prepared.status === "cancelled") {
+        return;
+      }
+      if (prepared.status === "encoding-error") {
+        Alert.alert("CSV取り込み", "UTF-8のCSVのみ対応しています");
+        return;
+      }
+      if (prepared.status === "format-error") {
+        Alert.alert(
+          "CSV取り込み",
+          `フォーマットエラーがあるため取り込みを中止しました\n\n${formatImportErrors(prepared.errors)}`,
+        );
+        return;
+      }
+
+      Alert.alert(
+        "CSV取り込み",
+        `${prepared.rowCount}件を取り込みますか？\n（口座残高は調整されません）`,
+        [
+          { text: "キャンセル", style: "cancel" },
+          {
+            text: "取り込む",
+            onPress: async () => {
+              setImporting(true);
+              setImportProgress({ done: 0, total: prepared.rowCount });
+              try {
+                const count = await prepared.execute((done, total) =>
+                  setImportProgress({ done, total }),
+                );
+                Alert.alert("CSV取り込み", `${count}件を取り込みました`);
+              } catch (error) {
+                const message =
+                  error instanceof Error ? `\n${error.message}` : "";
+                Alert.alert("エラー", `CSV取り込みに失敗しました${message}`);
+              } finally {
+                setImportProgress(null);
+                setImporting(false);
+              }
+            },
+          },
+        ],
+      );
+    } catch (error) {
+      const message = error instanceof Error ? `\n${error.message}` : "";
+      Alert.alert("エラー", `CSV取り込みに失敗しました${message}`);
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -1243,6 +1340,20 @@ export default function SettingsScreen() {
             {exporting ? "出力中..." : "CSVで書き出す"}
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.actionButton,
+            styles.importButton,
+            { backgroundColor: colors.tint },
+            isSettingsWriteDisabled && styles.disabledControl,
+          ]}
+          onPress={handleImportCSV}
+          disabled={importing || isSettingsWriteDisabled}
+        >
+          <Text style={styles.actionButtonText}>
+            {importing ? "取り込み中..." : "CSVを取り込む"}
+          </Text>
+        </TouchableOpacity>
 
         {__DEV__ && (
           <>
@@ -1415,7 +1526,26 @@ export default function SettingsScreen() {
           { backgroundColor: colors.card, borderColor: colors.border },
         ]}
       >
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>世帯</Text>
+        <TouchableOpacity
+          style={styles.collapsibleHeader}
+          onPress={() => setHouseholdSectionExpanded((value) => !value)}
+          activeOpacity={0.7}
+        >
+          <Text
+            style={[
+              styles.sectionTitle,
+              styles.collapsibleTitle,
+              { color: colors.text },
+            ]}
+          >
+            世帯
+          </Text>
+          <Text style={[styles.collapsibleChevron, { color: colors.subText }]}>
+            {householdSectionExpanded ? "▲ 閉じる" : "▼ 開く"}
+          </Text>
+        </TouchableOpacity>
+        {householdSectionExpanded ? (
+        <View style={styles.collapsibleBody}>
         <Text style={[styles.sectionDescription, { color: colors.subText }]}>
           招待コードと世帯メンバーを確認できます。
         </Text>
@@ -1572,6 +1702,8 @@ export default function SettingsScreen() {
             </View>
           ))
         )}
+        </View>
+        ) : null}
       </View>
 
       <View
@@ -1580,9 +1712,26 @@ export default function SettingsScreen() {
           { backgroundColor: colors.card, borderColor: colors.border },
         ]}
       >
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          アカウント
-        </Text>
+        <TouchableOpacity
+          style={styles.collapsibleHeader}
+          onPress={() => setAccountSectionExpanded((value) => !value)}
+          activeOpacity={0.7}
+        >
+          <Text
+            style={[
+              styles.sectionTitle,
+              styles.collapsibleTitle,
+              { color: colors.text },
+            ]}
+          >
+            アカウント
+          </Text>
+          <Text style={[styles.collapsibleChevron, { color: colors.subText }]}>
+            {accountSectionExpanded ? "▲ 閉じる" : "▼ 開く"}
+          </Text>
+        </TouchableOpacity>
+        {accountSectionExpanded ? (
+        <View style={styles.collapsibleBody}>
         <TouchableOpacity
           style={[styles.actionButton, styles.signOutButton]}
           onPress={handleSignOut}
@@ -1602,6 +1751,8 @@ export default function SettingsScreen() {
             {deletingAccount ? "削除中..." : "認証解除と全データ削除"}
           </Text>
         </TouchableOpacity>
+        </View>
+        ) : null}
       </View>
 
       <Modal
@@ -1778,8 +1929,8 @@ export default function SettingsScreen() {
                           ]}
                         >
                           {budgetInputs[cat.id]
-                            ? `¥${parseInt(budgetInputs[cat.id], 10).toLocaleString("ja-JP")}`
-                            : "未設定"}
+                            ? `予算 ¥${parseInt(budgetInputs[cat.id], 10).toLocaleString("ja-JP")}`
+                            : "予算なし"}
                         </Text>
                       ) : null}
                       <TouchableOpacity
@@ -1797,21 +1948,6 @@ export default function SettingsScreen() {
                           ]}
                         >
                           編集
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => handleDeleteCategory(cat)}
-                        disabled={isSettingsWriteDisabled}
-                      >
-                        <Text
-                          style={[
-                            styles.itemDelete,
-                            isSettingsWriteDisabled && {
-                              color: colors.subText,
-                            },
-                          ]}
-                        >
-                          削除
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -1908,21 +2044,6 @@ export default function SettingsScreen() {
                               編集
                             </Text>
                           </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => handleDeleteBreakdown(item)}
-                            disabled={isSettingsWriteDisabled}
-                          >
-                            <Text
-                              style={[
-                                styles.itemDelete,
-                                isSettingsWriteDisabled && {
-                                  color: colors.subText,
-                                },
-                              ]}
-                            >
-                              削除
-                            </Text>
-                          </TouchableOpacity>
                         </View>
                       ))
                     ) : (
@@ -1998,21 +2119,6 @@ export default function SettingsScreen() {
                           ]}
                         >
                           編集
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => handleDeleteAccount(account)}
-                        disabled={account.isDefault || isSettingsWriteDisabled}
-                      >
-                        <Text
-                          style={[
-                            styles.itemDelete,
-                            (account.isDefault || isSettingsWriteDisabled) && {
-                              color: colors.subText,
-                            },
-                          ]}
-                        >
-                          削除
                         </Text>
                       </TouchableOpacity>
                     </View>
@@ -2337,33 +2443,50 @@ export default function SettingsScreen() {
                     </Text>
                   </TouchableOpacity>
                 </View>
+                {editorDeleteVisible ? (
+                  <TouchableOpacity
+                    style={[
+                      styles.editorDeleteButton,
+                      isSettingsWriteDisabled && styles.disabledControl,
+                    ]}
+                    disabled={isSettingsWriteDisabled}
+                    onPress={handleDeleteFromEditor}
+                  >
+                    <Text style={styles.editorDeleteButtonText}>
+                      {managerTab === "category"
+                        ? "このカテゴリを削除"
+                        : managerTab === "breakdown"
+                          ? "この内訳を削除"
+                          : "この口座を削除"}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
               </ScrollView>
             </Animated.View>
           </View>
         )}
+        <MoneyInputModal
+          visible={numericInputTarget !== null}
+          title={
+            numericInputTarget === "account-balance" ? "初期残高" : "月次予算"
+          }
+          value={numericModalValue}
+          placeholder={
+            numericInputTarget === "account-balance" ? "¥0" : "予算なし"
+          }
+          colors={colors}
+          allowOperators
+          allowNegative={numericInputTarget === "account-balance"}
+          onChange={handleNumericModalChange}
+          emptyValue={numericInputTarget === "account-balance" ? 0 : null}
+          onInvalidExpression={() =>
+            Alert.alert("エラー", "計算式を確認してください")
+          }
+          onCancel={() => setNumericInputTarget(null)}
+          onConfirm={() => setNumericInputTarget(null)}
+          useNativeModal={false}
+        />
       </Modal>
-
-      <MoneyInputModal
-        visible={numericInputTarget !== null}
-        title={
-          numericInputTarget === "account-balance" ? "初期残高" : "月次予算"
-        }
-        value={numericModalValue}
-        placeholder={
-          numericInputTarget === "account-balance" ? "¥0" : "予算なし"
-        }
-        colors={colors}
-        allowOperators
-        allowNegative={numericInputTarget === "account-balance"}
-        onChange={handleNumericModalChange}
-        emptyValue={numericInputTarget === "account-balance" ? 0 : null}
-        onInvalidExpression={() =>
-          Alert.alert("エラー", "計算式を確認してください")
-        }
-        onCancel={() => setNumericInputTarget(null)}
-        onConfirm={() => setNumericInputTarget(null)}
-        useNativeModal={false}
-      />
 
       {Platform.OS === "ios" ? (
         <InputAccessoryView nativeID={KEYBOARD_ACCESSORY_VIEW_ID}>
@@ -2407,6 +2530,12 @@ export default function SettingsScreen() {
           </View>
         </InputAccessoryView>
       ) : null}
+
+      <ProgressOverlay
+        visible={importProgress !== null}
+        message="CSVを取り込んでいます…"
+        progress={importProgress}
+      />
     </ScrollView>
   );
 }
@@ -2421,6 +2550,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: { fontSize: 16, fontWeight: "700", marginBottom: 8 },
+  collapsibleHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  collapsibleTitle: { marginBottom: 0 },
+  collapsibleChevron: { fontSize: 12, fontWeight: "600" },
+  collapsibleBody: { marginTop: 12 },
   sectionDescription: { fontSize: 13, marginBottom: 12, lineHeight: 20 },
   themeGrid: {
     flexDirection: "row",
@@ -2453,6 +2590,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   disabledControl: { opacity: 0.45 },
+  importButton: {
+    marginTop: 10,
+  },
   devResetButton: {
     backgroundColor: "#B71C1C",
     marginTop: 10,
@@ -2634,7 +2774,19 @@ const styles = StyleSheet.create({
   categoryDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
   itemName: { flex: 1, fontSize: 15 },
   itemAction: { fontSize: 13, fontWeight: "600", marginRight: 10 },
-  itemDelete: { fontSize: 13, color: "#C62828", fontWeight: "600" },
+  editorDeleteButton: {
+    marginTop: 28,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#C25E6E",
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  editorDeleteButtonText: {
+    color: "#C62828",
+    fontSize: 14,
+    fontWeight: "600",
+  },
   budgetDisplayText: {
     fontSize: 12,
     marginRight: 8,

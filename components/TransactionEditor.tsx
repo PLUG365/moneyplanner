@@ -58,6 +58,7 @@ type CategoryModalStep = "category" | "breakdown";
 const ACCOUNT_PICKER_PRELOAD_TIMEOUT_MS = 900;
 
 type ThemeColors = {
+  mode: "light" | "dark";
   text: string;
   subText: string;
   background: string;
@@ -83,7 +84,6 @@ type Props = {
   incomeColor: string;
   expenseColor: string;
   bottomInset?: number;
-  amountInputUseNativeModal?: boolean;
   onAccountPickerOpen?: () => void | Promise<unknown>;
   submitLabel: string;
   onTypeChange: (type: TransactionType) => void;
@@ -144,7 +144,6 @@ export default function TransactionEditor({
   incomeColor,
   expenseColor,
   bottomInset = 0,
-  amountInputUseNativeModal = true,
   onAccountPickerOpen,
   submitLabel,
   onTypeChange,
@@ -474,6 +473,7 @@ export default function TransactionEditor({
                     mode="date"
                     display="spinner"
                     locale="ja-JP"
+                    themeVariant={colors.mode}
                     onChange={(_, selected) => {
                       if (selected) onDateChange(formatDate(selected));
                     }}
@@ -597,7 +597,6 @@ export default function TransactionEditor({
           }
           onCancel={() => setShowAmountModal(false)}
           onConfirm={() => setShowAmountModal(false)}
-          useNativeModal={amountInputUseNativeModal}
         />
       </View>
 

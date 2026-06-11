@@ -949,6 +949,12 @@ export async function getBreakdownsByCategory(
     });
 }
 
+export async function getAllBreakdowns(): Promise<Breakdown[]> {
+  const hDoc = await householdDoc();
+  const snap = await hDoc.collection("breakdowns").get();
+  return snap.docs.map((doc) => mapBreakdown(doc.id, doc.data()));
+}
+
 export async function addBreakdown(
   categoryId: string,
   name: string,
@@ -1077,6 +1083,60 @@ export async function addTransaction(
 
   await batch.commit();
   return txRef.id;
+}
+
+export type ImportTransactionRow = {
+  date: string;
+  amount: number;
+  type: TransactionType;
+  accountId: string;
+  categoryId: string | null;
+  breakdownId: string | null;
+  storeId: string | null;
+  memo: string;
+  metadata: TransactionWriteMetadataInput;
+};
+
+/** CSVインポート用の一括書込。口座残高・店舗使用履歴は意図的に更新しない
+ *  （残高は事後に既存の残高再計算機能で調整する前提）。
+ *  onProgress はバッチコミットごとに（書込済件数, 総件数）で呼ばれる。 */
+export async function importTransactions(
+  rows: ImportTransactionRow[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<number> {
+  const hDoc = await householdDoc();
+  const uid = getCurrentUser()?.uid ?? "";
+  const BATCH_LIMIT = 450;
+
+  for (let start = 0; start < rows.length; start += BATCH_LIMIT) {
+    const chunk = rows.slice(start, start + BATCH_LIMIT);
+    const batch = firestore().batch();
+    for (const row of chunk) {
+      const metadata = buildTransactionWriteMetadata(row.metadata);
+      batch.set(hDoc.collection("transactions").doc(), {
+        date: row.date,
+        amount: row.amount,
+        type: row.type,
+        accountId: row.accountId,
+        categoryId: row.categoryId,
+        breakdownId: row.breakdownId,
+        storeId: row.storeId,
+        accountNameSnapshot: metadata.accountName,
+        categoryNameSnapshot: metadata.categoryName,
+        categoryColorSnapshot: metadata.categoryColor,
+        breakdownNameSnapshot: metadata.breakdownName,
+        storeNameSnapshot: metadata.storeName,
+        memo: row.memo,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+        createdBy: uid,
+      });
+    }
+    await batch.commit();
+    onProgress?.(Math.min(start + BATCH_LIMIT, rows.length), rows.length);
+  }
+
+  return rows.length;
 }
 
 export async function updateTransaction(

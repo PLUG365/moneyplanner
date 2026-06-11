@@ -15,14 +15,18 @@ test("buildCsvText emits UTF-8 BOM and CRLF rows for Excel", () => {
     accountName: "家計",
     categoryName: "食費",
     breakdownName: "晩ご飯",
+    storeName: "スーパーA",
     memo: "スーパー",
   };
 
   const csv = buildCsvText([tx]);
 
   assert.equal(csv.startsWith("\uFEFF"), true);
-  assert.match(csv, /^\uFEFF日付,種別,口座,カテゴリ,内訳,金額,メモ\r\n/);
-  assert.match(csv, /2026-03-30,支出,家計,食費,晩ご飯,1200,スーパー\r\n$/);
+  assert.match(csv, /^\uFEFF日付,種別,口座,カテゴリ,内訳,店舗,金額,メモ\r\n/);
+  assert.match(
+    csv,
+    /2026-03-30,支出,家計,食費,晩ご飯,スーパーA,1200,スーパー\r\n$/,
+  );
 });
 
 test("buildCsvText quotes fields containing comma or quote", () => {
@@ -33,6 +37,7 @@ test("buildCsvText quotes fields containing comma or quote", () => {
     accountName: "現金,財布",
     categoryName: "臨時収入",
     breakdownName: "",
+    storeName: "",
     memo: '"特別"ボーナス',
   };
 
@@ -50,6 +55,7 @@ test("buildCsvUtf8Base64 emits UTF-8 BOM bytes (EF BB BF)", () => {
     accountName: "家計",
     categoryName: "食費",
     breakdownName: "晩ご飯",
+    storeName: "",
     memo: "スーパー",
   };
 
