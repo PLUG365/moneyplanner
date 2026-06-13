@@ -47,12 +47,12 @@ test("resolveImportRows links all entities on exact name match", () => {
   assert.equal(resolved.memo, "弁当");
 });
 
-test("resolveImportRows falls back to default account and keeps name snapshot", () => {
+test("resolveImportRows leaves unmatched account as null with snapshot name", () => {
   const [resolved] = resolveImportRows(
     [makeRow({ accountName: "存在しない口座" })],
     masters,
   );
-  assert.equal(resolved.accountId, "default");
+  assert.equal(resolved.accountId, null);
   assert.equal(resolved.accountName, "存在しない口座");
 });
 

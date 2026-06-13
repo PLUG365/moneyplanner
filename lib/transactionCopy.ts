@@ -7,7 +7,7 @@ type CopySource = {
   categoryName: string;
   breakdownId: string | null;
   breakdownName: string;
-  accountId: string;
+  accountId: string | null;
   accountName: string;
 };
 

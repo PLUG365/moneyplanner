@@ -38,7 +38,7 @@ export type ResolvedImportRow = {
   type: TransactionType;
   amount: number;
   memo: string;
-  accountId: string;
+  accountId: string | null;
   categoryId: string | null;
   breakdownId: string | null;
   storeId: string | null;
@@ -100,7 +100,11 @@ export function resolveImportRows(
       type: row.type,
       amount: row.amount,
       memo: row.memo,
-      accountId: account?.id ?? masters.defaultAccountId,
+      // 口座名が空: 既定口座へ。名前あり: 一致→そのID / 不一致→null（カテゴリ等と同じく
+      // 表示名スナップショットのみ保持し、既定口座へ偽紐付けしない）。
+      accountId: row.accountName
+        ? (account?.id ?? null)
+        : masters.defaultAccountId,
       categoryId: category?.id ?? null,
       breakdownId: breakdown?.id ?? null,
       storeId: store?.id ?? null,

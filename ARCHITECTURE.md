@@ -109,7 +109,7 @@ erDiagram
         string date "YYYY-MM-DD"
         number amount
         string type "income / expense"
-        string accountId FK
+        string accountId FK "null可: マスタ非紐付け（表示はaccountNameSnapshot）"
         string accountNameSnapshot
         string categoryId FK
         string categoryNameSnapshot

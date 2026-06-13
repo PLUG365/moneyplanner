@@ -90,6 +90,7 @@ Firestoreのコレクション/フィールド定義は [ARCHITECTURE.md](ARCHIT
 - 集計時のカテゴリ表示名・色は、`categoryId` が現行カテゴリに存在する場合は現行マスタを使い、カテゴリ削除済みまたは `categoryId` が `null` の場合は取引スナップショットへフォールバックする。スナップショットもない場合は「未分類」とする
 - 内訳削除時は過去取引の `breakdownNameSnapshot` を空にせず、`breakdownId` の参照解除に留める。過去取引の内訳名は履歴・CSV上の証跡として残す
 - 口座名変更時は、口座別の表示・集計で現在名に揃えるため、既存取引の `accountNameSnapshot` を更新する方針とする
+- `accountId` はカテゴリ等と同様に `null`（マスタ非紐付け）を取り得る（インポートで未知の口座名だった場合）。`null` の取引は表示を `accountNameSnapshot` にフォールバックし、残高再計算では既定口座へ合算する（意図的挙動。[docs/decisions/import-unknown-account-nullable.md](docs/decisions/import-unknown-account-nullable.md)）
 
 実装状況:
 
@@ -109,7 +110,7 @@ Firestoreのコレクション/フィールド定義は [ARCHITECTURE.md](ARCHIT
   - 全行を事前検証し、エラーが1件でもあれば行番号付きで表示して全件中断（部分取り込みなし）
   - 検証: 日付は実在日のYYYY-MM-DD、種別は収入/支出、金額は0以上の整数（0円はメモ必須＝記録画面の登録ルールと同一。エクスポート→再取り込みの往復を保証するため）。口座/カテゴリ/内訳/店舗/メモは空欄許容
   - カテゴリ/内訳/店舗はtrim後の名前完全一致でマスタ紐付け（カテゴリは種別も一致条件、内訳はカテゴリ配下のみ）。不一致は `id=null`＋名前スナップショットのみで、マスタは自動作成しない
-  - 口座は名前一致、不一致はデフォルト口座（`DEFAULT_ACCOUNT_ID`）に紐付けつつCSVの口座名をスナップショット保持
+  - 口座は名前一致でマスタ紐付け。口座名が空の行はデフォルト口座（`DEFAULT_ACCOUNT_ID`）に紐付ける。口座名ありで不一致の場合はカテゴリ等と同様に `accountId=null`＋名前スナップショットのみとし、デフォルト口座へ偽紐付けしない（詳細は [docs/decisions/import-unknown-account-nullable.md](docs/decisions/import-unknown-account-nullable.md)）
   - 取り込みでは口座残高・店舗の使用履歴（`lastUsedAt` / `storeCategoryUsage`）を更新しない。残高は事後に既存の残高再計算で調整する
   - 重複検出なし（同一行の再取り込みは重複登録される）。文字コードはUTF-8のみ対応（Shift_JISは拒否）
   - Firestoreへは450件単位のバッチ書き込み（`importTransactions`）。バッチごとの進捗を共通の進捗オーバーレイ（`components/ProgressOverlay.tsx`）で表示

@@ -102,7 +102,9 @@ export interface Transaction {
   date: string;
   amount: number;
   type: TransactionType;
-  accountId: string;
+  // null = どの口座マスタにも紐づかない（インポートで未知の口座名だった場合等）。
+  // 表示は accountName スナップショットを使う。categoryId 等と同じ扱い。
+  accountId: string | null;
   accountName: string;
   categoryId: string | null;
   categoryName: string;
@@ -362,7 +364,7 @@ export function mapTransaction(
     date: data.date,
     amount: data.amount,
     type: data.type as TransactionType,
-    accountId: data.accountId ?? DEFAULT_ACCOUNT_ID,
+    accountId: data.accountId ?? null,
     accountName: data.accountNameSnapshot || DEFAULT_ACCOUNT_NAME,
     categoryId: data.categoryId ?? null,
     categoryName: data.categoryNameSnapshot || "未分類",
@@ -1089,7 +1091,7 @@ export type ImportTransactionRow = {
   date: string;
   amount: number;
   type: TransactionType;
-  accountId: string;
+  accountId: string | null;
   categoryId: string | null;
   breakdownId: string | null;
   storeId: string | null;
