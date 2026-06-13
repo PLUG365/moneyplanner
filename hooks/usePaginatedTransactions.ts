@@ -1,7 +1,13 @@
 import { FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { householdCollection, mapTransaction, Transaction } from "@/lib/firestore";
+import {
+    householdCollection,
+    mapTransaction,
+    readHouseholdDataVersion,
+    Transaction,
+} from "@/lib/firestore";
+import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
 
 export const TRANSACTIONS_PAGE_SIZE = 100;
 
@@ -17,7 +23,39 @@ export type PaginatedTransactions = {
   hasMore: boolean;
   loadMore: () => void;
   refresh: () => void;
+  refreshIfStale: () => void;
 };
+
+type CachedPage = {
+  items: Transaction[];
+  version: DataVersion;
+  lastDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot | null;
+  hasMore: boolean;
+};
+
+const firstPageCache = new Map<string, CachedPage>();
+const currentVersionByHousehold = new Map<string, DataVersion>();
+
+function buildScopeKey(
+  householdId: string,
+  range: PaginatedTransactionsRange,
+): string {
+  return `${householdId}:transactions:history:${range.from ?? ""}:${
+    range.to ?? ""
+  }`;
+}
+
+async function getQuerySnapshot(
+  query: FirebaseFirestoreTypes.Query,
+  source: "cache" | "server",
+): Promise<FirebaseFirestoreTypes.QuerySnapshot | null> {
+  try {
+    return await query.get({ source });
+  } catch (error) {
+    if (source === "cache") return null;
+    throw error;
+  }
+}
 
 /**
  * 取引コレクションを日付降順でカーソルページング取得する。
@@ -40,6 +78,7 @@ export function usePaginatedTransactions(
     useRef<FirebaseFirestoreTypes.QueryDocumentSnapshot | null>(null);
   // 多重実行防止（onEndReached連打・refresh重複など）
   const inFlightRef = useRef(false);
+  const scopeKey = householdId ? buildScopeKey(householdId, range) : null;
 
   const buildBaseQuery =
     useCallback((): FirebaseFirestoreTypes.Query | null => {
@@ -53,28 +92,111 @@ export function usePaginatedTransactions(
       return query.orderBy("date", "desc");
     }, [householdId, range.from, range.to]);
 
-  const refresh = useCallback(async () => {
-    const base = buildBaseQuery();
-    if (!base) {
-      setItems([]);
-      setHasMore(false);
-      lastDocRef.current = null;
-      return;
-    }
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
-    setLoadingInitial(true);
-    try {
-      const snap = await base.limit(TRANSACTIONS_PAGE_SIZE).get();
-      setItems(snap.docs.map((doc) => mapTransaction(doc.id, doc.data())));
-      lastDocRef.current =
-        snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
-      setHasMore(snap.docs.length === TRANSACTIONS_PAGE_SIZE);
-    } finally {
-      setLoadingInitial(false);
-      inFlightRef.current = false;
-    }
-  }, [buildBaseQuery]);
+  const refresh = useCallback(
+    async (options?: { forceServer?: boolean; refreshMarker?: boolean }) => {
+      const base = buildBaseQuery();
+      if (!base) {
+        setItems([]);
+        setHasMore(false);
+        lastDocRef.current = null;
+        return;
+      }
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      setLoadingInitial(true);
+      try {
+        let currentVersion = householdId
+          ? currentVersionByHousehold.get(householdId)
+          : undefined;
+        if (householdId && options?.refreshMarker) {
+          currentVersion = await readHouseholdDataVersion(
+            householdId,
+            "server",
+          );
+          currentVersionByHousehold.set(householdId, currentVersion);
+        } else if (householdId && currentVersion === undefined) {
+          currentVersion = await readHouseholdDataVersion(
+            householdId,
+            "server",
+          );
+          currentVersionByHousehold.set(householdId, currentVersion);
+        }
+        const comparableVersion = currentVersion ?? null;
+
+        const cached = scopeKey ? firstPageCache.get(scopeKey) : undefined;
+        if (cached && !options?.forceServer) {
+          setItems(cached.items);
+          lastDocRef.current = cached.lastDoc;
+          setHasMore(cached.hasMore);
+          if (
+            !shouldReadServerForScope({
+              hasCachedData: true,
+              scopeVersion: cached.version,
+              currentDataVersion: comparableVersion,
+            })
+          ) {
+            return;
+          }
+        }
+
+        if (!options?.forceServer) {
+          const cacheSnap = await getQuerySnapshot(
+            base.limit(TRANSACTIONS_PAGE_SIZE),
+            "cache",
+          );
+          if (cacheSnap && cacheSnap.docs.length > 0) {
+            const cachedItems = cacheSnap.docs.map((doc) =>
+              mapTransaction(doc.id, doc.data()),
+            );
+            const page: CachedPage = {
+              items: cachedItems,
+              version: currentVersion ?? cached?.version ?? null,
+              lastDoc:
+                cacheSnap.docs.length > 0
+                  ? cacheSnap.docs[cacheSnap.docs.length - 1]
+                  : null,
+              hasMore: cacheSnap.docs.length === TRANSACTIONS_PAGE_SIZE,
+            };
+            if (scopeKey) firstPageCache.set(scopeKey, page);
+            setItems(page.items);
+            lastDocRef.current = page.lastDoc;
+            setHasMore(page.hasMore);
+            if (
+              !shouldReadServerForScope({
+                hasCachedData: true,
+                scopeVersion: page.version,
+                currentDataVersion: comparableVersion,
+              })
+            ) {
+              return;
+            }
+          }
+        }
+
+        const snap = await getQuerySnapshot(
+          base.limit(TRANSACTIONS_PAGE_SIZE),
+          "server",
+        );
+        const docs = snap?.docs ?? [];
+        const nextItems = docs.map((doc) => mapTransaction(doc.id, doc.data()));
+        setItems(nextItems);
+        lastDocRef.current = docs.length > 0 ? docs[docs.length - 1] : null;
+        setHasMore(docs.length === TRANSACTIONS_PAGE_SIZE);
+        if (scopeKey) {
+          firstPageCache.set(scopeKey, {
+            items: nextItems,
+            version: currentVersion ?? null,
+            lastDoc: lastDocRef.current,
+            hasMore: docs.length === TRANSACTIONS_PAGE_SIZE,
+          });
+        }
+      } finally {
+        setLoadingInitial(false);
+        inFlightRef.current = false;
+      }
+    },
+    [buildBaseQuery, householdId, scopeKey],
+  );
 
   const loadMore = useCallback(async () => {
     if (inFlightRef.current || !hasMore) return;
@@ -115,7 +237,10 @@ export function usePaginatedTransactions(
     void loadMore();
   }, [loadMore]);
   const refreshPublic = useCallback(() => {
-    void refresh();
+    void refresh({ forceServer: true, refreshMarker: true });
+  }, [refresh]);
+  const refreshIfStalePublic = useCallback(() => {
+    void refresh({ refreshMarker: true });
   }, [refresh]);
 
   return {
@@ -125,5 +250,6 @@ export function usePaginatedTransactions(
     hasMore,
     loadMore: loadMorePublic,
     refresh: refreshPublic,
+    refreshIfStale: refreshIfStalePublic,
   };
 }

@@ -23,6 +23,7 @@ import ProgressOverlay from "@/components/ProgressOverlay";
 import TransactionEditor from "@/components/TransactionEditor";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useCachedTransactions } from "@/hooks/useCachedTransactions";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import { usePaginatedTransactions } from "@/hooks/usePaginatedTransactions";
 import {
@@ -37,7 +38,6 @@ import {
     mapAccount,
     mapBreakdown,
     mapCategory,
-    mapTransaction,
     Transaction,
     TransactionType,
     updateTransactionFromPrevious,
@@ -194,24 +194,30 @@ export default function HistoryScreen() {
   );
   // 履歴リストは全件購読すると大量データでJSスレッドが固まるため、
   // 日付降順のカーソルページング（初回100件＋スクロールで追加）で読む。
-  const paginatedTransactions = usePaginatedTransactions(householdId, {
+  const {
+    items: paginatedTransactionItems,
+    loadingInitial: paginatedLoadingInitial,
+    loadingMore: paginatedLoadingMore,
+    loadMore: loadMorePaginatedTransactions,
+    refresh: refreshPaginatedTransactions,
+    refreshIfStale: refreshPaginatedTransactionsIfStale,
+  } = usePaginatedTransactions(householdId, {
     from: historySearchFromDate,
     to: historySearchToDate,
   });
 
-  const monthTransactionsSubscription = useCollection<Transaction>(
-    buildFirestoreQueryKey(householdId, "transactions", monthScope),
-    () => {
-      if (!householdId) return null;
-      const from = fromYearMonthDateString(year, month);
-      const to = toYearMonthDateString(year, month);
-      return householdCollection(householdId, "transactions")
-        .where("date", ">=", from)
-        .where("date", "<=", to)
-        .orderBy("date", "desc");
+  const {
+    data: monthTransactionData,
+    refresh: refreshMonthTransactions,
+    refreshIfStale: refreshMonthTransactionsIfStale,
+  } = useCachedTransactions(householdId, {
+    scopeKey: `history-month:${monthScope}`,
+    range: {
+      from: fromYearMonthDateString(year, month),
+      to: toYearMonthDateString(year, month),
     },
-    mapTransaction,
-  );
+    orderByDateDesc: true,
+  });
   const categorySubscription = useCollection<Category>(
     buildFirestoreQueryKey(householdId, "categories", "history-edit"),
     () => (householdId ? householdCollection(householdId, "categories") : null),
@@ -224,13 +230,13 @@ export default function HistoryScreen() {
   );
 
   const listTransactions = useMemo(
-    () => buildHistoryListTransactions(paginatedTransactions.items),
-    [paginatedTransactions.items],
+    () => buildHistoryListTransactions(paginatedTransactionItems),
+    [paginatedTransactionItems],
   );
 
   const calendarTransactions = useMemo(
-    () => buildHistoryListTransactions(monthTransactionsSubscription.data),
-    [monthTransactionsSubscription.data],
+    () => buildHistoryListTransactions(monthTransactionData),
+    [monthTransactionData],
   );
 
   const filteredListTransactions = useMemo(
@@ -350,11 +356,12 @@ export default function HistoryScreen() {
   }, [load]);
 
   // 履歴リストはリアルタイム購読ではなくページング取得のため、
-  // タブにフォーカスするたびに先頭ページを取り直して最新（他タブ/家族の追加分）を反映する。
+  // タブにフォーカスするたびにマーカーだけ確認し、変更がある場合のみ先頭ページを取り直す。
   useFocusEffect(
     useCallback(() => {
-      paginatedTransactions.refresh();
-    }, [paginatedTransactions.refresh]),
+      refreshPaginatedTransactionsIfStale();
+      refreshMonthTransactionsIfStale();
+    }, [refreshMonthTransactionsIfStale, refreshPaginatedTransactionsIfStale]),
   );
 
   useEffect(() => {
@@ -478,7 +485,8 @@ export default function HistoryScreen() {
               deleteTransactionFromPrevious(tx),
               WRITE_ACK_TIMEOUT_MS,
             );
-            paginatedTransactions.refresh();
+            refreshPaginatedTransactions();
+            refreshMonthTransactions();
           },
         },
       ],
@@ -606,7 +614,8 @@ export default function HistoryScreen() {
     setShowBulkCopyModal(false);
     setShowCopyDatePicker(false);
     exitSelectionMode();
-    paginatedTransactions.refresh();
+    refreshPaginatedTransactions();
+    refreshMonthTransactions();
     await load();
 
     setUncopiedRecords(failed);
@@ -780,7 +789,8 @@ export default function HistoryScreen() {
     setShowEditModal(false);
     setEditingTxId(null);
     setEditingTx(null);
-    paginatedTransactions.refresh();
+    refreshPaginatedTransactions();
+    refreshMonthTransactions();
   };
 
   const handleEditAccountPickerOpen = async () => {
@@ -1045,27 +1055,24 @@ export default function HistoryScreen() {
             isSelectionMode && { paddingBottom: 180 },
           ]}
           onScrollBeginDrag={handleHistoryScrollBeginDrag}
-          onEndReached={() => paginatedTransactions.loadMore()}
+          onEndReached={loadMorePaginatedTransactions}
           onEndReachedThreshold={0.4}
           refreshControl={
             <RefreshControl
-              refreshing={
-                paginatedTransactions.loadingInitial &&
-                transactions.length > 0
-              }
-              onRefresh={() => paginatedTransactions.refresh()}
+              refreshing={paginatedLoadingInitial && transactions.length > 0}
+              onRefresh={refreshPaginatedTransactionsIfStale}
               tintColor={colors.tint}
             />
           }
           ListEmptyComponent={
-            paginatedTransactions.loadingInitial ? null : (
+            paginatedLoadingInitial ? null : (
               <Text style={[styles.emptyText, { color: colors.subText }]}>
                 記録がありません
               </Text>
             )
           }
           ListFooterComponent={
-            paginatedTransactions.loadingMore ? (
+            paginatedLoadingMore ? (
               <Text style={[styles.emptyText, { color: colors.subText }]}>
                 読み込み中…
               </Text>
@@ -1449,9 +1456,7 @@ export default function HistoryScreen() {
       </Modal>
 
       <ProgressOverlay
-        visible={
-          paginatedTransactions.loadingInitial && transactions.length === 0
-        }
+        visible={paginatedLoadingInitial && transactions.length === 0}
         message="読み込み中…"
       />
     </View>

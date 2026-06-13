@@ -1,5 +1,5 @@
-import { router, type Href } from "expo-router";
-import React, { useMemo, useState } from "react";
+import { router, useFocusEffect, type Href } from "expo-router";
+import React, { useCallback, useMemo, useState } from "react";
 import {
     ScrollView,
     StyleSheet,
@@ -11,6 +11,7 @@ import {
 import MonthPickerModal from "@/components/MonthPickerModal";
 import ProgressOverlay from "@/components/ProgressOverlay";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useCachedTransactions } from "@/hooks/useCachedTransactions";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import {
     BudgetDefinition,
@@ -19,18 +20,12 @@ import {
     householdCollection,
     mapBudgetDefinition,
     mapCategory,
-    mapTransaction,
     MonthlyCategorySummary,
     MonthlyTotal,
-    Transaction,
 } from "@/lib/firestore";
 import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
 import { buildHistoryDrilldownParams } from "@/lib/historyDrilldown";
-import {
-    formatYearMonthLabel,
-    fromYearMonthDate,
-    shiftYearMonth
-} from "@/lib/monthPicker";
+import { formatYearMonthLabel, shiftYearMonth } from "@/lib/monthPicker";
 import {
     buildBudgetStatusesFromData,
     buildMonthCategorySummaryFromTransactions,
@@ -68,16 +63,15 @@ export default function SummaryScreen() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
   const yearScope = String(year);
-  const transactionSubscription = useCollection<Transaction>(
-    buildFirestoreQueryKey(householdId, "transactions", yearScope),
-    () =>
-      householdId
-        ? householdCollection(householdId, "transactions")
-            .where("date", ">=", `${year}-01-01`)
-            .where("date", "<=", `${year}-12-31`)
-        : null,
-    mapTransaction,
-  );
+  const {
+    data: transactionData,
+    loading: transactionLoading,
+    fromCache: transactionFromCache,
+    refreshIfStale: refreshTransactionsIfStale,
+  } = useCachedTransactions(householdId, {
+    scopeKey: `summary-year:${yearScope}`,
+    range: { from: `${year}-01-01`, to: `${year}-12-31` },
+  });
   const budgetSubscription = useCollection<BudgetDefinition>(
     buildFirestoreQueryKey(householdId, "budgets"),
     () => (householdId ? householdCollection(householdId, "budgets") : null),
@@ -96,46 +90,47 @@ export default function SummaryScreen() {
     mapCategory,
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      refreshTransactionsIfStale();
+    }, [refreshTransactionsIfStale]),
+  );
+
   const categorySummary: MonthlyCategorySummary[] = useMemo(
     () =>
-      buildMonthCategorySummaryFromTransactions(
-        transactionSubscription.data,
-        year,
-        month,
-      ),
-    [month, transactionSubscription.data, year],
+      buildMonthCategorySummaryFromTransactions(transactionData, year, month),
+    [month, transactionData, year],
   );
   const budgetStatuses: BudgetStatus[] = useMemo(
     () =>
       buildBudgetStatusesFromData({
         year,
         month,
-        transactions: transactionSubscription.data,
+        transactions: transactionData,
         budgets: budgetSubscription.data,
         categories: categorySubscription.data,
         fromCache:
-          transactionSubscription.fromCache ||
+          transactionFromCache ||
           budgetSubscription.fromCache ||
           categorySubscription.fromCache,
       }),
     [
       budgetSubscription.data,
+      budgetSubscription.fromCache,
       categorySubscription.data,
+      categorySubscription.fromCache,
       month,
-      transactionSubscription.data,
+      transactionData,
+      transactionFromCache,
       year,
     ],
   );
   const yearlyData: MonthlyTotal[] = useMemo(
-    () =>
-      buildYearMonthlyTotalsFromTransactions(
-        transactionSubscription.data,
-        year,
-      ),
-    [transactionSubscription.data, year],
+    () => buildYearMonthlyTotalsFromTransactions(transactionData, year),
+    [transactionData, year],
   );
   const loading =
-    transactionSubscription.loading ||
+    transactionLoading ||
     budgetSubscription.loading ||
     categorySubscription.loading;
 
@@ -157,12 +152,6 @@ export default function SummaryScreen() {
     } else {
       setYear((y) => y + 1);
     }
-  };
-
-  const handlePeriodPickerChange = (selected: Date) => {
-    const next = fromYearMonthDate(selected);
-    setYear(next.year);
-    setMonth(next.month);
   };
 
   const openHistoryDrilldown = (item: {

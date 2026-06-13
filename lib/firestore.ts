@@ -15,6 +15,7 @@ import {
     buildStoreMasterRestorePlan,
     buildTransactionMasterRelinkPatch,
 } from "./masterRelink";
+import { type DataVersion } from "./readFreshness";
 import { buildStoreOptionsForCategory, findStoreByName } from "./storeOptions";
 import {
     buildBudgetStatusesFromData,
@@ -35,6 +36,7 @@ import { fromYearMonthDate, toYearMonthDate } from "./yearMonthDateRange";
 // ── 定数 ──────────────────────────────────────────────
 export const DEFAULT_ACCOUNT_ID = "default";
 export const DEFAULT_ACCOUNT_NAME = "家計";
+const DATA_VERSION_META_DOC_ID = "dataVersion";
 
 // ── 型定義（Firestore 版: ID は string）──────────────
 export type TransactionType = "income" | "expense";
@@ -183,6 +185,61 @@ function toISOString(
 
 type BatchOp = (batch: FirebaseFirestoreTypes.WriteBatch) => void;
 
+function dataVersionDoc(hDoc: FirebaseFirestoreTypes.DocumentReference) {
+  return hDoc.collection("meta").doc(DATA_VERSION_META_DOC_ID);
+}
+
+function dataVersionPayload() {
+  return { updatedAt: firestore.FieldValue.serverTimestamp() };
+}
+
+function bumpDataVersionInBatch(
+  batch: FirebaseFirestoreTypes.WriteBatch,
+  hDoc: FirebaseFirestoreTypes.DocumentReference,
+): void {
+  batch.set(dataVersionDoc(hDoc), dataVersionPayload(), { merge: true });
+}
+
+function bumpDataVersionInTransaction(
+  transaction: FirebaseFirestoreTypes.Transaction,
+  hDoc: FirebaseFirestoreTypes.DocumentReference,
+): void {
+  transaction.set(dataVersionDoc(hDoc), dataVersionPayload(), { merge: true });
+}
+
+function dataVersionFromSnapshot(
+  snap: FirebaseFirestoreTypes.DocumentSnapshot,
+): DataVersion {
+  const updatedAt = snap.data()?.updatedAt;
+  if (!updatedAt) return null;
+  if (typeof updatedAt.toMillis === "function") {
+    return String(updatedAt.toMillis());
+  }
+  if (typeof updatedAt.toDate === "function") {
+    return updatedAt.toDate().toISOString();
+  }
+  return String(updatedAt);
+}
+
+export async function readHouseholdDataVersion(
+  householdId: string,
+  source: "cache" | "server" = "server",
+): Promise<DataVersion> {
+  try {
+    const snap = await firestore()
+      .collection("households")
+      .doc(householdId)
+      .collection("meta")
+      .doc(DATA_VERSION_META_DOC_ID)
+      .get({ source });
+    if (!snapshotExists(snap)) return null;
+    return dataVersionFromSnapshot(snap);
+  } catch (error) {
+    if (source === "cache") return null;
+    throw error;
+  }
+}
+
 async function commitBatchOps(ops: BatchOp[]): Promise<void> {
   const LIMIT = 499;
   for (let i = 0; i < ops.length; i += LIMIT) {
@@ -279,6 +336,10 @@ async function restoreStoreMastersFromTransactionSnapshots(
         updatedAt: firestore.FieldValue.serverTimestamp(),
       }),
     );
+  }
+
+  if (plan.transactionStoreKeys.size > 0) {
+    ops.push((batch) => bumpDataVersionInBatch(batch, hDoc));
   }
 
   await commitBatchOps(ops);
@@ -780,6 +841,9 @@ export async function resetCategoryAndBreakdownsToDefault(): Promise<void> {
       });
   });
   createOps.push(...relinkOps);
+  if (txSnap.size > 0) {
+    createOps.push((batch) => bumpDataVersionInBatch(batch, hDoc));
+  }
 
   await commitBatchOps(createOps);
 
@@ -893,6 +957,10 @@ export async function deleteCategory(id: string): Promise<void> {
   // カテゴリ削除
   ops.push((batch) => batch.delete(hDoc.collection("categories").doc(id)));
 
+  if (txSnap.size > 0) {
+    ops.push((batch) => bumpDataVersionInBatch(batch, hDoc));
+  }
+
   await commitBatchOps(ops);
 }
 
@@ -998,6 +1066,10 @@ export async function deleteBreakdown(id: string): Promise<void> {
 
   ops.push((batch) => batch.delete(hDoc.collection("breakdowns").doc(id)));
 
+  if (txSnap.size > 0) {
+    ops.push((batch) => bumpDataVersionInBatch(batch, hDoc));
+  }
+
   await commitBatchOps(ops);
 }
 
@@ -1083,6 +1155,8 @@ export async function addTransaction(
     }
   }
 
+  bumpDataVersionInBatch(batch, hDoc);
+
   await batch.commit();
   return txRef.id;
 }
@@ -1110,6 +1184,8 @@ export async function importTransactions(
   const uid = getCurrentUser()?.uid ?? "";
   const BATCH_LIMIT = 450;
 
+  if (rows.length === 0) return 0;
+
   for (let start = 0; start < rows.length; start += BATCH_LIMIT) {
     const chunk = rows.slice(start, start + BATCH_LIMIT);
     const batch = firestore().batch();
@@ -1133,6 +1209,9 @@ export async function importTransactions(
         updatedAt: firestore.FieldValue.serverTimestamp(),
         createdBy: uid,
       });
+    }
+    if (start + BATCH_LIMIT >= rows.length) {
+      bumpDataVersionInBatch(batch, hDoc);
     }
     await batch.commit();
     onProgress?.(Math.min(start + BATCH_LIMIT, rows.length), rows.length);
@@ -1216,6 +1295,7 @@ export async function updateTransaction(
         );
       }
     }
+    bumpDataVersionInTransaction(transaction, hDoc);
   });
 }
 
@@ -1242,6 +1322,7 @@ export async function deleteTransaction(id: string): Promise<void> {
         },
       );
     }
+    bumpDataVersionInTransaction(transaction, hDoc);
   });
 }
 
@@ -1321,6 +1402,8 @@ export async function updateTransactionFromPrevious(
     );
   }
 
+  bumpDataVersionInBatch(batch, hDoc);
+
   await batch.commit();
 }
 
@@ -1341,6 +1424,8 @@ export async function deleteTransactionFromPrevious(
       updatedAt: firestore.FieldValue.serverTimestamp(),
     });
   }
+
+  bumpDataVersionInBatch(batch, hDoc);
 
   await batch.commit();
 }
@@ -1400,6 +1485,10 @@ export async function updateAccountName(
         updatedAt: firestore.FieldValue.serverTimestamp(),
       }),
     );
+  }
+
+  if (txSnap.size > 0) {
+    ops.push((batch) => bumpDataVersionInBatch(batch, hDoc));
   }
 
   await commitBatchOps(ops);
@@ -1525,6 +1614,10 @@ export async function deleteAccountAndMoveToDefault(id: string): Promise<void> {
 
   // 口座削除
   ops.push((batch) => batch.delete(accountRef));
+
+  if (txSnap.size > 0) {
+    ops.push((batch) => bumpDataVersionInBatch(batch, hDoc));
+  }
 
   await commitBatchOps(ops);
 }
