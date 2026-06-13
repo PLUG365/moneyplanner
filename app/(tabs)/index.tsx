@@ -31,7 +31,6 @@ import {
     mapAccount,
     mapBreakdown,
     mapCategory,
-    reconcileAccountBalancesFromTransactions,
     TransactionType,
 } from "@/lib/firestore";
 import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
@@ -380,7 +379,6 @@ export default function RecordScreen() {
         incomeColor={incomeColor}
         expenseColor={expenseColor}
         bottomInset={tabBarHeight}
-        onAccountPickerOpen={reconcileAccountBalancesFromTransactions}
         submitLabel={saving ? "保存中..." : "保存する"}
         onTypeChange={handleTypeChange}
         onAmountRawChange={setAmountRaw}

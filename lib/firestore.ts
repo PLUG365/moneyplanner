@@ -1412,36 +1412,15 @@ export async function updateAccountBalance(
   const hDoc = await householdDoc();
   const accountRef = hDoc.collection("accounts").doc(id);
 
-  // RNFBのTransaction.getはDocumentReferenceのみ対応のため、
-  // 取引コレクションのクエリはトランザクション外で先に読み取る。
-  // 読み取りと書き込みの間に他メンバーが取引を追加する微小な競合余地は
-  // 残るが、次回のreconcileAccountBalancesFromTransactionsで補正される。
-  const txQuerySnap = await hDoc
-    .collection("transactions")
-    .where("accountId", "==", id)
-    .get();
-
-  let transactionNet = 0;
-  for (const doc of txQuerySnap.docs) {
-    const txData = doc.data();
-    const amount = Number(txData.amount ?? 0);
-    const type = txData.type as TransactionType | undefined;
-
-    if (type === "income") {
-      transactionNet += amount;
-    } else if (type === "expense") {
-      transactionNet -= amount;
-    }
-  }
-
-  const initialBalance = balance - transactionNet;
-
+  // 残高は「手動設定＋登録/編集/削除の増分」のみで維持する方針（自動 reconcile 廃止）。
+  // よって全取引を読んで純額から逆算する必要はなく、入力値をそのまま残高として保存する。
+  // initialBalance は手動設定時点の残高として同値を保持する。
   await firestore().runTransaction(async (tx) => {
     // 口座ドキュメント自体の同時編集はトランザクション再試行で防ぐ
     await tx.get(accountRef);
     tx.update(accountRef, {
       balance,
-      initialBalance,
+      initialBalance: balance,
       updatedAt: firestore.FieldValue.serverTimestamp(),
     });
   });

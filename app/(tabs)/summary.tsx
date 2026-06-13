@@ -9,6 +9,7 @@ import {
 } from "react-native";
 
 import MonthPickerModal from "@/components/MonthPickerModal";
+import ProgressOverlay from "@/components/ProgressOverlay";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import {
@@ -306,11 +307,6 @@ export default function SummaryScreen() {
       ) : null}
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {loading && (
-          <Text style={[styles.loadingText, { color: colors.subText }]}>
-            読み込み中...
-          </Text>
-        )}
         {viewMode === "monthly" ? (
           <>
             {/* サマリーカード */}
@@ -801,6 +797,8 @@ export default function SummaryScreen() {
           </>
         )}
       </ScrollView>
+
+      <ProgressOverlay visible={loading} message="読み込み中…" />
     </View>
   );
 }
@@ -837,7 +835,6 @@ const styles = StyleSheet.create({
   monthJumpHint: { fontSize: 11, fontWeight: "700", marginTop: 2 },
   scrollContent: { paddingHorizontal: 12, paddingBottom: 100 },
   emptyText: { textAlign: "center", marginTop: 48, fontSize: 15 },
-  loadingText: { textAlign: "center", marginBottom: 8, fontSize: 13 },
   summaryCard: {
     borderRadius: 12,
     borderWidth: 1,

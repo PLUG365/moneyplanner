@@ -90,7 +90,8 @@ Firestoreのコレクション/フィールド定義は [ARCHITECTURE.md](ARCHIT
 - 集計時のカテゴリ表示名・色は、`categoryId` が現行カテゴリに存在する場合は現行マスタを使い、カテゴリ削除済みまたは `categoryId` が `null` の場合は取引スナップショットへフォールバックする。スナップショットもない場合は「未分類」とする
 - 内訳削除時は過去取引の `breakdownNameSnapshot` を空にせず、`breakdownId` の参照解除に留める。過去取引の内訳名は履歴・CSV上の証跡として残す
 - 口座名変更時は、口座別の表示・集計で現在名に揃えるため、既存取引の `accountNameSnapshot` を更新する方針とする
-- `accountId` はカテゴリ等と同様に `null`（マスタ非紐付け）を取り得る（インポートで未知の口座名だった場合）。`null` の取引は表示を `accountNameSnapshot` にフォールバックし、残高再計算では既定口座へ合算する（意図的挙動。[docs/decisions/import-unknown-account-nullable.md](docs/decisions/import-unknown-account-nullable.md)）
+- `accountId` はカテゴリ等と同様に `null`（マスタ非紐付け）を取り得る（インポートで未知の口座名だった場合）。`null` の取引は表示を `accountNameSnapshot` にフォールバックする（[docs/decisions/import-unknown-account-nullable.md](docs/decisions/import-unknown-account-nullable.md)）
+- 口座残高は「**手動設定（`updateAccountBalance`）＋ 記録/編集/削除時の増分（`FieldValue.increment`）**」のみで維持する。全取引からの自動再計算（reconcile）はインポート分を残高へ折り込んでしまうため**自動実行しない**。インポート取引は残高に影響しない（[docs/decisions/account-balance-incremental-only.md](docs/decisions/account-balance-incremental-only.md)）
 
 実装状況:
 
@@ -111,7 +112,7 @@ Firestoreのコレクション/フィールド定義は [ARCHITECTURE.md](ARCHIT
   - 検証: 日付は実在日のYYYY-MM-DD、種別は収入/支出、金額は0以上の整数（0円はメモ必須＝記録画面の登録ルールと同一。エクスポート→再取り込みの往復を保証するため）。口座/カテゴリ/内訳/店舗/メモは空欄許容
   - カテゴリ/内訳/店舗はtrim後の名前完全一致でマスタ紐付け（カテゴリは種別も一致条件、内訳はカテゴリ配下のみ）。不一致は `id=null`＋名前スナップショットのみで、マスタは自動作成しない
   - 口座は名前一致でマスタ紐付け。口座名が空の行はデフォルト口座（`DEFAULT_ACCOUNT_ID`）に紐付ける。口座名ありで不一致の場合はカテゴリ等と同様に `accountId=null`＋名前スナップショットのみとし、デフォルト口座へ偽紐付けしない（詳細は [docs/decisions/import-unknown-account-nullable.md](docs/decisions/import-unknown-account-nullable.md)）
-  - 取り込みでは口座残高・店舗の使用履歴（`lastUsedAt` / `storeCategoryUsage`）を更新しない。残高は事後に既存の残高再計算で調整する
+  - 取り込みでは口座残高・店舗の使用履歴（`lastUsedAt` / `storeCategoryUsage`）を更新しない。**インポート取引は口座残高に影響しない**（自動 reconcile を廃止したため折り込まれない。[docs/decisions/account-balance-incremental-only.md](docs/decisions/account-balance-incremental-only.md)）
   - 重複検出なし（同一行の再取り込みは重複登録される）。文字コードはUTF-8のみ対応（Shift_JISは拒否）
   - Firestoreへは450件単位のバッチ書き込み（`importTransactions`）。バッチごとの進捗を共通の進捗オーバーレイ（`components/ProgressOverlay.tsx`）で表示
   - バッチ間のロールバックはないため、途中失敗時は部分取り込みのまま停止する（再実行すると取り込み済み分が重複する点に注意）
@@ -380,6 +381,8 @@ AI活用、外部ツール、レビュー、知見退避ルールの詳細は [d
 - [x] 実装済み: 口座管理で現在値に対する四則演算入力（例: `+1000` / `-500` / `*2` / `/2`）、数値入力モーダル内の計算確定、計算成功時のモーダルクローズ、残高クリア操作をサポートする（TestFlight build 21で実機確認予定）
 - [x] 実装済み: 設定変更はマスタ/口座/世帯/削除系の競合が複雑になりやすいため、オフライン中はカテゴリ/内訳、口座、世帯メンバー、招待コード、データ削除/リセットなどの設定変更操作を無効化する（TestFlight build 21で実機確認予定）
 - [x] 実装済み: 口座残高は初期残高と取引純額を基準に、口座管理表示時および記録/履歴編集の口座選択時に補正する（TestFlight build 21で実機確認予定）
+  - 改訂: 大量データ（CSVインポート）で全件 reconcile が重く、かつインポート分を残高へ折り込む問題が判明したため、**口座選択時/口座管理表示時の自動 reconcile を廃止**。残高は手動設定＋記録/編集/削除の増分のみで維持する（[docs/decisions/account-balance-incremental-only.md](docs/decisions/account-balance-incremental-only.md)）
+- [x] 実装済み: 履歴リストは全件購読・全件描画をやめ、`FlatList` + 日付降順カーソルページング（初回100件＋スクロールで追加100件）にする。日付検索時はサーバー側 where で範囲取得。初回/追加ロードとプルリフレッシュにローディング表示を出す（大量データでのフリーズ/クラッシュ対策）
 - [x] 実装済み: 記録保存時と履歴編集保存時は購読済み/画面上のカテゴリ/内訳/口座/店舗名をスナップショットとして渡し、さらにFirestore書き込みack待ちを短時間で同期待ち扱いへ切り替えて、オフライン保存時に「保存中...」が固着しにくいようにする（TestFlight build 21で実機確認予定）
 - [x] 実装済み: 記録/履歴編集のカテゴリ選択と履歴一括コピーは、購読済みカテゴリ/内訳を使って候補解決し、オフライン時に未購読マスタ読み取り待ちで固着しにくいようにする（TestFlight build 21で実機確認予定）
 - [x] 実装済み: 履歴タブのカレンダー表示と集計タブの期間表示で、年月ピッカーを使って任意の年月へジャンプできるようにする（TestFlight build 21で実機確認予定）

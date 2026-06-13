@@ -3,8 +3,10 @@ import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
     Alert,
+    FlatList,
     Modal,
     Platform,
+    RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
@@ -17,10 +19,12 @@ import HistorySearchPanel, {
     type HistorySearchDateTarget,
 } from "@/components/HistorySearchPanel";
 import MonthPickerModal from "@/components/MonthPickerModal";
+import ProgressOverlay from "@/components/ProgressOverlay";
 import TransactionEditor from "@/components/TransactionEditor";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
+import { usePaginatedTransactions } from "@/hooks/usePaginatedTransactions";
 import {
     Account,
     addTransaction,
@@ -34,7 +38,6 @@ import {
     mapBreakdown,
     mapCategory,
     mapTransaction,
-    reconcileAccountBalancesFromTransactions,
     Transaction,
     TransactionType,
     updateTransactionFromPrevious,
@@ -189,17 +192,12 @@ export default function HistoryScreen() {
     () => (householdId ? householdCollection(householdId, "accounts") : null),
     mapAccount,
   );
-  const allTransactionsSubscription = useCollection<Transaction>(
-    buildFirestoreQueryKey(householdId, "transactions", "all"),
-    () => {
-      if (!householdId) return null;
-      return householdCollection(householdId, "transactions").orderBy(
-        "date",
-        "desc",
-      );
-    },
-    mapTransaction,
-  );
+  // 履歴リストは全件購読すると大量データでJSスレッドが固まるため、
+  // 日付降順のカーソルページング（初回100件＋スクロールで追加）で読む。
+  const paginatedTransactions = usePaginatedTransactions(householdId, {
+    from: historySearchFromDate,
+    to: historySearchToDate,
+  });
 
   const monthTransactionsSubscription = useCollection<Transaction>(
     buildFirestoreQueryKey(householdId, "transactions", monthScope),
@@ -226,8 +224,8 @@ export default function HistoryScreen() {
   );
 
   const listTransactions = useMemo(
-    () => buildHistoryListTransactions(allTransactionsSubscription.data),
-    [allTransactionsSubscription.data],
+    () => buildHistoryListTransactions(paginatedTransactions.items),
+    [paginatedTransactions.items],
   );
 
   const calendarTransactions = useMemo(
@@ -351,6 +349,14 @@ export default function HistoryScreen() {
     void load();
   }, [load]);
 
+  // 履歴リストはリアルタイム購読ではなくページング取得のため、
+  // タブにフォーカスするたびに先頭ページを取り直して最新（他タブ/家族の追加分）を反映する。
+  useFocusEffect(
+    useCallback(() => {
+      paginatedTransactions.refresh();
+    }, [paginatedTransactions.refresh]),
+  );
+
   useEffect(() => {
     const parsed = parseHistoryDrilldownParams({
       historyType,
@@ -472,6 +478,7 @@ export default function HistoryScreen() {
               deleteTransactionFromPrevious(tx),
               WRITE_ACK_TIMEOUT_MS,
             );
+            paginatedTransactions.refresh();
           },
         },
       ],
@@ -599,6 +606,7 @@ export default function HistoryScreen() {
     setShowBulkCopyModal(false);
     setShowCopyDatePicker(false);
     exitSelectionMode();
+    paginatedTransactions.refresh();
     await load();
 
     setUncopiedRecords(failed);
@@ -673,7 +681,6 @@ export default function HistoryScreen() {
   };
 
   const openEditModal = async (tx: Transaction) => {
-    void reconcileAccountBalancesFromTransactions().catch(() => undefined);
     setEditAccounts(accountOptions);
     setEditingTxId(tx.id);
     setEditingTx(tx);
@@ -773,10 +780,10 @@ export default function HistoryScreen() {
     setShowEditModal(false);
     setEditingTxId(null);
     setEditingTx(null);
+    paginatedTransactions.refresh();
   };
 
   const handleEditAccountPickerOpen = async () => {
-    void reconcileAccountBalancesFromTransactions().catch(() => undefined);
     setEditAccounts(accountOptions);
   };
 
@@ -1027,24 +1034,53 @@ export default function HistoryScreen() {
         />
       ) : null}
 
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          isSelectionMode && { paddingBottom: 180 },
-        ]}
-        onScrollBeginDrag={handleHistoryScrollBeginDrag}
-      >
-        {viewMode === "list" ? (
-          // --- リストビュー ---
-          transactions.length === 0 ? (
-            <Text style={[styles.emptyText, { color: colors.subText }]}>
-              記録がありません
-            </Text>
-          ) : (
-            transactions.map((tx) => renderTransactionItem(tx))
-          )
-        ) : (
-          // --- カレンダービュー ---
+      {viewMode === "list" ? (
+        // --- リストビュー（カーソルページング + 仮想化）---
+        <FlatList
+          data={transactions}
+          keyExtractor={(tx) => tx.id}
+          renderItem={({ item }) => renderTransactionItem(item)}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isSelectionMode && { paddingBottom: 180 },
+          ]}
+          onScrollBeginDrag={handleHistoryScrollBeginDrag}
+          onEndReached={() => paginatedTransactions.loadMore()}
+          onEndReachedThreshold={0.4}
+          refreshControl={
+            <RefreshControl
+              refreshing={
+                paginatedTransactions.loadingInitial &&
+                transactions.length > 0
+              }
+              onRefresh={() => paginatedTransactions.refresh()}
+              tintColor={colors.tint}
+            />
+          }
+          ListEmptyComponent={
+            paginatedTransactions.loadingInitial ? null : (
+              <Text style={[styles.emptyText, { color: colors.subText }]}>
+                記録がありません
+              </Text>
+            )
+          }
+          ListFooterComponent={
+            paginatedTransactions.loadingMore ? (
+              <Text style={[styles.emptyText, { color: colors.subText }]}>
+                読み込み中…
+              </Text>
+            ) : null
+          }
+        />
+      ) : (
+        // --- カレンダービュー ---
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            isSelectionMode && { paddingBottom: 180 },
+          ]}
+          onScrollBeginDrag={handleHistoryScrollBeginDrag}
+        >
           <View>
             {/* 曜日ヘッダー */}
             <View style={styles.weekHeader}>
@@ -1130,8 +1166,8 @@ export default function HistoryScreen() {
               </View>
             )}
           </View>
-        )}
-      </ScrollView>
+        </ScrollView>
+      )}
 
       {isSelectionMode ? (
         <View
@@ -1411,6 +1447,13 @@ export default function HistoryScreen() {
           </View>
         </View>
       </Modal>
+
+      <ProgressOverlay
+        visible={
+          paginatedTransactions.loadingInitial && transactions.length === 0
+        }
+        message="読み込み中…"
+      />
     </View>
   );
 }

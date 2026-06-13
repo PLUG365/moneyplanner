@@ -64,7 +64,6 @@ import {
   getMonthlyBudgets,
   householdCollection,
   mapAccount,
-  reconcileAccountBalancesFromTransactions,
   resetCategoryAndBreakdownsToDefault,
   resetFirestoreForDevelopment,
   setMonthlyBudget,
@@ -147,6 +146,8 @@ export default function SettingsScreen() {
 
   const [showManagerModal, setShowManagerModal] = useState(false);
   const [showEditorModal, setShowEditorModal] = useState(false);
+  // 口座の残高保存は全取引を読むため時間がかかる。実行中フラグでボタンに反映する。
+  const [savingAccount, setSavingAccount] = useState(false);
   const [managerMode, setManagerMode] = useState<"category" | "account">(
     "category",
   );
@@ -468,12 +469,17 @@ export default function SettingsScreen() {
       return;
     }
 
+    setSavingAccount(true);
     try {
       if (accountEditingId) {
-        await waitForPendingWrite(
-          updateAccountName(accountEditingId, trimmed),
-          WRITE_ACK_TIMEOUT_MS,
-        );
+        // 口座名変更は全取引のスナップショット名を書き換えるため重い。
+        // 名前が変わっていない（残高だけ変更）場合はスキップする。
+        if (editingAccount?.name !== trimmed) {
+          await waitForPendingWrite(
+            updateAccountName(accountEditingId, trimmed),
+            WRITE_ACK_TIMEOUT_MS,
+          );
+        }
         await waitForPendingWrite(
           updateAccountBalance(accountEditingId, balance),
           WRITE_ACK_TIMEOUT_MS,
@@ -490,6 +496,8 @@ export default function SettingsScreen() {
         error instanceof Error ? error.message : "保存に失敗しました",
       );
       return;
+    } finally {
+      setSavingAccount(false);
     }
 
     await load();
@@ -830,7 +838,6 @@ export default function SettingsScreen() {
   const handleOpenAccountManager = async () => {
     if (!guardSettingsWrite()) return;
 
-    await reconcileAccountBalancesFromTransactions();
     await load();
 
     resetCategoryForm();
@@ -2439,7 +2446,7 @@ export default function SettingsScreen() {
                           : colors.tint,
                       },
                     ]}
-                    disabled={isSettingsWriteDisabled}
+                    disabled={isSettingsWriteDisabled || savingAccount}
                     onPress={
                       managerTab === "category"
                         ? handleSaveCategory
@@ -2542,8 +2549,10 @@ export default function SettingsScreen() {
       ) : null}
 
       <ProgressOverlay
-        visible={importProgress !== null}
-        message="CSVを取り込んでいます…"
+        visible={importProgress !== null || savingAccount}
+        message={
+          importProgress !== null ? "CSVを取り込んでいます…" : "保存中…"
+        }
         progress={importProgress}
       />
     </ScrollView>
