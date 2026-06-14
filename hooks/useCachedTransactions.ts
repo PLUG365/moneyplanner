@@ -4,10 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
     householdCollection,
     mapTransaction,
-    readHouseholdDataVersion,
+    readHouseholdDataVersionPreferServer,
     Transaction,
 } from "@/lib/firestore";
 import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
+import {
+    getPersistedScopeVersion,
+    loadScopeVersions,
+    setPersistedScopeVersion,
+} from "@/lib/scopeVersionStore";
 
 type CachedTransactionScope = {
   items: Transaction[];
@@ -78,6 +83,18 @@ export function useCachedTransactions(
   const [error, setError] = useState<Error | null>(null);
   const [fromCache, setFromCache] = useState(false);
   const inFlightRef = useRef(false);
+  // 進行中に scope（年・日付範囲）変更などで来た再読込要求を、完了後にやり直すための予約。
+  const pendingReloadRef = useRef<{
+    forceServer?: boolean;
+    refreshMarker?: boolean;
+  } | null>(null);
+  const loadRef = useRef<
+    | ((input?: {
+        forceServer?: boolean;
+        refreshMarker?: boolean;
+      }) => Promise<void>)
+    | null
+  >(null);
   const rangeFrom = options.range.from;
   const rangeTo = options.range.to;
   const orderByDateDesc = !!options.orderByDateDesc;
@@ -91,8 +108,18 @@ export function useCachedTransactions(
         setFromCache(false);
         return;
       }
-      if (inFlightRef.current) return;
+      if (inFlightRef.current) {
+        // ドロップせず、完了後に最新スコープで読み直すよう予約する。
+        // 上書きではなくフラグをマージし、refreshMarker/forceServer の要求を取りこぼさない。
+        const prev = pendingReloadRef.current;
+        pendingReloadRef.current = {
+          forceServer: !!(prev?.forceServer || input?.forceServer),
+          refreshMarker: !!(prev?.refreshMarker || input?.refreshMarker),
+        };
+        return;
+      }
       inFlightRef.current = true;
+      await loadScopeVersions();
 
       const cacheKey = buildScopeCacheKey(householdId, scopeKey);
       const query = buildTransactionQuery(
@@ -110,16 +137,12 @@ export function useCachedTransactions(
       try {
         let currentVersion = currentVersionByHousehold.get(householdId);
         if (input?.refreshMarker) {
-          currentVersion = await readHouseholdDataVersion(
-            householdId,
-            "server",
-          );
+          currentVersion =
+            await readHouseholdDataVersionPreferServer(householdId);
           currentVersionByHousehold.set(householdId, currentVersion);
         } else if (currentVersion === undefined) {
-          currentVersion = await readHouseholdDataVersion(
-            householdId,
-            "server",
-          );
+          currentVersion =
+            await readHouseholdDataVersionPreferServer(householdId);
           currentVersionByHousehold.set(householdId, currentVersion);
         }
 
@@ -144,7 +167,9 @@ export function useCachedTransactions(
             const cachedItems = cacheSnap.docs.map((doc) =>
               mapTransaction(doc.id, doc.data()),
             );
-            const cachedVersion = currentVersion ?? memory?.version ?? null;
+            // ディスクキャッシュの版は「現在版」ではなく、永続化した
+            // 「このスコープを最後にサーバー読みした時点の版」を使う（案B）。
+            const cachedVersion = getPersistedScopeVersion(cacheKey);
             transactionScopeCache.set(cacheKey, {
               items: cachedItems,
               version: cachedVersion,
@@ -176,6 +201,7 @@ export function useCachedTransactions(
           version,
           fromCache: false,
         });
+        setPersistedScopeVersion(cacheKey, version);
         setData(serverItems);
         setFromCache(false);
         setError(null);
@@ -184,10 +210,17 @@ export function useCachedTransactions(
       } finally {
         setLoading(false);
         inFlightRef.current = false;
+        const pending = pendingReloadRef.current;
+        pendingReloadRef.current = null;
+        if (pending) {
+          // 最新の load（=最新スコープ）で読み直す
+          void loadRef.current?.(pending);
+        }
       }
     },
     [householdId, orderByDateDesc, rangeFrom, rangeTo, scopeKey],
   );
+  loadRef.current = load;
 
   useEffect(() => {
     void load();

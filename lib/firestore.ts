@@ -240,6 +240,18 @@ export async function readHouseholdDataVersion(
   }
 }
 
+/** マーカーをサーバー優先で読み、オフライン等でサーバー読みが失敗したら
+ *  キャッシュ（最後に同期した版）へフォールバックする。フレッシュネス判定用。 */
+export async function readHouseholdDataVersionPreferServer(
+  householdId: string,
+): Promise<DataVersion> {
+  try {
+    return await readHouseholdDataVersion(householdId, "server");
+  } catch {
+    return await readHouseholdDataVersion(householdId, "cache");
+  }
+}
+
 async function commitBatchOps(ops: BatchOp[]): Promise<void> {
   const LIMIT = 499;
   for (let i = 0; i < ops.length; i += LIMIT) {
@@ -709,6 +721,12 @@ export async function resetFirestoreForDevelopment(): Promise<void> {
   }
 
   await initFirestore();
+
+  // データを全削除したことをキャッシュ側に伝えるためマーカーを更新する
+  // （meta は削除対象に含めていないので、明示的にバンプしないと古い版のままになる）。
+  const versionBatch = firestore().batch();
+  bumpDataVersionInBatch(versionBatch, hDoc);
+  await versionBatch.commit();
 }
 
 export async function deleteHouseholdDataAndCurrentUserProfile(): Promise<void> {

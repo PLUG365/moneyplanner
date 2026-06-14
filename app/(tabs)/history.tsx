@@ -1,6 +1,12 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 import {
     Alert,
     FlatList,
@@ -363,6 +369,41 @@ export default function HistoryScreen() {
       refreshMonthTransactionsIfStale();
     }, [refreshMonthTransactionsIfStale, refreshPaginatedTransactionsIfStale]),
   );
+
+  // プルリフレッシュのスピナーは専用stateで制御する。共有の loadingInitial に紐づけると
+  // フォーカス更新などプル以外の読み込みでもスピナーが出てネイティブ制御と食い違い、固着（フリーズ）するため。
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const handlePullRefresh = useCallback(() => {
+    setIsPullRefreshing(true);
+    refreshPaginatedTransactionsIfStale();
+    refreshMonthTransactionsIfStale();
+  }, [refreshMonthTransactionsIfStale, refreshPaginatedTransactionsIfStale]);
+  useEffect(() => {
+    if (isPullRefreshing && !paginatedLoadingInitial) {
+      setIsPullRefreshing(false);
+    }
+  }, [isPullRefreshing, paginatedLoadingInitial]);
+
+  // onEndReached の暴走防止。1スクロールにつき loadMore は1回だけ許可し、
+  // ユーザーが再度ドラッグするか、絞り込み条件が変わった時に再武装する。
+  // （ドリルダウンで絞り込むとリストが短くなり onEndReached が連続発火→全ページ取得→フリーズするため）
+  const canLoadMoreRef = useRef(true);
+  useEffect(() => {
+    canLoadMoreRef.current = true;
+  }, [
+    historySearchFromDate,
+    historySearchToDate,
+    historySearchType,
+    historySearchCategoryName,
+    historySearchBreakdownName,
+    historySearchStoreName,
+    historySearchMemoQuery,
+  ]);
+  const handleListEndReached = useCallback(() => {
+    if (!canLoadMoreRef.current) return;
+    canLoadMoreRef.current = false;
+    loadMorePaginatedTransactions();
+  }, [loadMorePaginatedTransactions]);
 
   useEffect(() => {
     const parsed = parseHistoryDrilldownParams({
@@ -1047,20 +1088,25 @@ export default function HistoryScreen() {
       {viewMode === "list" ? (
         // --- リストビュー（カーソルページング + 仮想化）---
         <FlatList
-          data={transactions}
+          style={styles.listFill}
+          data={filteredListTransactions}
+          extraData={isSelectionMode ? selectedTxIds : null}
           keyExtractor={(tx) => tx.id}
           renderItem={({ item }) => renderTransactionItem(item)}
           contentContainerStyle={[
             styles.scrollContent,
             isSelectionMode && { paddingBottom: 180 },
           ]}
-          onScrollBeginDrag={handleHistoryScrollBeginDrag}
-          onEndReached={loadMorePaginatedTransactions}
+          onScrollBeginDrag={() => {
+            canLoadMoreRef.current = true;
+            handleHistoryScrollBeginDrag();
+          }}
+          onEndReached={handleListEndReached}
           onEndReachedThreshold={0.4}
           refreshControl={
             <RefreshControl
-              refreshing={paginatedLoadingInitial && transactions.length > 0}
-              onRefresh={refreshPaginatedTransactionsIfStale}
+              refreshing={isPullRefreshing}
+              onRefresh={handlePullRefresh}
               tintColor={colors.tint}
             />
           }
@@ -1456,7 +1502,7 @@ export default function HistoryScreen() {
       </Modal>
 
       <ProgressOverlay
-        visible={paginatedLoadingInitial && transactions.length === 0}
+        visible={paginatedLoadingInitial && filteredListTransactions.length === 0}
         message="読み込み中…"
       />
     </View>
@@ -1493,6 +1539,7 @@ const styles = StyleSheet.create({
   monthTitleButton: { alignItems: "center", paddingVertical: 6, flex: 1 },
   monthTitle: { fontSize: 17, fontWeight: "700" },
   monthJumpHint: { fontSize: 11, fontWeight: "700", marginTop: 2 },
+  listFill: { flex: 1 },
   scrollContent: { paddingHorizontal: 12, paddingBottom: 100 },
   emptyText: { textAlign: "center", marginTop: 48, fontSize: 15 },
   txRow: {

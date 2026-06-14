@@ -4,12 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
     householdCollection,
     mapTransaction,
-    readHouseholdDataVersion,
+    readHouseholdDataVersionPreferServer,
     Transaction,
 } from "@/lib/firestore";
 import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
+import {
+    getPersistedScopeVersion,
+    loadScopeVersions,
+    setPersistedScopeVersion,
+} from "@/lib/scopeVersionStore";
 
 export const TRANSACTIONS_PAGE_SIZE = 100;
+// 日付範囲が指定されている時（ドリルダウン・期間検索）は、その範囲を一括取得して
+// クライアント側フィルタ（カテゴリ等）が全件に効くようにする。範囲は有界なので安全。
+// 念のため上限を設けて極端に広い範囲での過大読み取りを防ぐ。
+export const RANGE_FETCH_LIMIT = 1000;
 
 export type PaginatedTransactionsRange = {
   from: string | null;
@@ -78,7 +87,22 @@ export function usePaginatedTransactions(
     useRef<FirebaseFirestoreTypes.QueryDocumentSnapshot | null>(null);
   // 多重実行防止（onEndReached連打・refresh重複など）
   const inFlightRef = useRef(false);
+  // 進行中に scope（日付範囲）変更などで来た再読込要求を、完了後にやり直すための予約。
+  const pendingReloadRef = useRef<{
+    forceServer?: boolean;
+    refreshMarker?: boolean;
+  } | null>(null);
+  const refreshRef = useRef<
+    | ((options?: {
+        forceServer?: boolean;
+        refreshMarker?: boolean;
+      }) => Promise<void>)
+    | null
+  >(null);
   const scopeKey = householdId ? buildScopeKey(householdId, range) : null;
+  // 日付範囲指定時は一括取得（ページングしない）。範囲なし（全履歴）は従来どおりページング。
+  const fetchAll = !!(range.from && range.to);
+  const queryLimit = fetchAll ? RANGE_FETCH_LIMIT : TRANSACTIONS_PAGE_SIZE;
 
   const buildBaseQuery =
     useCallback((): FirebaseFirestoreTypes.Query | null => {
@@ -101,24 +125,32 @@ export function usePaginatedTransactions(
         lastDocRef.current = null;
         return;
       }
-      if (inFlightRef.current) return;
+      if (inFlightRef.current) {
+        // ドロップせず、完了後に最新スコープで読み直すよう予約する
+        // （ドリルダウン等で進行中に日付範囲が変わると新スコープが読まれず空のままになるため）。
+        // 上書きではなくフラグをマージし、refreshMarker/forceServer の要求を取りこぼさない
+        // （フォーカスのマーカー再読込が後続のスコープ変更要求に消されると、古いキャッシュを出してしまうため）。
+        const prev = pendingReloadRef.current;
+        pendingReloadRef.current = {
+          forceServer: !!(prev?.forceServer || options?.forceServer),
+          refreshMarker: !!(prev?.refreshMarker || options?.refreshMarker),
+        };
+        return;
+      }
       inFlightRef.current = true;
       setLoadingInitial(true);
       try {
+        await loadScopeVersions();
         let currentVersion = householdId
           ? currentVersionByHousehold.get(householdId)
           : undefined;
         if (householdId && options?.refreshMarker) {
-          currentVersion = await readHouseholdDataVersion(
-            householdId,
-            "server",
-          );
+          currentVersion =
+            await readHouseholdDataVersionPreferServer(householdId);
           currentVersionByHousehold.set(householdId, currentVersion);
         } else if (householdId && currentVersion === undefined) {
-          currentVersion = await readHouseholdDataVersion(
-            householdId,
-            "server",
-          );
+          currentVersion =
+            await readHouseholdDataVersionPreferServer(householdId);
           currentVersionByHousehold.set(householdId, currentVersion);
         }
         const comparableVersion = currentVersion ?? null;
@@ -141,7 +173,7 @@ export function usePaginatedTransactions(
 
         if (!options?.forceServer) {
           const cacheSnap = await getQuerySnapshot(
-            base.limit(TRANSACTIONS_PAGE_SIZE),
+            base.limit(queryLimit),
             "cache",
           );
           if (cacheSnap && cacheSnap.docs.length > 0) {
@@ -150,12 +182,15 @@ export function usePaginatedTransactions(
             );
             const page: CachedPage = {
               items: cachedItems,
-              version: currentVersion ?? cached?.version ?? null,
+              // ディスクキャッシュの版は永続化した「最後にサーバー読みした時点の版」を使う（案B）。
+              version: scopeKey ? getPersistedScopeVersion(scopeKey) : null,
               lastDoc:
                 cacheSnap.docs.length > 0
                   ? cacheSnap.docs[cacheSnap.docs.length - 1]
                   : null,
-              hasMore: cacheSnap.docs.length === TRANSACTIONS_PAGE_SIZE,
+              hasMore: fetchAll
+                ? false
+                : cacheSnap.docs.length === TRANSACTIONS_PAGE_SIZE,
             };
             if (scopeKey) firstPageCache.set(scopeKey, page);
             setItems(page.items);
@@ -173,32 +208,41 @@ export function usePaginatedTransactions(
           }
         }
 
-        const snap = await getQuerySnapshot(
-          base.limit(TRANSACTIONS_PAGE_SIZE),
-          "server",
-        );
+        const snap = await getQuerySnapshot(base.limit(queryLimit), "server");
         const docs = snap?.docs ?? [];
         const nextItems = docs.map((doc) => mapTransaction(doc.id, doc.data()));
+        const nextHasMore = fetchAll
+          ? false
+          : docs.length === TRANSACTIONS_PAGE_SIZE;
         setItems(nextItems);
         lastDocRef.current = docs.length > 0 ? docs[docs.length - 1] : null;
-        setHasMore(docs.length === TRANSACTIONS_PAGE_SIZE);
+        setHasMore(nextHasMore);
         if (scopeKey) {
           firstPageCache.set(scopeKey, {
             items: nextItems,
             version: currentVersion ?? null,
             lastDoc: lastDocRef.current,
-            hasMore: docs.length === TRANSACTIONS_PAGE_SIZE,
+            hasMore: nextHasMore,
           });
+          setPersistedScopeVersion(scopeKey, currentVersion ?? null);
         }
       } finally {
         setLoadingInitial(false);
         inFlightRef.current = false;
+        const pending = pendingReloadRef.current;
+        pendingReloadRef.current = null;
+        if (pending) {
+          // 最新の refresh（=最新スコープ）で読み直す
+          void refreshRef.current?.(pending);
+        }
       }
     },
-    [buildBaseQuery, householdId, scopeKey],
+    [buildBaseQuery, fetchAll, householdId, queryLimit, scopeKey],
   );
+  refreshRef.current = refresh;
 
   const loadMore = useCallback(async () => {
+    if (fetchAll) return; // 範囲一括取得時はページングしない
     if (inFlightRef.current || !hasMore) return;
     const base = buildBaseQuery();
     if (!base || !lastDocRef.current) return;
@@ -224,7 +268,7 @@ export function usePaginatedTransactions(
       setLoadingMore(false);
       inFlightRef.current = false;
     }
-  }, [buildBaseQuery, hasMore]);
+  }, [buildBaseQuery, fetchAll, hasMore]);
 
   // 世帯・日付範囲が変わったら先頭から読み直す
   useEffect(() => {
