@@ -113,7 +113,7 @@ Firestoreのコレクション/フィールド定義は [ARCHITECTURE.md](ARCHIT
   - カテゴリ/内訳/店舗はtrim後の名前完全一致でマスタ紐付け（カテゴリは種別も一致条件、内訳はカテゴリ配下のみ）。不一致は `id=null`＋名前スナップショットのみで、マスタは自動作成しない
   - 口座は名前一致でマスタ紐付け。口座名が空の行はデフォルト口座（`DEFAULT_ACCOUNT_ID`）に紐付ける。口座名ありで不一致の場合はカテゴリ等と同様に `accountId=null`＋名前スナップショットのみとし、デフォルト口座へ偽紐付けしない（詳細は [docs/decisions/import-unknown-account-nullable.md](docs/decisions/import-unknown-account-nullable.md)）
   - 取り込みでは口座残高・店舗の使用履歴（`lastUsedAt` / `storeCategoryUsage`）を更新しない。**インポート取引は口座残高に影響しない**（自動 reconcile を廃止したため折り込まれない。[docs/decisions/account-balance-incremental-only.md](docs/decisions/account-balance-incremental-only.md)）
-  - 重複検出なし（同一行の再取り込みは重複登録される）。文字コードはUTF-8のみ対応（Shift_JISは拒否）
+  - 重複検出なし（同一行の再取り込みは重複登録される）。文字コードはUTF-8（BOM有無）/ UTF-16LE（BOM付き）/ Shift_JIS（ExcelのCSV保存互換）に対応
   - Firestoreへは450件単位のバッチ書き込み（`importTransactions`）。バッチごとの進捗を共通の進捗オーバーレイ（`components/ProgressOverlay.tsx`）で表示
   - バッチ間のロールバックはないため、途中失敗時は部分取り込みのまま停止する（再実行すると取り込み済み分が重複する点に注意）
 

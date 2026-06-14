@@ -1,6 +1,7 @@
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 
+import { decodeCsvTextFromBase64 } from "./csvEncoding";
 import { CsvImportError, parseImportCsv } from "./csvImportParse";
 import { resolveImportRows } from "./csvImportResolve";
 import {
@@ -35,10 +36,12 @@ export async function prepareCsvImport(): Promise<CsvImportPrepareResult> {
     return { status: "cancelled" };
   }
 
-  const text = await FileSystem.readAsStringAsync(picked.assets[0].uri, {
-    encoding: FileSystem.EncodingType.UTF8,
+  const encoded = await FileSystem.readAsStringAsync(picked.assets[0].uri, {
+    encoding: FileSystem.EncodingType.Base64,
   });
-  if (text.includes("\uFFFD")) {
+
+  const text = decodeCsvTextFromBase64(encoded);
+  if (!text) {
     return { status: "encoding-error" };
   }
 

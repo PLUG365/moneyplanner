@@ -37,6 +37,16 @@ export function buildCsvText(transactions: CsvTransaction[]): string {
   return `\uFEFF${[header, ...rows].join("\r\n")}\r\n`;
 }
 
+function toUtf16LeBytes(text: string): Uint8Array {
+  const bytes = new Uint8Array(text.length * 2);
+  for (let i = 0; i < text.length; i++) {
+    const codeUnit = text.charCodeAt(i);
+    bytes[i * 2] = codeUnit & 0xff;
+    bytes[i * 2 + 1] = (codeUnit >> 8) & 0xff;
+  }
+  return bytes;
+}
+
 const BASE64_TABLE =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -64,4 +74,19 @@ export function buildCsvUtf8Base64(transactions: CsvTransaction[]): string {
   const csvText = buildCsvText(transactions);
   const encoder = new TextEncoder();
   return bytesToBase64(encoder.encode(csvText));
+}
+
+/** Excel互換性を優先したCSV(base64)を返す。
+ *  UTF-16LE BOM(FF FE)で書き出すことで、Windows Excelの直接オープン時の
+ *  日本語文字化けを避ける。 */
+export function buildCsvExcelBase64(transactions: CsvTransaction[]): string {
+  const csvText = buildCsvText(transactions);
+  const content = csvText.startsWith("\uFEFF") ? csvText.slice(1) : csvText;
+  const bodyBytes = toUtf16LeBytes(content);
+  const bytes = new Uint8Array(bodyBytes.length + 2);
+  // UTF-16LE BOM: FF FE
+  bytes[0] = 0xff;
+  bytes[1] = 0xfe;
+  bytes.set(bodyBytes, 2);
+  return bytesToBase64(bytes);
 }

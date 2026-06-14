@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildCsvExcelBase64,
     buildCsvText,
     buildCsvUtf8Base64,
     type CsvTransaction,
@@ -66,4 +67,24 @@ test("buildCsvUtf8Base64 emits UTF-8 BOM bytes (EF BB BF)", () => {
   assert.equal(buf[0], 0xef);
   assert.equal(buf[1], 0xbb);
   assert.equal(buf[2], 0xbf);
+});
+
+test("buildCsvExcelBase64 emits UTF-16LE BOM bytes (FF FE)", () => {
+  const tx: CsvTransaction = {
+    date: "2026-03-30",
+    amount: 1200,
+    type: "expense",
+    accountName: "家計",
+    categoryName: "食費",
+    breakdownName: "晩ご飯",
+    storeName: "スーパーA",
+    memo: "スーパー",
+  };
+
+  const b64 = buildCsvExcelBase64([tx]);
+  const buf = Buffer.from(b64, "base64");
+
+  // UTF-16LE BOM: FF FE
+  assert.equal(buf[0], 0xff);
+  assert.equal(buf[1], 0xfe);
 });
