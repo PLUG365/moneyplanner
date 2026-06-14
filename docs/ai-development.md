@@ -16,6 +16,6 @@ AI活用、外部ツール、レビュー、知見退避ルールをまとめる
 - 長いAI作業セッションで得た判断や再利用知見を、会話に閉じ込めず [PLAN.md](../PLAN.md)、repo memory、または専用ドキュメントへ退避する。
 - CopilotコードレビューやAIによる脆弱性検出は補助として使い、最終判断は人間レビュー、テスト、lint、型チェック、Rulesテスト、Dependabot/secret scanning/code scanningなどの決定的チェックと併用する。
 - Agent mode、Copilot CLI、Coding agentへ委任する場合は、Issue/タスク、変更範囲、禁止範囲、DoD、必須テスト、ドキュメント更新要否を明記してから実行する。
-- 繰り返し使う作業手順（実装、レビュー、デバッグ、リリース確認、TestFlight検証）は、必要に応じて `.github/prompts/*.prompt.md` など再利用可能なプロンプトとして整備する。
+- 繰り返し使う作業手順（実装、レビュー、デバッグ、リリース確認、TestFlight検証）は、必要に応じて `.github/prompts/*.prompt.md` など再利用可能なプロンプトとして整備する。Copilot CLI / VS Code エージェントモードの使い分けは [docs/copilot-cli-workflows.md](copilot-cli-workflows.md) に集約する。
 - 各リリース判定ゲートについて、必須テスト、実機確認、ドキュメント更新、ユーザー確認項目、未解決リスクのチェックリストを定義し、運用時に更新する。
 - プロンプト自体が重要成果物になる場合は、AIに曖昧さ、定義不足、矛盾、隠れた前提をレビューさせてから使う

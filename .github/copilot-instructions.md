@@ -1,194 +1,52 @@
-# moneyplanner — GitHub Copilot ガイドライン
+# moneyplanner — GitHub Copilot 指示
 
-## プロジェクト概要
+世帯向けiPhone家計簿アプリ（Expo SDK 54 / React Native）。詳細仕様は [PLAN.md](../PLAN.md)、構成/データ方針は [ARCHITECTURE.md](../ARCHITECTURE.md)、AI運用ルールは [docs/ai-development.md](../docs/ai-development.md) を参照する。
 
-世帯向けiPhone家計簿アプリ（Expo SDK 54 / React Native）。
-詳細は `PLAN.md` を参照。
+## 最優先ルール
 
-## 技術スタック
+- React Nativeアプリのため、Web向けpreviewやExpo Go前提の動作確認をしない。実動作確認はTestFlightまたはexpo-dev-clientビルドで行う。
+- React Native Firebaseのネイティブモジュールを使うため、Web/Expo GoでFirebase/Auth/App Checkの実動作確認をしない。
+- Cloud Firestoreを正とする。`lib/database.ts`、`expo-sqlite`、SQLite APIを新規追加しない。
+- 世帯（household）単位のデータ分離、Apple Sign-In + Firebase Auth、Firestore Security Rulesを壊さない。
+- `git push` はユーザーが明示的に指示したときだけ行う。
+- 本番データ、秘密情報、認証情報、個人情報をAI/外部ツールへ渡さない。
+- Security Rules、Auth/App Check、世帯参加/解除、データ削除、課金、暗号化、プライバシーに触る変更は人間レビュー必須として扱う。
 
-- Expo SDK 54 / React Native 0.81.5
-- expo-router v6
-- Cloud Firestore（世帯単位のリアルタイム同期）
-- Apple Sign-In + Firebase Auth
-- React Native Firebase + expo-dev-client
-- expo-file-system/legacy + expo-sharing（CSV出力）
-- @react-native-community/datetimepicker
+## 実装方針
 
-## DBについて
+- 既存のFirestore CRUDは [lib/firestore.ts](../lib/firestore.ts) を中心に扱い、画面側でDB実装を重複させない。
+- 取引・口座・カテゴリ・内訳・店舗のスナップショット/フォールバック方針を崩さない。CSV入出力や履歴表示は既存のスナップショット方針に合わせる。
+- 口座残高は「手動設定 + 記録/編集/削除時の増分」で維持する。全取引からの自動reconcileを安易に復活させない。
+- 大量履歴を扱う画面では、全件リアルタイム購読や非仮想化の全件描画を避ける。
+- オフライン時の固着を避ける。書き込み待ちは既存の `waitForPendingWrite` 方針に合わせる。
+- 変更は最小範囲に留め、無関係なリファクタや見た目変更を混ぜない。
 
-- Cloud Firestore に完全置換済み（`lib/firestore.ts`）
-- Apple Sign-In + Firebase Auth で認証
-- 世帯（household）単位でデータ分離
-- リアルタイムリスナー（`onSnapshot`）で家族間同期
-- 同一レコードの同時更新は `serverTimestamp()` による last-write-wins
-- `lib/database.ts` / `expo-sqlite` は撤去済み。新規実装でSQLite APIを追加しないこと
+## 検証とドキュメント
 
-## 開発サーバーについて
+- 変更内容に応じて、関連ユニットテスト、`npm test -- <対象test>`、`npm run lint`、Firestore Rules変更時は `npm run test:rules` を実行する。
+- 実機確認が必要な変更は、最終回答でTestFlight/dev-client確認項目を明記する。
+- 仕様差分が出たら [PLAN.md](../PLAN.md)、[ARCHITECTURE.md](../ARCHITECTURE.md)、[docs/ai-development.md](../docs/ai-development.md)、必要に応じて [docs/decisions/](../docs/decisions/) を更新する。
+- 重要な設計判断、方針転換、採用/不採用理由はADRとして [docs/decisions/](../docs/decisions/) に残す。
 
-- React NativeアプリのためWeb向けpreviewは使用しない
-- 動作確認はiPhoneのTestFlightまたはexpo-dev-clientビルドで行う
-- React Native Firebaseのネイティブモジュールを使うため、Web/Expo GoではFirebase/Auth/App Checkの実動作確認をしない
+## AI指示ファイルの同期
 
-## AIガイドラインの管理
+- 両AIに共通する内容（技術スタック、DB規則、Git規則、ファイル構成、検証方針など）を変更するときは [CLAUDE.md](../CLAUDE.md) も同時に更新する。
+- Copilot CLI / VS Code エージェントモード固有の運用メモはこのファイルではなく [docs/copilot-cli-workflows.md](../docs/copilot-cli-workflows.md) に置く。
 
-- **両AIに共通する内容**（技術スタック・DB規則・Git規則・ファイル構成など）を変更するときは `CLAUDE.md` も同時に更新する
-- **Copilot CLI / VS Code エージェントモード固有の内容**（スラッシュコマンド・ワークフローパターン・推奨モデルなど）はこのファイルのみ更新する
+## 主要ファイル
 
-## AI運用チェックリスト（共通）
-
-- 詳細ルールは `docs/ai-development.md` を参照し、実行時にも遵守する
-- 大きい実装や委任前に、目的・変更範囲・禁止範囲・DoD・必須テストを明記する
-- セキュリティ/プライバシー影響（Rules、Auth、課金、データ削除、暗号化など）がある変更は人間レビュー必須
-- AI/外部ツールへ本番データ、秘密情報、認証情報、個人情報を渡さない
-- 実装で判明した仕様差分は `PLAN.md`、`ARCHITECTURE.md`、`docs/ai-development.md` に反映する
-- 重要な設計判断、方針転換、採用/不採用理由は `docs/decisions/` に記録し、将来の復活判断に必要な背景と復元方針も残す
-
-## Gitについて
-
-- `git push` はユーザーが明示的に指示したときのみ行う
-
-## Copilot CLI と VS Code エージェントモードの使い分け
-
-どちらも「AIエージェント」だが、得意な作業が異なる。
-
-### Copilot CLI の2つの起動形態
-
-| 形態               | コマンド           | 用途                            |
-| ------------------ | ------------------ | ------------------------------- |
-| インタラクティブ   | `copilot`          | 対話・計画・探索                |
-| プログラマティック | `copilot -p "..."` | CI/CDスクリプト・ヘッドレス実行 |
-
-### インタラクティブモードの3段階
-
-| モード            | 切り替え                 | 説明                                   |
-| ----------------- | ------------------------ | -------------------------------------- |
-| 通常（会話+実行） | デフォルト               | AIと対話しながらコマンドを実行         |
-| プランモード      | Shift+Tab または `/plan` | コーディング前に構造化された計画を作成 |
-| オートパイロット  | Shift+Tab（実験的）      | 承認なしで自律的にタスク完了           |
-
-### 主なスラッシュコマンド一覧
-
-| コマンド    | 説明                                                             |
-| ----------- | ---------------------------------------------------------------- |
-| `/plan`     | コーディング前に構造化チェックリストを作成                       |
-| `/research` | コードベース・GitHub・Webを横断調査、引用付きレポート生成        |
-| `/review`   | ステージ済み/未ステージの変更をAIでコードレビュー                |
-| `/delegate` | タスクをクラウドのCopilot Codingエージェントに非同期委譲         |
-| `/diff`     | カレントディレクトリの変更差分をレビュー                         |
-| `/fleet`    | タスクをサブエージェントで並列実行                               |
-| `/agent`    | 専用カスタムエージェントを選択・起動                             |
-| `/model`    | セッション中にモデルを切り替え（下記「タスク別推奨モデル」参照） |
-| `/share`    | セッションや調査レポートを共有（例: `/share gist research`）     |
-| `/mcp`      | MCPサーバー設定を管理                                            |
-| `/context`  | トークン使用量を可視化                                           |
-| `/compact`  | コンテキスト履歴を手動圧縮                                       |
-| `/resume`   | 前回のセッションを再開                                           |
-| `!COMMAND`  | AIをバイパスしてシェルコマンドを直接実行                         |
-
-### タスク別推奨モデル（`/model` で切り替え）
-
-| タスク                             | モデル                          |
-| ---------------------------------- | ------------------------------- |
-| アーキテクチャ設計・複雑なバグ解析 | Claude Opus 4.6                 |
-| 日常的な機能開発・コード編集       | Claude Sonnet 4.6（デフォルト） |
-| コード生成・レビュー特化           | GPT-5.3 Codex                   |
-
-### Copilot CLI（`copilot` コマンド）が向いている場面
-
-- **GitHub.com操作**: PR作成・マージ、Issue作成・管理、ブランチ操作（GitHub MCPサーバーが内蔵）
-- **一気通貫フロー**: ブランチ作成 → 実装 → PR作成 を1セッションで流す
-- **コードレビュー**: `/review` でブランチの変更を即座にレビュー
-- **深い技術調査**: `/research` でコードベース・GitHub・Webを横断調査
-- **シェル自動化**: `-p` オプションでCI/CDへの組み込みやヘッドレス実行
-- **大規模リファクタ**: `/plan` + オートパイロットで体系的に進める
-
-### VS Code エージェントモードが向いている場面
-
-- **差分プレビューつきのコード編集**: 変更前に正確なファイル差分を確認
-- **複数ファイル横断の変更**: エディタ上で変更箇所をリアルタイム確認
-- **LSP/診断情報を活かしたデバッグ**: エラーや警告が直接コンテキストに入る
-- **対話的な実装**: 途中で方針を変えながら進めたい作業
-- **ビジュアルデバッガとの連携**: エディタのブレークポイントを使うデバッグ
-
-### Copilot CLI の `/research` コマンド
-
-技術調査に特化したスラッシュコマンド。コードベース・GitHub上のリポジトリ・Webを横断して調査し、引用付きMarkdownレポートを生成する。
-
-- **向いている用途**: 新技術の導入前調査、ライブラリ比較、アーキテクチャ全体の把握
-- **向いていない用途**: コード変更（レポート生成のみでファイル編集はしない）、簡単な質問
-- **共有**: `/share gist research` でGitHub Gistとして保存・共有可能
-
-```
-# moneyplanner向け使用例
-/research Firestore read/write cost optimization patterns for household budget apps
-/research Firebase App Check enforcement migration strategy with phased rollout in production
-/research Expo SDK 55 migration checklist for React Native Firebase apps (54 → 55)
-/research App Store submission requirements for finance apps with shared household data
-```
-
-### moneyplanner での推奨ワークフローパターン
-
-**パターン1: 機能開発（推奨）**
-
-```
-Phase 1: RESEARCH  → Copilot CLI /research
-Phase 2: PLAN      → Copilot CLI /plan（Shift+Tab）
-Phase 3: IMPLEMENT → VS Code エージェントモード（差分レビューしながら）
-Phase 4: TEST      → 開発者がTestFlightまたはdev-clientで確認
-Phase 5: COMMIT/PR → Copilot CLI
-```
-
-**パターン2: バグ修正**
-
-```
-Phase 1: DIAGNOSE → VS Code エージェントモード（LSP診断情報活用）
-Phase 2: FIX      → VS Code エージェントモード
-Phase 3: VERIFY   → 開発者がTestFlightまたはdev-clientで確認
-Phase 4: COMMIT   → Copilot CLI または VS Code エージェントモード
-```
-
-**パターン3: GitHub操作のみ**
-
-```
-→ Copilot CLI 一択
-"未解決のIssue一覧を見せて"
-"PR #12 にバグがないかチェックして"
-"チェックが通ったらPR #12 をマージして"
-```
-
-**パターン4: 大規模リファクタ**
-
-```
-Phase 1: /plan   → Copilot CLI プランモード
-Phase 2: EXECUTE → Copilot CLI オートパイロット（実験的）または VS Code エージェントモード
-Phase 3: /review → Copilot CLI で main に対してレビュー
-Phase 4: PR      → Copilot CLI
-```
-
-### 判断の目安
-
-- GitHub.com を操作したい → **Copilot CLI**
-- 技術調査・事前リサーチをしたい → **Copilot CLI `/research`**
-- ファイルを編集・実装したい → **VS Code エージェントモード**
-- コードレビューしたい → **Copilot CLI `/review`**
-- 実装してからPR作成 → 実装は**VS Code エージェントモード**、PR作成は**Copilot CLI**
-- 大規模タスクを計画したい → **Copilot CLI `/plan`**
-
-## ファイル構成
-
-```
+```text
 lib/
   firestore.ts     # Firestore CRUD
   auth.ts          # 認証ロジック
   household.ts     # 世帯管理
-  csvExport.ts     # CSV生成・共有（expo-file-system/legacyを使用）
+  csvExport.ts     # CSV生成・共有（expo-file-system/legacy）
   csvImport.ts     # CSV取り込み（検証: csvImportParse.ts / マスタ解決: csvImportResolve.ts）
 app/
   auth.tsx         # ログイン画面
   household.tsx    # 世帯作成/参加画面
 app/(tabs)/
-  index.tsx        # 記録タブ（初期画面）
+  index.tsx        # 記録タブ
   history.tsx      # 履歴タブ
   summary.tsx      # 集計タブ
   settings.tsx     # 設定タブ
