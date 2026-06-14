@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  buildCsvExcelBase64,
+    buildCsvExcelBase64,
     buildCsvText,
     buildCsvUtf8Base64,
     type CsvTransaction,

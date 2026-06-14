@@ -73,7 +73,10 @@ export function decodeCsvTextFromBase64(base64: string): string | null {
 
   const utf8Decoder = new TextDecoder("utf-8");
   const utf8Bytes =
-    bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf
+    bytes.length >= 3 &&
+    bytes[0] === 0xef &&
+    bytes[1] === 0xbb &&
+    bytes[2] === 0xbf
       ? bytes.subarray(3)
       : bytes;
   const text = utf8Decoder.decode(utf8Bytes);
