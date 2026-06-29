@@ -31,6 +31,7 @@ import {
     buildMonthCategorySummaryFromTransactions,
     buildYearMonthlyTotalsFromTransactions,
 } from "@/lib/summaryAggregation";
+import { SUMMARY_PERIOD_NAV_LAYOUT } from "@/lib/summaryPeriodNav";
 
 type ViewMode = "monthly" | "yearly";
 
@@ -261,21 +262,35 @@ export default function SummaryScreen() {
           { backgroundColor: colors.card, borderColor: colors.border },
         ]}
       >
-        <TouchableOpacity onPress={prevPeriod} style={styles.navButton}>
+        <TouchableOpacity
+          onPress={prevPeriod}
+          style={styles.navButton}
+          accessibilityRole="button"
+          accessibilityLabel="前の期間"
+        >
           <Text style={[styles.navArrow, { color: colors.tint }]}>‹</Text>
         </TouchableOpacity>
+        <View style={styles.monthTitleSlot} pointerEvents="box-none">
+          <TouchableOpacity
+            style={styles.monthTitleButton}
+            onPress={() => setShowPeriodPicker((visible) => !visible)}
+            accessibilityRole="button"
+            accessibilityLabel="集計期間を選択"
+          >
+            <Text style={[styles.monthTitle, { color: colors.text }]}>
+              {formatYearMonthLabel(year, month, viewMode)}
+            </Text>
+            <Text style={[styles.monthJumpHint, { color: colors.subText }]}>
+              変更
+            </Text>
+          </TouchableOpacity>
+        </View>
         <TouchableOpacity
-          style={styles.monthTitleButton}
-          onPress={() => setShowPeriodPicker((visible) => !visible)}
+          onPress={nextPeriod}
+          style={styles.navButton}
+          accessibilityRole="button"
+          accessibilityLabel="次の期間"
         >
-          <Text style={[styles.monthTitle, { color: colors.text }]}>
-            {formatYearMonthLabel(year, month, viewMode)}
-          </Text>
-          <Text style={[styles.monthJumpHint, { color: colors.subText }]}>
-            変更
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={nextPeriod} style={styles.navButton}>
           <Text style={[styles.navArrow, { color: colors.tint }]}>›</Text>
         </TouchableOpacity>
       </View>
@@ -817,9 +832,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 8,
   },
-  navButton: { padding: 8 },
+  navButton: {
+    width: SUMMARY_PERIOD_NAV_LAYOUT.sideButtonSize,
+    minHeight: SUMMARY_PERIOD_NAV_LAYOUT.sideButtonSize,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   navArrow: { fontSize: 26 },
-  monthTitleButton: { alignItems: "center", paddingVertical: 6, flex: 1 },
+  monthTitleSlot: { flex: 1, alignItems: "center", paddingHorizontal: 8 },
+  monthTitleButton: {
+    alignItems: "center",
+    minHeight: SUMMARY_PERIOD_NAV_LAYOUT.titleMinHeight,
+    justifyContent: "center",
+    paddingHorizontal: SUMMARY_PERIOD_NAV_LAYOUT.titleHorizontalPadding,
+    flexGrow: SUMMARY_PERIOD_NAV_LAYOUT.titleConsumesFlexibleSpace ? 1 : 0,
+  },
   monthTitle: { fontSize: 17, fontWeight: "700" },
   monthJumpHint: { fontSize: 11, fontWeight: "700", marginTop: 2 },
   scrollContent: { paddingHorizontal: 12, paddingBottom: 100 },
