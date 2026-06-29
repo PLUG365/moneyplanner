@@ -63,6 +63,13 @@ git ls-files package-lock.json
 
 ## 更新履歴
 
+### 2026-06-30: OSSライセンス表記を作成
+
+- `npx --yes license-checker --production --summary` でproduction依存のライセンス概要を再確認
+- `npx --yes license-checker --production --csv --relativeLicensePath --out docs/third-party-licenses.csv` でproduction依存のライセンス一覧を生成
+- `THIRD_PARTY_NOTICES.md` を作成し、ライセンス概要と生成済みCSVへの参照を追加
+- App Store提出前に依存更新が入った場合は、CSVを再生成し、未知/想定外ライセンスがないか再確認する
+
 ### 2026-05-08: SDK 54 互換範囲の更新を適用
 
 - `npm update` で `Wanted` 列の更新を一括適用
