@@ -1,11 +1,11 @@
 import { router, useFocusEffect, type Href } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import {
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import MonthPickerModal from "@/components/MonthPickerModal";
@@ -14,22 +14,22 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { useCachedTransactions } from "@/hooks/useCachedTransactions";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import {
-    BudgetDefinition,
-    BudgetStatus,
-    Category,
-    householdCollection,
-    mapBudgetDefinition,
-    mapCategory,
-    MonthlyCategorySummary,
-    MonthlyTotal,
+  BudgetDefinition,
+  BudgetStatus,
+  Category,
+  householdCollection,
+  mapBudgetDefinition,
+  mapCategory,
+  MonthlyCategorySummary,
+  MonthlyTotal,
 } from "@/lib/firestore";
 import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
 import { buildHistoryDrilldownParams } from "@/lib/historyDrilldown";
 import { formatYearMonthLabel, shiftYearMonth } from "@/lib/monthPicker";
 import {
-    buildBudgetStatusesFromData,
-    buildMonthCategorySummaryFromTransactions,
-    buildYearMonthlyTotalsFromTransactions,
+  buildBudgetStatusesFromData,
+  buildMonthCategorySummaryFromTransactions,
+  buildYearMonthlyTotalsFromTransactions,
 } from "@/lib/summaryAggregation";
 import { SUMMARY_PERIOD_NAV_LAYOUT } from "@/lib/summaryPeriodNav";
 
