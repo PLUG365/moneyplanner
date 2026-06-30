@@ -1,112 +1,113 @@
 import { router, useFocusEffect, type Href } from "expo-router";
 import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
 } from "react";
 import {
-  ActionSheetIOS,
-  Alert,
-  Animated,
-  InputAccessoryView,
-  Keyboard,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActionSheetIOS,
+    Alert,
+    Animated,
+    InputAccessoryView,
+    Keyboard,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import MoneyInputModal from "@/components/MoneyInputModal";
 import ProgressOverlay, {
-  type ProgressOverlayProgress,
+    type ProgressOverlayProgress,
 } from "@/components/ProgressOverlay";
 import { THEME_IDS, THEMES } from "@/constants/Themes";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useCollection } from "@/hooks/useFirestore";
 import {
-  ACCOUNT_DELETION_CONFIRMATION_TEXT,
-  isAccountDeletionConfirmationValid,
+    ACCOUNT_DELETION_CONFIRMATION_TEXT,
+    isAccountDeletionConfirmationValid,
 } from "@/lib/accountDeletion";
 import {
-  deleteCurrentUserAccount,
-  getCurrentUser,
-  reauthenticateCurrentUserWithApple,
-  signOut,
+    deleteCurrentUserAccount,
+    getCurrentUser,
+    reauthenticateCurrentUserWithApple,
+    signOut,
 } from "@/lib/auth";
 import { } from "@/lib/categoryOrdering";
 import { exportCSV } from "@/lib/csvExport";
 import { formatImportErrors, prepareCsvImport } from "@/lib/csvImport";
+import { getCsvImportAccessFromEnv } from "@/lib/csvImportPurchaseGate";
 import {
-  Account,
-  addAccount,
-  addBreakdown,
-  addCategory,
-  Breakdown,
-  Category,
-  DEFAULT_ACCOUNT_ID,
-  deleteAccountAndMoveToDefault,
-  deleteBreakdown,
-  deleteCategory,
-  deleteHouseholdDataAndCurrentUserProfile,
-  deleteMonthlyBudget,
-  getAccounts,
-  getAllTransactions,
-  getBreakdownsByCategory,
-  getCategories,
-  getCategoryDeletionImpact,
-  getMonthlyBudgets,
-  householdCollection,
-  mapAccount,
-  resetCategoryAndBreakdownsToDefault,
-  resetFirestoreForDevelopment,
-  setMonthlyBudget,
-  TransactionType,
-  updateAccountBalance,
-  updateAccountName,
-  updateBreakdown,
-  updateCategory,
-  updateCategoryDisplayOrders,
+    Account,
+    addAccount,
+    addBreakdown,
+    addCategory,
+    Breakdown,
+    Category,
+    DEFAULT_ACCOUNT_ID,
+    deleteAccountAndMoveToDefault,
+    deleteBreakdown,
+    deleteCategory,
+    deleteHouseholdDataAndCurrentUserProfile,
+    deleteMonthlyBudget,
+    getAccounts,
+    getAllTransactions,
+    getBreakdownsByCategory,
+    getCategories,
+    getCategoryDeletionImpact,
+    getMonthlyBudgets,
+    householdCollection,
+    mapAccount,
+    resetCategoryAndBreakdownsToDefault,
+    resetFirestoreForDevelopment,
+    setMonthlyBudget,
+    TransactionType,
+    updateAccountBalance,
+    updateAccountName,
+    updateBreakdown,
+    updateCategory,
+    updateCategoryDisplayOrders,
 } from "@/lib/firestore";
 import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
 import {
-  approveJoinRequest,
-  getHouseholdId,
-  getHouseholdMembers,
-  getInviteCode,
-  getPendingJoinRequests,
-  HouseholdJoinRequest,
-  regenerateInviteCode,
-  rejectJoinRequest,
-  removeHouseholdMember,
-  type HouseholdMember,
+    approveJoinRequest,
+    getHouseholdId,
+    getHouseholdMembers,
+    getInviteCode,
+    getPendingJoinRequests,
+    HouseholdJoinRequest,
+    regenerateInviteCode,
+    rejectJoinRequest,
+    removeHouseholdMember,
+    type HouseholdMember,
 } from "@/lib/household";
 import { waitForPendingWrite } from "@/lib/pendingWrite";
 import { buildBudgetInputMap } from "@/lib/settingsBudgetEditor";
 import { getMemberRemovalActionLabel } from "@/lib/settingsHouseholdMembers";
 import {
-  formatAccountBalanceInputDisplay,
-  formatBudgetInputDisplay,
-  getSettingsKeyboardAccessoryPreview,
-  resolveAccountBalanceInput,
-  resolveBudgetInput,
-  type SettingsKeyboardField,
+    formatAccountBalanceInputDisplay,
+    formatBudgetInputDisplay,
+    getSettingsKeyboardAccessoryPreview,
+    resolveAccountBalanceInput,
+    resolveBudgetInput,
+    type SettingsKeyboardField,
 } from "@/lib/settingsKeyboardAccessory";
 import {
-  buildAccountEditorDraft,
-  buildBreakdownEditorDraft,
-  buildCategoryEditorDraft,
-  buildEditorMeta,
-  buildEmptyAccountEditorDraft,
-  buildEmptyBreakdownEditorDraft,
-  buildEmptyCategoryEditorDraft,
-  type SettingsManagerTab,
+    buildAccountEditorDraft,
+    buildBreakdownEditorDraft,
+    buildCategoryEditorDraft,
+    buildEditorMeta,
+    buildEmptyAccountEditorDraft,
+    buildEmptyBreakdownEditorDraft,
+    buildEmptyCategoryEditorDraft,
+    type SettingsManagerTab,
 } from "@/lib/settingsManagerEditor";
 import { getSettingsWriteAvailability } from "@/lib/settingsWriteAvailability";
 
@@ -137,6 +138,7 @@ type NumericInputTarget = "category-budget" | "account-balance";
 export default function SettingsScreen() {
   const { colors, themeId, setThemeId } = useAppTheme();
   const insets = useSafeAreaInsets();
+  const csvImportAccess = useMemo(() => getCsvImportAccessFromEnv(), []);
 
   const sheetAnim = useRef(new Animated.Value(600)).current;
 
@@ -974,6 +976,14 @@ export default function SettingsScreen() {
   };
 
   const handleImportCSV = async () => {
+    if (!csvImportAccess.allowed) {
+      Alert.alert(
+        "CSV取り込み",
+        `${csvImportAccess.message}\n\nプロダクトID: ${csvImportAccess.productId}\n購入・復元処理の実装後に利用できます。`,
+      );
+      return;
+    }
+
     setImporting(true);
     try {
       const prepared = await prepareCsvImport();
@@ -2550,9 +2560,7 @@ export default function SettingsScreen() {
 
       <ProgressOverlay
         visible={importProgress !== null || savingAccount}
-        message={
-          importProgress !== null ? "CSVを取り込んでいます…" : "保存中…"
-        }
+        message={importProgress !== null ? "CSVを取り込んでいます…" : "保存中…"}
         progress={importProgress}
       />
     </ScrollView>
