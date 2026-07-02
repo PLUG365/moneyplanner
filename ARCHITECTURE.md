@@ -222,7 +222,7 @@ erDiagram
 
 /households/{householdId}
     - createdBy: string (userId)
-    - inviteCode: string (6文字、参加用)
+    - inviteCode: string (新規発行は10文字。旧6文字コードも期限内は参加に使用可)
     - createdAt: Timestamp
 
     # 以下、すべて /households/{householdId} 配下のサブコレクション
@@ -239,6 +239,8 @@ erDiagram
         - inviteCode: string
         - status: pending | approved | rejected
         - requestedAt, reviewedAt?: Timestamp
+        - 読取仕様: 申請者本人（request.auth.uid == requestId）は自分のリクエストのみ、
+          世帯のactiveメンバーは世帯配下の全リクエストを読み取れる（firestore.rules）
 
     /categories/{categoryId}
         - name, type, color, isDefault, displayOrder
@@ -360,7 +362,8 @@ sequenceDiagram
 - **同期方式**: Cloud Firestoreリアルタイムリスナー（`onSnapshot`）
 - **オフライン**: Firestore内蔵のオフライン永続化で自動対応
 - **認証**: Apple Sign-In + Firebase Auth
-- **世帯共有**: 招待コード方式、6文字コードで家族が同一世帯に参加
+- **世帯共有**: 招待コード方式（新規発行は10文字、CSPRNG生成）で家族が同一世帯に参加
+- **権限モデル**: 世帯メンバーは全員対等。オーナー/管理者ロールは導入しない。`createdBy` は作成記録であり権限判定には使わない（メンバー解除・招待コード再発行・全データ削除は全メンバーが等しく実行可能）
 - **競合解決**: `serverTimestamp()` による last-write-wins
 - **実装要件**: expo-dev-client + React Native Firebase + EAS Build
 

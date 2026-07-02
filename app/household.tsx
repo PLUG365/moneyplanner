@@ -327,10 +327,10 @@ export default function HouseholdScreen() {
           ]}
           value={inviteCode}
           onChangeText={setInviteCode}
-          placeholder="招待コード（6桁）"
+          placeholder="招待コード（6〜10桁）"
           placeholderTextColor={colors.subText}
           autoCapitalize="characters"
-          maxLength={6}
+          maxLength={10}
         />
         {loading ? (
           <ActivityIndicator

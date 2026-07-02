@@ -461,6 +461,105 @@ rulesTest(
   },
 );
 
+rulesTest(
+  "household cannot be created with createdBy of another user",
+  async () => {
+    const db = testEnv!.authenticatedContext("dana").firestore();
+
+    await assertFails(
+      setDoc(doc(db, "households", "household-forged"), {
+        createdBy: "alice",
+        inviteCode: "SET234SET2",
+        createdAt: "2026-05-10T00:00:00.000Z",
+      }),
+    );
+  },
+);
+
+rulesTest(
+  "household cannot be created without a string invite code",
+  async () => {
+    const db = testEnv!.authenticatedContext("dana").firestore();
+
+    await assertFails(
+      setDoc(doc(db, "households", "household-noinvite"), {
+        createdBy: "dana",
+        inviteCode: 123456,
+        createdAt: "2026-05-10T00:00:00.000Z",
+      }),
+    );
+  },
+);
+
+rulesTest("active members cannot change household createdBy", async () => {
+  const db = testEnv!.authenticatedContext("alice").firestore();
+
+  await assertFails(
+    updateDoc(doc(db, "households", HOUSEHOLD_ID), {
+      createdBy: "alice-2",
+    }),
+  );
+});
+
+rulesTest(
+  "active members can rotate the household invite code without touching createdBy",
+  async () => {
+    const db = testEnv!.authenticatedContext("alice").firestore();
+
+    await assertSucceeds(
+      updateDoc(doc(db, "households", HOUSEHOLD_ID), {
+        inviteCode: "NEW234NEW2",
+        inviteCodeUpdatedAt: "2026-05-10T00:00:00.000Z",
+      }),
+    );
+  },
+);
+
+rulesTest(
+  "active members cannot change the uid of a join request",
+  async () => {
+    await testEnv!.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(
+        doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"),
+        {
+          uid: "charlie",
+          displayName: "Charlie",
+          status: "pending",
+          requestedAt: "2026-05-10T00:00:00.000Z",
+        },
+      );
+    });
+
+    const db = testEnv!.authenticatedContext("alice").firestore();
+    await assertFails(
+      updateDoc(
+        doc(db, "households", HOUSEHOLD_ID, "joinRequests", "charlie"),
+        {
+          uid: "mallory",
+          status: "approved",
+          reviewedBy: "alice",
+        },
+      ),
+    );
+  },
+);
+
+rulesTest(
+  "invite code createdBy cannot be changed via update",
+  async () => {
+    const db = testEnv!.authenticatedContext("alice").firestore();
+
+    await assertFails(
+      setDoc(
+        doc(db, "inviteCodes", "123456"),
+        { createdBy: "mallory" },
+        { merge: true },
+      ),
+    );
+  },
+);
+
 async function seedHousehold() {
   await testEnv!.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();

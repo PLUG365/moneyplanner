@@ -16,6 +16,7 @@ import {
   isInviteCodeFormat,
   resolveInviteCodeState,
 } from "./inviteCode";
+import { createSecureInviteCode } from "./inviteCodeSecure";
 import {
   buildInviteJoinFailurePatch,
   buildInviteJoinResetPatch,
@@ -124,7 +125,10 @@ export async function createHousehold(displayName: string): Promise<string> {
     );
   }
 
-  const inviteCode = createReplacementInviteCode();
+  const inviteCode = createReplacementInviteCode(
+    undefined,
+    createSecureInviteCode,
+  );
 
   const householdRef = firestore().collection("households").doc();
   const householdId = householdRef.id;
@@ -670,7 +674,10 @@ export async function regenerateInviteCode(
   }
 
   const oldInviteCode = householdData.inviteCode;
-  const nextInviteCode = createReplacementInviteCode(oldInviteCode);
+  const nextInviteCode = createReplacementInviteCode(
+    oldInviteCode,
+    createSecureInviteCode,
+  );
 
   const batch = firestore().batch();
   batch.update(householdRef, {

@@ -72,10 +72,16 @@ service cloud.firestore {
     }
 
     // 世帯ドキュメント: 自世帯メンバーのみアクセス可
+    // 世帯メンバーは全員対等（オーナー/管理者ロールなし）。createdBy は作成記録であり権限には使わない。
     match /households/{householdId} {
       allow create: if signedIn()
-        && request.resource.data.createdBy == request.auth.uid;
-      allow read, update, delete: if activeMember(householdId);
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.inviteCode is string;
+      allow read, delete: if activeMember(householdId);
+      // createdBy は作成後変更不可
+      allow update: if activeMember(householdId)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.inviteCode is string;
 
       match /members/{userId} {
         allow read: if activeMember(householdId);
@@ -119,7 +125,11 @@ service cloud.firestore {
             && request.resource.data.displayName.size() > 0
             && request.resource.data.displayName.size() <= 20
           )
-          || activeMember(householdId);
+          || (
+            activeMember(householdId)
+            // 承認/却下は状態更新のみ。申請者uidの改変は不可
+            && request.resource.data.uid == resource.data.uid
+          );
 
         allow delete: if activeMember(householdId)
           || (
