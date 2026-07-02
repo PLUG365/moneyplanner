@@ -9,8 +9,33 @@ export type CsvTransaction = {
   memo: string;
 };
 
+/** Excel等が数式として解釈しうる先頭文字（CSVインジェクション対策の対象）。 */
+const FORMULA_LEADING_CHARS = ["=", "+", "-", "@", "\t", "\r"];
+
+function startsWithFormulaChar(value: string): boolean {
+  return value.length > 0 && FORMULA_LEADING_CHARS.includes(value[0]);
+}
+
+/** 数式開始文字で始まるフィールドにシングルクォートを前置して無害化する。
+ *  インポート側は stripCsvFormulaGuard で除去するため往復で値は保たれる。 */
+export function guardCsvFormulaField(value: string): string {
+  return startsWithFormulaChar(value) ? `'${value}` : value;
+}
+
+/** guardCsvFormulaField で付与された接頭辞を除去する（インポート往復整合用）。
+ *  「' + 数式開始文字」の並びのみ除去するため、元からシングルクォートで
+ *  始まる通常の値には影響しない。 */
+export function stripCsvFormulaGuard(value: string): string {
+  if (value.startsWith("'") && startsWithFormulaChar(value.slice(1))) {
+    return value.slice(1);
+  }
+  return value;
+}
+
 function escapeCsvField(value: string): string {
-  const normalized = (value ?? "").replace(/\r?\n/g, " ");
+  const normalized = guardCsvFormulaField(
+    (value ?? "").replace(/\r?\n/g, " "),
+  );
   if (normalized.includes(",") || normalized.includes('"')) {
     return `"${normalized.replace(/"/g, '""')}"`;
   }

@@ -1,3 +1,6 @@
+import { stripCsvFormulaGuard } from "./csvFormat";
+import { MAX_TRANSACTION_AMOUNT } from "./transactionAmountValidation";
+
 export type CsvImportError = {
   line: number;
   message: string;
@@ -175,6 +178,13 @@ export function parseImportCsv(text: string): CsvImportParseResult {
         message: "金額が不正です（0以上の整数で入力してください）",
       });
       hasError = true;
+    } else if (amount > MAX_TRANSACTION_AMOUNT) {
+      // 手入力側（transactionAmountValidation.ts）と同じ上限を適用する。
+      errors.push({
+        line,
+        message: `金額が上限（${MAX_TRANSACTION_AMOUNT.toLocaleString("ja-JP")}円）を超えています`,
+      });
+      hasError = true;
     } else if (amount === 0 && memo.trim() === "") {
       // アプリ本体の登録ルールに合わせる: 金額0はメモがある場合のみ許可。
       errors.push({
@@ -190,12 +200,12 @@ export function parseImportCsv(text: string): CsvImportParseResult {
       line,
       date: date.trim(),
       type,
-      accountName: accountName.trim(),
-      categoryName: categoryName.trim(),
-      breakdownName: breakdownName.trim(),
-      storeName: storeName.trim(),
+      accountName: stripCsvFormulaGuard(accountName.trim()),
+      categoryName: stripCsvFormulaGuard(categoryName.trim()),
+      breakdownName: stripCsvFormulaGuard(breakdownName.trim()),
+      storeName: stripCsvFormulaGuard(storeName.trim()),
       amount,
-      memo: memo.trim(),
+      memo: stripCsvFormulaGuard(memo.trim()),
     });
   }
 

@@ -63,7 +63,7 @@ import { formatYearMonthLabel, shiftYearMonth } from "@/lib/monthPicker";
 import { waitForPendingWrite } from "@/lib/pendingWrite";
 import { buildRecordCategoryOptions } from "@/lib/recordOptions";
 import { resolveTransactionAmountInput } from "@/lib/transactionAmountInput";
-import { isValidTransactionAmount } from "@/lib/transactionAmountValidation";
+import { isValidTransactionAmount, MAX_TRANSACTION_AMOUNT } from "@/lib/transactionAmountValidation";
 import {
     buildBreakdownsByCategory,
     resolveTransactionCopyTarget,
@@ -779,7 +779,12 @@ export default function HistoryScreen() {
 
     const amount = resolveTransactionAmountInput(editAmountRaw);
     if (!isValidTransactionAmount(amount, editMemo)) {
-      Alert.alert("エラー", "金額を入力するか、メモを入力してください");
+      Alert.alert(
+        "エラー",
+        amount !== null && amount > MAX_TRANSACTION_AMOUNT
+          ? `金額が上限（${MAX_TRANSACTION_AMOUNT.toLocaleString("ja-JP")}円）を超えています`
+          : "金額を入力するか、メモを入力してください",
+      );
       return;
     }
     if (!editCategoryId) {

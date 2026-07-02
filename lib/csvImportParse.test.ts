@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { parseCsvRecords, parseImportCsv } from "./csvImportParse";
+import { MAX_TRANSACTION_AMOUNT } from "./transactionAmountValidation";
 
 const HEADER_V2 = "日付,種別,口座,カテゴリ,内訳,店舗,金額,メモ";
 const HEADER_V1 = "日付,種別,口座,カテゴリ,内訳,金額,メモ";
@@ -185,4 +186,43 @@ test("parseImportCsv trims surrounding whitespace in fields", () => {
   assert.equal(rows[0].accountName, "家計");
   assert.equal(rows[0].amount, 100);
   assert.equal(rows[0].memo, "めも");
+});
+
+test("parseImportCsv strips CSV formula guard prefix for round-trip", () => {
+  const text = [
+    HEADER_V2,
+    "2026-04-26,支出,'=口座,'+食費,'-内訳,'@店,100,'=1+2 のメモ",
+  ].join("\n");
+  const { rows, errors } = parseImportCsv(text);
+  assert.deepEqual(errors, []);
+  assert.equal(rows[0].accountName, "=口座");
+  assert.equal(rows[0].categoryName, "+食費");
+  assert.equal(rows[0].breakdownName, "-内訳");
+  assert.equal(rows[0].storeName, "@店");
+  assert.equal(rows[0].memo, "=1+2 のメモ");
+});
+
+test("parseImportCsv keeps plain single-quote-leading values as-is", () => {
+  const text = [HEADER_V2, "2026-04-26,支出,家計,食費,,,100,'普通のメモ"].join(
+    "\n",
+  );
+  const { rows, errors } = parseImportCsv(text);
+  assert.deepEqual(errors, []);
+  assert.equal(rows[0].memo, "'普通のメモ");
+});
+
+test("parseImportCsv rejects amounts above the shared limit", () => {
+  const over = String(MAX_TRANSACTION_AMOUNT + 1);
+  const max = String(MAX_TRANSACTION_AMOUNT);
+  const text = [
+    HEADER_V2,
+    `2026-04-26,支出,家計,食費,,,${over},メモ`,
+    `2026-04-27,支出,家計,食費,,,${max},メモ`,
+  ].join("\n");
+  const { rows, errors } = parseImportCsv(text);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].line, 2);
+  assert.match(errors[0].message, /上限/);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].amount, MAX_TRANSACTION_AMOUNT);
 });

@@ -9,13 +9,36 @@ import {
     resolveInviteCodeState,
 } from "./inviteCode";
 
-test("createInviteCode returns a six-character code without ambiguous characters", () => {
-  const values = [0, 0.1, 0.2, 0.3, 0.4, 0.5];
-  const code = createInviteCode(() => values.shift() ?? 0);
+test("createInviteCode returns a ten-character code without ambiguous characters", () => {
+  const code = createInviteCode((byteCount) => {
+    const bytes = new Uint8Array(byteCount);
+    for (let i = 0; i < byteCount; i++) {
+      bytes[i] = i * 7;
+    }
+    return bytes;
+  });
 
-  assert.equal(code.length, 6);
+  assert.equal(code.length, 10);
   assert.equal(isInviteCodeFormat(code), true);
   assert.doesNotMatch(code, /[01IO]/);
+});
+
+test("createInviteCode maps bytes without modulo bias (32 chars divides 256)", () => {
+  const code = createInviteCode((byteCount) => {
+    const bytes = new Uint8Array(byteCount);
+    bytes.fill(255);
+    return bytes;
+  });
+
+  // 255 % 32 = 31 → 末尾文字 "9"
+  assert.equal(code, "9999999999");
+});
+
+test("isInviteCodeFormat accepts legacy 6-character and new 10-character codes", () => {
+  assert.equal(isInviteCodeFormat("ABC234"), true);
+  assert.equal(isInviteCodeFormat("ABC234DEF5"), true);
+  assert.equal(isInviteCodeFormat("ABC234D"), false);
+  assert.equal(isInviteCodeFormat("ABC234DEF56"), false);
 });
 
 test("isInviteCodeFormat rejects lowercase and ambiguous characters", () => {
