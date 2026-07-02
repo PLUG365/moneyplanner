@@ -6,6 +6,8 @@ import {
     buildCsvText,
     buildCsvUtf8Base64,
     type CsvTransaction,
+    guardCsvFormulaField,
+    stripCsvFormulaGuard,
 } from "./csvFormat";
 
 test("buildCsvText emits UTF-8 BOM and CRLF rows for Excel", () => {
@@ -87,4 +89,37 @@ test("buildCsvExcelBase64 emits UTF-16LE BOM bytes (FF FE)", () => {
   // UTF-16LE BOM: FF FE
   assert.equal(buf[0], 0xff);
   assert.equal(buf[1], 0xfe);
+});
+
+test("buildCsvText neutralizes formula-leading fields (CSV injection guard)", () => {
+  const tx: CsvTransaction = {
+    date: "2026-03-30",
+    amount: 100,
+    type: "expense",
+    accountName: "=SUM(A1:A9)",
+    categoryName: "+加算",
+    breakdownName: "-減算",
+    storeName: "@店",
+    memo: "=1+2,カンマ入り",
+  };
+
+  const csv = buildCsvText([tx]);
+
+  assert.match(csv, /,'=SUM\(A1:A9\),/);
+  assert.match(csv, /,'\+加算,/);
+  assert.match(csv, /,'-減算,/);
+  assert.match(csv, /,'@店,/);
+  assert.match(csv, /"'=1\+2,カンマ入り"/);
+});
+
+test("guardCsvFormulaField and stripCsvFormulaGuard round-trip values", () => {
+  for (const value of ["=SUM(A1)", "+100", "-100", "@user", "\t先頭タブ"]) {
+    assert.equal(stripCsvFormulaGuard(guardCsvFormulaField(value)), value);
+  }
+  // 通常の値は変化しない
+  assert.equal(guardCsvFormulaField("普通のメモ"), "普通のメモ");
+  assert.equal(guardCsvFormulaField(""), "");
+  // 元からシングルクォートで始まる値は誤って削らない
+  assert.equal(stripCsvFormulaGuard("'quoted"), "'quoted");
+  assert.equal(guardCsvFormulaField("'quoted"), "'quoted");
 });
