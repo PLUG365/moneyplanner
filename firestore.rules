@@ -139,9 +139,13 @@ service cloud.firestore {
           );
       }
 
-      // 世帯配下の全サブコレクション: 自世帯メンバーのみ
+      // 世帯配下の実データサブコレクション: 自世帯メンバーのみ。
+      // joinRequests / members は専用の厳格ルールで統治するため、
+      // ここでの一律 write 許可の対象から除外する（uid 不変等の制約を効かせるため）。
       match /{subcollection}/{docId} {
-        allow read, write: if activeMember(householdId);
+        allow read, write: if activeMember(householdId)
+          && subcollection != "joinRequests"
+          && subcollection != "members";
       }
     }
   }
