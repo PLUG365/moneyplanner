@@ -47,6 +47,12 @@
       "@react-native-firebase/auth",
       "expo-apple-authentication",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "招待コードのQRコード読み取りにカメラを使用します。"
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "ios": {

@@ -402,6 +402,8 @@ moneyplanner/
 | `lib/csvExport.ts`                                         | CSV生成・共有                                                         |
 | `lib/csvImport.ts`                                         | CSV取り込み（検証は `csvImportParse.ts`、マスタ解決は Resolve に分離）|
 | `lib/csvImportIap.ts`                                      | CSVインポートIAPの購入/復元（expo-iap。判定は `csvImportPurchaseGate.ts`）|
+| `lib/inviteQr.ts`                                          | 招待コードQRの行列生成（純JS）とスキャン結果の検証                    |
+| `components/InviteQrCode.tsx` / `InviteQrScanner.tsx`      | 招待QRの表示（Viewグリッド描画）と読み取り（expo-camera、遅延ロード） |
 | `lib/historySearch.ts`                                     | 履歴フィルタリング条件                                                |
 | `lib/moneyInput.ts`                                        | 金額入力の正規化・四則演算評価                                        |
 | `hooks/useFirestore.ts`                                    | Firestore リアルタイム購読 + fromCache メタデータ                     |
@@ -426,5 +428,6 @@ moneyplanner/
 | CSV出力        | expo-file-system/legacy                             | ~19.0.21                   |
 | 共有           | expo-sharing                                        | ~14.0.8                    |
 | 課金           | expo-iap（非消耗型IAP: CSVインポート解放）          | ^4.3.6                     |
+| 招待QR         | expo-camera（読み取り）/ qrcode-generator（生成）   | ~17.0.10 / ^2.0.4          |
 | 日付入力       | @react-native-community/datetimepicker              | 8.4.4                      |
 | アニメーション | react-native-reanimated                             | ~4.1.1                     |

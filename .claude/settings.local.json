@@ -5,7 +5,8 @@
       "Bash(gh org:*)",
       "Bash(gh repo:*)",
       "Bash(gh api:*)",
-      "WebFetch(domain:microsoft.github.io)"
+      "WebFetch(domain:microsoft.github.io)",
+      "PowerShell(Select-String -Path package.json -Pattern 'iap|storekit|purchases|revenuecat' ; \\(Get-Content package.json | ConvertFrom-Json\\).dependencies.PSObject.Properties.Name -join ', ')"
     ]
   }
 }

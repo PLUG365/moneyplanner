@@ -23,6 +23,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { InviteQrCode } from "@/components/InviteQrCode";
 import MoneyInputModal from "@/components/MoneyInputModal";
 import ProgressOverlay, {
     type ProgressOverlayProgress,
@@ -152,6 +153,7 @@ export default function SettingsScreen() {
   const [accounts, setAccounts] = useState<Account[]>([]);
 
   const [showManagerModal, setShowManagerModal] = useState(false);
+  const [showInviteQr, setShowInviteQr] = useState(false);
   const [showEditorModal, setShowEditorModal] = useState(false);
   // 口座の残高保存は全取引を読むため時間がかかる。実行中フラグでボタンに反映する。
   const [savingAccount, setSavingAccount] = useState(false);
@@ -1621,6 +1623,19 @@ export default function SettingsScreen() {
                 {regeneratingInviteCode ? "再発行中..." : "招待コードを再発行"}
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                styles.inviteCodeButton,
+                !inviteCode && styles.disabledControl,
+              ]}
+              onPress={() => setShowInviteQr(true)}
+              disabled={!inviteCode || householdLoading}
+            >
+              <Text style={styles.actionButtonText}>
+                招待コードをQRで表示
+              </Text>
+            </TouchableOpacity>
             <Text style={[styles.groupLabel, { color: colors.subText }]}>
               メンバー
             </Text>
@@ -1836,6 +1851,38 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      <Modal visible={showInviteQr} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.inviteQrCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.inviteQrTitle, { color: colors.text }]}>
+              招待コード
+            </Text>
+            {inviteCode ? (
+              <View style={styles.inviteQrCodeWrap}>
+                <InviteQrCode value={inviteCode} size={220} />
+              </View>
+            ) : null}
+            <Text style={[styles.inviteQrCodeText, { color: colors.tint }]}>
+              {inviteCode ?? ""}
+            </Text>
+            <Text style={[styles.inviteQrNote, { color: colors.subText }]}>
+              参加する家族の端末で、世帯参加画面の「QRコードを読み取る」から読み取れます
+            </Text>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.tint }]}
+              onPress={() => setShowInviteQr(false)}
+            >
+              <Text style={styles.actionButtonText}>閉じる</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={showManagerModal || showEditorModal}
@@ -2778,6 +2825,36 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 16,
+  },
+  inviteQrCard: {
+    width: "100%",
+    maxWidth: 320,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 20,
+    alignItems: "center",
+  },
+  inviteQrTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    marginBottom: 16,
+  },
+  inviteQrCodeWrap: {
+    borderRadius: 8,
+    overflow: "hidden",
+    marginBottom: 12,
+  },
+  inviteQrCodeText: {
+    fontSize: 22,
+    fontWeight: "700",
+    letterSpacing: 3,
+    marginBottom: 12,
+  },
+  inviteQrNote: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
+    marginBottom: 16,
   },
   popupWindow: {
     width: "100%",

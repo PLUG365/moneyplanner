@@ -27,6 +27,7 @@ import HistorySearchPanel, {
 import MonthPickerModal from "@/components/MonthPickerModal";
 import ProgressOverlay from "@/components/ProgressOverlay";
 import TransactionEditor from "@/components/TransactionEditor";
+import { IconSymbol } from "@/components/ui/IconSymbol";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useCachedTransactions } from "@/hooks/useCachedTransactions";
@@ -912,32 +913,48 @@ export default function HistoryScreen() {
               </Text>
             ) : null}
             {tx.storeName ? (
-              <Text
-                style={[styles.txMemo, { color: colors.subText }]}
-                numberOfLines={1}
-              >
-                🏪 {tx.storeName}
-              </Text>
+              <View style={styles.txMetaRow}>
+                <IconSymbol name="bag" size={12} color={colors.subText} />
+                <Text
+                  style={[styles.txMetaText, { color: colors.subText }]}
+                  numberOfLines={1}
+                >
+                  {tx.storeName}
+                </Text>
+              </View>
             ) : null}
             {tx.accountName ? (
-              <Text
-                style={[styles.txMemo, { color: colors.subText }]}
-                numberOfLines={1}
-              >
-                口座: {tx.accountName}
-              </Text>
+              <View style={styles.txMetaRow}>
+                <IconSymbol
+                  name="creditcard"
+                  size={12}
+                  color={colors.subText}
+                />
+                <Text
+                  style={[styles.txMetaText, { color: colors.subText }]}
+                  numberOfLines={1}
+                >
+                  {tx.accountName}
+                </Text>
+              </View>
             ) : null}
             {tx.memo ? (
-              <Text
-                style={[styles.txMemo, { color: colors.subText }]}
-                numberOfLines={1}
-              >
-                {tx.memo}
-              </Text>
+              <View style={styles.txMetaRow}>
+                <IconSymbol name="note.text" size={12} color={colors.subText} />
+                <Text
+                  style={[styles.txMetaText, { color: colors.subText }]}
+                  numberOfLines={1}
+                >
+                  {tx.memo}
+                </Text>
+              </View>
             ) : null}
-            <Text style={[styles.txDate, { color: colors.subText }]}>
-              {displayDate(tx.date)}
-            </Text>
+            <View style={styles.txMetaRow}>
+              <IconSymbol name="calendar" size={12} color={colors.subText} />
+              <Text style={[styles.txMetaText, { color: colors.subText }]}>
+                {displayDate(tx.date)}
+              </Text>
+            </View>
           </View>
           <Text
             style={[
@@ -1578,7 +1595,13 @@ const styles = StyleSheet.create({
   txMain: { flex: 1 },
   txCategory: { fontSize: 15, fontWeight: "600" },
   txMemo: { fontSize: 12, marginTop: 2 },
-  txDate: { fontSize: 12, marginTop: 2 },
+  txMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 2,
+    gap: 4,
+  },
+  txMetaText: { fontSize: 12, flexShrink: 1 },
   txAmount: { fontSize: 16, fontWeight: "700" },
   actionButtons: {
     flexDirection: "row",

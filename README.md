@@ -10,7 +10,7 @@
 - **集計** — 月次・年次・カテゴリ別
 - **予算アラート** — カテゴリ別の共通予算、進捗表示、注意/超過トースト通知（手動クローズ可）
 - **口座管理** — 現金/口座ごとの残高管理、取引ごとの出し入れ先の保持
-- **世帯共有** — Apple Sign-In + Firebase Auth、招待コード参加、Firestoreリアルタイム同期
+- **世帯共有** — Apple Sign-In + Firebase Auth、招待コード参加（QRコード表示・読み取り対応）、Firestoreリアルタイム同期
 - **CSV出力** — BOM付きUTF-8（Excel対応）
 - **CSV取り込み** — エクスポート形式のCSVを設定タブから一括取り込み（UTF-8 / UTF-16LE / Shift_JIS対応、事前検証つき）
 - **カテゴリ管理** — デフォルトカテゴリ + カスタム追加、内訳管理
@@ -94,6 +94,7 @@ npx expo start --tunnel
 - React Native Firebase（App / Auth / Firestore / App Check）+ expo-dev-client
 - expo-file-system/legacy + expo-sharing（CSV出力）
 - expo-iap（CSVインポート解放の非消耗型IAP）
+- expo-camera + qrcode-generator（招待コードのQR読み取り・生成）
 - TypeScript
 
 ## 開発フェーズ

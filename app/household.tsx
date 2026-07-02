@@ -1,3 +1,5 @@
+import { InviteQrCode } from "@/components/InviteQrCode";
+import { type InviteQrScannerProps } from "@/components/InviteQrScanner";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import {
     cancelJoinRequest,
@@ -10,7 +12,13 @@ import {
 } from "@/lib/household";
 import { validateJoinDisplayName } from "@/lib/householdJoinRequestValidation";
 import { router } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+    useCallback,
+    useEffect,
+    useRef,
+    useState,
+    type ComponentType,
+} from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -56,6 +64,9 @@ export default function HouseholdScreen() {
   const [pendingHouseholdId, setPendingHouseholdId] = useState<string | null>(
     null,
   );
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [ScannerComponent, setScannerComponent] =
+    useState<ComponentType<InviteQrScannerProps> | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const { colors } = useAppTheme();
 
@@ -226,6 +237,29 @@ export default function HouseholdScreen() {
     router.replace("/(tabs)");
   };
 
+  const handleOpenScanner = () => {
+    try {
+      // expo-camera未同梱の旧ビルドでモジュール解決クラッシュしないよう、
+      // スキャナー（ネイティブ依存）はボタン押下時に遅延ロードする
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const scannerModule = require("@/components/InviteQrScanner") as {
+        default: ComponentType<InviteQrScannerProps>;
+      };
+      setScannerComponent(() => scannerModule.default);
+      setScannerVisible(true);
+    } catch {
+      Alert.alert(
+        "QR読み取り",
+        "この機能を使うには、新しいアプリビルド（dev-client/TestFlightの更新）が必要です",
+      );
+    }
+  };
+
+  const handleScannedInviteCode = (code: string) => {
+    setInviteCode(code);
+    setScannerVisible(false);
+  };
+
   if (checkingPending) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -253,6 +287,12 @@ export default function HouseholdScreen() {
             {createdCode}
           </Text>
         </View>
+        <View style={[styles.qrWrap, { borderColor: colors.border }]}>
+          <InviteQrCode value={createdCode} size={180} />
+        </View>
+        <Text style={[styles.qrNote, { color: colors.subText }]}>
+          参加側の「QRコードを読み取る」でこのQRを読み取れます
+        </Text>
         <Pressable
           style={[styles.button, { backgroundColor: colors.tint }]}
           onPress={handleContinue}
@@ -341,6 +381,14 @@ export default function HouseholdScreen() {
         ) : (
           <>
             <Pressable
+              style={[styles.outlineButton, { borderColor: colors.tint }]}
+              onPress={handleOpenScanner}
+            >
+              <Text style={[styles.outlineButtonText, { color: colors.tint }]}>
+                QRコードを読み取る
+              </Text>
+            </Pressable>
+            <Pressable
               style={[styles.button, { backgroundColor: colors.tint }]}
               onPress={handleJoin}
             >
@@ -356,6 +404,13 @@ export default function HouseholdScreen() {
             </Pressable>
           </>
         )}
+        {ScannerComponent ? (
+          <ScannerComponent
+            visible={scannerVisible}
+            onClose={() => setScannerVisible(false)}
+            onScanned={handleScannedInviteCode}
+          />
+        ) : null}
       </View>
     );
   }
@@ -439,7 +494,18 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 32,
     paddingVertical: 16,
-    marginBottom: 32,
+    marginBottom: 16,
+  },
+  qrWrap: {
+    borderWidth: 1,
+    borderRadius: 12,
+    overflow: "hidden",
+    marginBottom: 8,
+  },
+  qrNote: {
+    fontSize: 12,
+    textAlign: "center",
+    marginBottom: 24,
   },
   code: {
     fontSize: 32,

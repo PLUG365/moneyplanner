@@ -22,6 +22,7 @@
 - CSV出力: BOM付きUTF-8（Excel対応）、任意タイミングで書き出し
 - CSV取り込み: エクスポート形式のCSVを設定タブから一括取り込み（詳細は「CSV入出力仕様」）
 - 家族共有: 世帯単位、Cloud Firestore + Apple Sign-In（Phase 3実装済み、TestFlight検証中）
+- 招待QRコード: 招待コードを設定タブ・世帯作成画面でQR表示し、参加画面でカメラ読み取りできる（2026-07-03実装。生成は純JS `lib/inviteQr.ts`、読み取りは expo-camera を遅延ロード）
 
 ### 画面構成（タブ4つ）
 
@@ -403,4 +404,5 @@ AI活用、外部ツール、レビュー、知見退避ルールの詳細は [d
 | ビルド         | expo-dev-client + EAS Build / TestFlight            |
 | CSV出力        | expo-file-system/legacy + expo-sharing              |
 | 課金           | expo-iap（CSVインポート解放の非消耗型IAP）          |
+| 招待QR         | expo-camera（読み取り）+ qrcode-generator（生成）   |
 | 日付入力       | @react-native-community/datetimepicker              |
