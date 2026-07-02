@@ -43,7 +43,7 @@ import {
 import { } from "@/lib/categoryOrdering";
 import { exportCSV } from "@/lib/csvExport";
 import { formatImportErrors, prepareCsvImport } from "@/lib/csvImport";
-import { getCsvImportAccessFromEnv } from "@/lib/csvImportPurchaseGate";
+import { useCsvImportPurchase } from "@/hooks/useCsvImportPurchase";
 import {
     Account,
     addAccount,
@@ -138,7 +138,12 @@ type NumericInputTarget = "category-budget" | "account-balance";
 export default function SettingsScreen() {
   const { colors, themeId, setThemeId } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const csvImportAccess = useMemo(() => getCsvImportAccessFromEnv(), []);
+  const {
+    access: csvImportAccess,
+    purchasing: csvImportPurchasing,
+    purchase: purchaseCsvImport,
+    restore: restoreCsvImport,
+  } = useCsvImportPurchase();
 
   const sheetAnim = useRef(new Animated.Value(600)).current;
 
@@ -975,12 +980,54 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleImportCSV = async () => {
-    if (!csvImportAccess.allowed) {
+  const handlePurchaseCsvImport = async () => {
+    const result = await purchaseCsvImport();
+    if (result.outcome === "purchased") {
       Alert.alert(
         "CSV取り込み",
-        `${csvImportAccess.message}\n\nプロダクトID: ${csvImportAccess.productId}\n購入・復元処理の実装後に利用できます。`,
+        "購入が完了しました。CSV取り込みが利用できます。",
       );
+    } else if (result.outcome === "failed") {
+      Alert.alert("エラー", `購入を完了できませんでした\n${result.message}`);
+    }
+    // cancelled はユーザー操作のため何も表示しない
+  };
+
+  const handleRestoreCsvImport = async () => {
+    const result = await restoreCsvImport();
+    if (result.outcome === "restored") {
+      Alert.alert(
+        "CSV取り込み",
+        "購入を復元しました。CSV取り込みが利用できます。",
+      );
+    } else if (result.outcome === "not-found") {
+      Alert.alert(
+        "CSV取り込み",
+        "このApple IDで復元できる購入が見つかりませんでした",
+      );
+    } else {
+      Alert.alert("エラー", `購入の復元に失敗しました\n${result.message}`);
+    }
+  };
+
+  const handleImportCSV = async () => {
+    if (!csvImportAccess.allowed) {
+      if (csvImportPurchasing) return;
+      Alert.alert("CSV取り込み", csvImportAccess.message, [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "購入を復元",
+          onPress: () => {
+            void handleRestoreCsvImport();
+          },
+        },
+        {
+          text: `${csvImportAccess.priceLabel}で購入`,
+          onPress: () => {
+            void handlePurchaseCsvImport();
+          },
+        },
+      ]);
       return;
     }
 

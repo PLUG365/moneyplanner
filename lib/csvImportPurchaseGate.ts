@@ -32,11 +32,61 @@ export function buildCsvImportAccess(
   };
 }
 
+export type CsvImportPurchaseEnvFlags = {
+  purchaseRequired: boolean;
+  envUnlocked: boolean;
+};
+
+export function getCsvImportPurchaseEnvFlags(
+  env: CsvImportPurchaseEnv = process.env as CsvImportPurchaseEnv,
+): CsvImportPurchaseEnvFlags {
+  return {
+    purchaseRequired: env.EXPO_PUBLIC_CSV_IMPORT_IAP_ENABLED === "1",
+    envUnlocked: env.EXPO_PUBLIC_CSV_IMPORT_UNLOCKED === "1",
+  };
+}
+
 export function getCsvImportAccessFromEnv(
   env: CsvImportPurchaseEnv = process.env as CsvImportPurchaseEnv,
 ): CsvImportAccess {
+  const flags = getCsvImportPurchaseEnvFlags(env);
   return buildCsvImportAccess({
-    purchaseRequired: env.EXPO_PUBLIC_CSV_IMPORT_IAP_ENABLED === "1",
-    entitlementPurchased: env.EXPO_PUBLIC_CSV_IMPORT_UNLOCKED === "1",
+    purchaseRequired: flags.purchaseRequired,
+    entitlementPurchased: flags.envUnlocked,
   });
+}
+
+/** StoreKit購入一覧の判定に必要な最小フィールド（expo-iapのPurchase互換）。 */
+export type CsvImportPurchaseLike = {
+  productId: string;
+  purchaseState: string;
+};
+
+/** 購入一覧にCSVインポート解放の非消耗型IAPが含まれるか判定する。 */
+export function hasCsvImportPurchase(
+  purchases: readonly CsvImportPurchaseLike[],
+): boolean {
+  return purchases.some(
+    (purchase) =>
+      purchase.productId === CSV_IMPORT_PRODUCT_ID &&
+      purchase.purchaseState === "purchased",
+  );
+}
+
+/** 端末内エンタイトルメント保存ファイルの中身（純関数。ファイルIOは csvImportEntitlement.ts）。 */
+export function serializeCsvImportEntitlement(purchased: boolean): string {
+  return JSON.stringify({ csvImportPurchased: purchased });
+}
+
+export function parseCsvImportEntitlement(raw: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      (parsed as { csvImportPurchased?: unknown }).csvImportPurchased === true
+    );
+  } catch {
+    return false;
+  }
 }

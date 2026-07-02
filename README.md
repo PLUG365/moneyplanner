@@ -6,12 +6,15 @@
 
 - **収支記録** — 日付・カテゴリ・金額・メモを手入力
 - **履歴** — リスト表示 / カレンダービュー、長押し複数選択と一括コピー（日付指定）
+- **履歴検索** — 収入/支出トグル、カテゴリ/内訳/お店、メモ部分一致、日付範囲。集計タブからのドリルダウンにも対応
 - **集計** — 月次・年次・カテゴリ別
 - **予算アラート** — カテゴリ別の共通予算、進捗表示、注意/超過トースト通知（手動クローズ可）
 - **口座管理** — 現金/口座ごとの残高管理、取引ごとの出し入れ先の保持
 - **世帯共有** — Apple Sign-In + Firebase Auth、招待コード参加、Firestoreリアルタイム同期
 - **CSV出力** — BOM付きUTF-8（Excel対応）
+- **CSV取り込み** — エクスポート形式のCSVを設定タブから一括取り込み（UTF-8 / UTF-16LE / Shift_JIS対応、事前検証つき）
 - **カテゴリ管理** — デフォルトカテゴリ + カスタム追加、内訳管理
+- **テーマ切替** — アプリ全体のカラーテーマを設定タブで変更
 - **世帯管理** — メンバー解除、招待コード再発行、認証解除と全データ削除
 
 ## 開発環境のセットアップ
@@ -75,10 +78,12 @@ npx expo start --tunnel
 | [docs/privacy-and-monetization.md](docs/privacy-and-monetization.md)           | 課金、プライバシー、問い合わせ、本番データ閲覧制限の方針                          |
 | [docs/app-store-submission-draft.md](docs/app-store-submission-draft.md)       | App Store提出メタデータ（栄養表示・出典・課金/返金説明など）のドラフト            |
 | [docs/firestore-read-and-index-plan.md](docs/firestore-read-and-index-plan.md) | Firestore読み取り回数の見積もり、必要インデックス、課金アラートランブック         |
+| [docs/read-caching-plan.md](docs/read-caching-plan.md)                         | 集計・履歴の取引読み取りキャッシュ方針（実装済み）                                |
 | [docs/operations-release-gate.md](docs/operations-release-gate.md)             | リリース前後の運用・監視・障害対応ルール                                          |
 | [docs/operations-data-access-policy.md](docs/operations-data-access-policy.md) | 開発者によるユーザーデータ閲覧制限、サポート対応時のログ取扱方針                  |
 | [docs/dependency-audit-2026-05-10.md](docs/dependency-audit-2026-05-10.md)     | 依存ライブラリ監査結果と更新履歴                                                  |
 | [docs/ai-development.md](docs/ai-development.md)                               | AI活用、外部ツール、レビュー、知見退避ルール                                      |
+| [docs/copilot-cli-workflows.md](docs/copilot-cli-workflows.md)                 | Copilot CLI / VS Codeエージェントの運用メモ（copilot-instructionsの補助資料）     |
 
 ## 技術スタック
 
@@ -88,11 +93,12 @@ npx expo start --tunnel
 - Apple Sign-In + Firebase Auth
 - React Native Firebase（App / Auth / Firestore / App Check）+ expo-dev-client
 - expo-file-system/legacy + expo-sharing（CSV出力）
+- expo-iap（CSVインポート解放の非消耗型IAP）
 - TypeScript
 
 ## 開発フェーズ
 
 - ✅ Phase 1 — コア機能（完了）
 - ✅ Phase 2 — 予算/アラート（完了。ライフプラン機能は廃止 → [docs/decisions/plan-feature-retirement.md](docs/decisions/plan-feature-retirement.md)）
-- 🚧 Phase 3 — Cloud Firestore + Apple Sign-Inによる家族共有（実装済み、TestFlight build 24 で招待コード参加承認フローを検証予定）
+- 🚧 Phase 3 — Cloud Firestore + Apple Sign-Inによる家族共有（実装済み、TestFlight build 24 で招待コード参加承認フローの修正を確認済み。残り確認項目は [docs/testflight-history.md](docs/testflight-history.md) 参照）
 - 🔲 Phase 4 — App Store配布

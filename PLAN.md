@@ -71,7 +71,7 @@
 
 iCloud Drive + SQLite を断念して Cloud Firestore + Apple Sign-In へ移行した判断理由、旧調査メモ、採用技術は [docs/decisions/firestore-migration.md](docs/decisions/firestore-migration.md) を参照する。
 
-> 現在はSQLite置換実装とEAS production buildの作成実績は完了済み。known-issues.md の課題対応も完了し、dev-clientで実機確認済み。次の検証対象は TestFlight build 24（招待コード参加承認フローの修正検証）。検証履歴の詳細は [docs/testflight-history.md](docs/testflight-history.md) を参照。
+> 現在はSQLite置換実装とEAS production buildの作成実績は完了済み。known-issues.md の課題対応も完了し、dev-clientで実機確認済み。TestFlight build 24 で招待コード参加承認フローの修正を確認済み（申請キャンセル動作など一部項目は未確認）。検証履歴と残り確認項目は [docs/testflight-history.md](docs/testflight-history.md) を参照。
 
 #### 直近の完了と次アクション（2026-05-10）
 
@@ -107,6 +107,8 @@ Firestoreのコレクション/フィールド定義は [ARCHITECTURE.md](ARCHIT
 
 - 列構成は8列 `日付,種別,口座,カテゴリ,内訳,店舗,金額,メモ`（2026-06に店舗列を追加。旧7列形式は取り込み時のみ受理し店舗は空扱い）
 - エクスポート: BOM付きUTF-8、CRLF、RFC4180準拠の引用符エスケープ。値は取引スナップショットを出力
+- CSV数式インジェクション対策（`lib/csvFormat.ts`）: エクスポート時、`=` `+` `-` `@` タブ・CR で始まるフィールドにシングルクォートを前置して無害化する。取り込み時は `stripCsvFormulaGuard` で同じ接頭辞を除去するため、エクスポート→再取り込みの往復で値は保たれる
+- 金額上限: 手入力・CSV取り込みとも `MAX_TRANSACTION_AMOUNT`（1億円、`lib/transactionAmountValidation.ts`）を共通上限とし、超過行は取り込みエラーにする
 - 取り込み（`lib/csvImport.ts` / `csvImportParse.ts` / `csvImportResolve.ts`）:
   - 全行を事前検証し、エラーが1件でもあれば行番号付きで表示して全件中断（部分取り込みなし）
   - 検証: 日付は実在日のYYYY-MM-DD、種別は収入/支出、金額は0以上の整数（0円はメモ必須＝記録画面の登録ルールと同一。エクスポート→再取り込みの往復を保証するため）。口座/カテゴリ/内訳/店舗/メモは空欄許容
@@ -400,4 +402,5 @@ AI活用、外部ツール、レビュー、知見退避ルールの詳細は [d
 | Firebase       | @react-native-firebase/app/auth/firestore/app-check |
 | ビルド         | expo-dev-client + EAS Build / TestFlight            |
 | CSV出力        | expo-file-system/legacy + expo-sharing              |
+| 課金           | expo-iap（CSVインポート解放の非消耗型IAP）          |
 | 日付入力       | @react-native-community/datetimepicker              |

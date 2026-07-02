@@ -52,6 +52,7 @@ lib/
   household.ts     # 世帯管理
   csvExport.ts     # CSV生成・共有（expo-file-system/legacy）
   csvImport.ts     # CSV取り込み（検証: csvImportParse.ts / マスタ解決: csvImportResolve.ts）
+  csvImportIap.ts  # CSVインポートIAP購入/復元（expo-iap。ゲート判定: csvImportPurchaseGate.ts）
 app/
   auth.tsx         # ログイン画面
   household.tsx    # 世帯作成/参加画面

@@ -1,6 +1,7 @@
 module.exports = ({ config }) => {
   const plugins = [
     ...(config.plugins ?? []),
+    "expo-iap",
     "./plugins/withRNFirebaseStaticFramework",
   ];
 

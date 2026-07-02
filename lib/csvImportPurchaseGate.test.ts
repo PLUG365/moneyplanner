@@ -6,6 +6,10 @@ import {
     CSV_IMPORT_PRICE_LABEL,
     CSV_IMPORT_PRODUCT_ID,
     getCsvImportAccessFromEnv,
+    getCsvImportPurchaseEnvFlags,
+    hasCsvImportPurchase,
+    parseCsvImportEntitlement,
+    serializeCsvImportEntitlement,
 } from "./csvImportPurchaseGate";
 
 test("csv import stays available when purchase gate is disabled", () => {
@@ -43,6 +47,60 @@ test("csv import gate is disabled unless explicitly enabled by environment", () 
   const access = getCsvImportAccessFromEnv({});
 
   assert.equal(access.allowed, true);
+});
+
+test("purchase env flags are parsed independently", () => {
+  assert.deepEqual(getCsvImportPurchaseEnvFlags({}), {
+    purchaseRequired: false,
+    envUnlocked: false,
+  });
+  assert.deepEqual(
+    getCsvImportPurchaseEnvFlags({
+      EXPO_PUBLIC_CSV_IMPORT_IAP_ENABLED: "1",
+      EXPO_PUBLIC_CSV_IMPORT_UNLOCKED: "1",
+    }),
+    { purchaseRequired: true, envUnlocked: true },
+  );
+});
+
+test("entitlement is detected only for the purchased csv import product", () => {
+  assert.equal(hasCsvImportPurchase([]), false);
+  assert.equal(
+    hasCsvImportPurchase([
+      { productId: "other_product", purchaseState: "purchased" },
+    ]),
+    false,
+  );
+  assert.equal(
+    hasCsvImportPurchase([
+      { productId: CSV_IMPORT_PRODUCT_ID, purchaseState: "pending" },
+    ]),
+    false,
+  );
+  assert.equal(
+    hasCsvImportPurchase([
+      { productId: "other_product", purchaseState: "purchased" },
+      { productId: CSV_IMPORT_PRODUCT_ID, purchaseState: "purchased" },
+    ]),
+    true,
+  );
+});
+
+test("entitlement file round-trips and rejects invalid content", () => {
+  assert.equal(
+    parseCsvImportEntitlement(serializeCsvImportEntitlement(true)),
+    true,
+  );
+  assert.equal(
+    parseCsvImportEntitlement(serializeCsvImportEntitlement(false)),
+    false,
+  );
+  assert.equal(parseCsvImportEntitlement("not json"), false);
+  assert.equal(parseCsvImportEntitlement("{}"), false);
+  assert.equal(
+    parseCsvImportEntitlement('{"csvImportPurchased":"yes"}'),
+    false,
+  );
 });
 
 test("csv import gate can be enabled and unlocked by environment", () => {

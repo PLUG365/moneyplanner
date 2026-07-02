@@ -1,6 +1,7 @@
 type EncodingJapaneseModule = {
+  // encoding-japanese の convert は数値配列に加えて文字列も受け付ける
   convert(
-    data: ArrayLike<number>,
+    data: ArrayLike<number> | string,
     options: {
       to: "UNICODE" | "SJIS";
       from: "UNICODE" | "SJIS";

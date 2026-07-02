@@ -401,6 +401,7 @@ moneyplanner/
 | `lib/summaryAggregation.ts`                                | 月次/年次集計・予算進捗の純関数集計ロジック                           |
 | `lib/csvExport.ts`                                         | CSV生成・共有                                                         |
 | `lib/csvImport.ts`                                         | CSV取り込み（検証は `csvImportParse.ts`、マスタ解決は Resolve に分離）|
+| `lib/csvImportIap.ts`                                      | CSVインポートIAPの購入/復元（expo-iap。判定は `csvImportPurchaseGate.ts`）|
 | `lib/historySearch.ts`                                     | 履歴フィルタリング条件                                                |
 | `lib/moneyInput.ts`                                        | 金額入力の正規化・四則演算評価                                        |
 | `hooks/useFirestore.ts`                                    | Firestore リアルタイム購読 + fromCache メタデータ                     |
@@ -424,5 +425,6 @@ moneyplanner/
 | ビルド         | expo-dev-client + EAS Build / TestFlight            | iOS実機検証                |
 | CSV出力        | expo-file-system/legacy                             | ~19.0.21                   |
 | 共有           | expo-sharing                                        | ~14.0.8                    |
+| 課金           | expo-iap（非消耗型IAP: CSVインポート解放）          | ^4.3.6                     |
 | 日付入力       | @react-native-community/datetimepicker              | 8.4.4                      |
 | アニメーション | react-native-reanimated                             | ~4.1.1                     |
