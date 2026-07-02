@@ -1418,28 +1418,6 @@ export default function SettingsScreen() {
             {importing ? "取り込み中..." : "CSVを取り込む"}
           </Text>
         </TouchableOpacity>
-
-        {__DEV__ && (
-          <>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.devPreviewButton]}
-              onPress={() => router.push("/dev-ui-preview" as Href)}
-            >
-              <Text style={styles.actionButtonText}>開発用: UIプレビュー</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                styles.devResetButton,
-                isSettingsWriteDisabled && styles.disabledControl,
-              ]}
-              onPress={handleResetDatabase}
-              disabled={isSettingsWriteDisabled}
-            >
-              <Text style={styles.actionButtonText}>開発用: DBをリセット</Text>
-            </TouchableOpacity>
-          </>
-        )}
       </View>
 
       <View
@@ -1828,6 +1806,36 @@ export default function SettingsScreen() {
           </View>
         ) : null}
       </View>
+
+      {__DEV__ && (
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            開発用
+          </Text>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.devPreviewButton]}
+            onPress={() => router.push("/dev-ui-preview" as Href)}
+          >
+            <Text style={styles.actionButtonText}>開発用: UIプレビュー</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.actionButton,
+              styles.devResetButton,
+              isSettingsWriteDisabled && styles.disabledControl,
+            ]}
+            onPress={handleResetDatabase}
+            disabled={isSettingsWriteDisabled}
+          >
+            <Text style={styles.actionButtonText}>開発用: DBをリセット</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <Modal
         visible={showManagerModal || showEditorModal}
