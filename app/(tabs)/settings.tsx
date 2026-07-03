@@ -1875,7 +1875,11 @@ export default function SettingsScreen() {
               参加する家族の端末で、世帯参加画面の「QRコードを読み取る」から読み取れます
             </Text>
             <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: colors.tint }]}
+              style={[
+                styles.actionButton,
+                styles.inviteQrCloseButton,
+                { backgroundColor: colors.tint },
+              ]}
               onPress={() => setShowInviteQr(false)}
             >
               <Text style={styles.actionButtonText}>閉じる</Text>
@@ -2854,7 +2858,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     textAlign: "center",
-    marginBottom: 16,
+    marginBottom: 20,
+  },
+  inviteQrCloseButton: {
+    alignSelf: "stretch",
   },
   popupWindow: {
     width: "100%",
