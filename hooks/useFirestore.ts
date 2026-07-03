@@ -1,5 +1,12 @@
+import {
+    type FirestoreDocRef,
+    type FirestoreQuery,
+} from "@/lib/firestore";
 import { getHouseholdId } from "@/lib/household";
-import { FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
+import {
+    onSnapshot,
+    type DocumentData,
+} from "@react-native-firebase/firestore";
 import { useEffect, useRef, useState } from "react";
 
 /**
@@ -27,14 +34,14 @@ export function useHouseholdId(): string | null {
  *
  * @param queryKey  クエリを一意に識別するキー。null ならリスナー無効。
  *                  パラメータが変わったら別の文字列を渡すこと。
- * @param queryFactory  Firestore Query を返すファクトリ。
+ * @param queryFactory  Firestore FirestoreQuery を返すファクトリ。
  *                      queryKey が変わったときだけ呼ばれる。
  * @param mapFn  ドキュメントを T に変換する関数。
  */
 export function useCollection<T>(
   queryKey: string | null,
-  queryFactory: () => FirebaseFirestoreTypes.Query | null,
-  mapFn: (id: string, data: FirebaseFirestoreTypes.DocumentData) => T,
+  queryFactory: () => FirestoreQuery | null,
+  mapFn: (id: string, data: DocumentData) => T,
 ): {
   data: T[];
   loading: boolean;
@@ -63,8 +70,8 @@ export function useCollection<T>(
     }
 
     setLoading(true);
-    const query = queryFactoryRef.current();
-    if (!query) {
+    const builtQuery = queryFactoryRef.current();
+    if (!builtQuery) {
       setData([]);
       setLoading(false);
       setFromCache(false);
@@ -72,7 +79,8 @@ export function useCollection<T>(
       return;
     }
 
-    const unsub = query.onSnapshot(
+    const unsub = onSnapshot(
+      builtQuery,
       { includeMetadataChanges: true },
       (snap) => {
         setData(snap.docs.map((doc) => mapFnRef.current(doc.id, doc.data())));
@@ -97,13 +105,13 @@ export function useCollection<T>(
  * Firestore 単一ドキュメントのリアルタイムリスナーフック。
  *
  * @param docKey  ドキュメントを一意に識別するキー。null ならリスナー無効。
- * @param docFactory  DocumentReference を返すファクトリ。
+ * @param docFactory  FirestoreDocRef を返すファクトリ。
  * @param mapFn  ドキュメントを T に変換する関数。
  */
 export function useDocument<T>(
   docKey: string | null,
-  docFactory: () => FirebaseFirestoreTypes.DocumentReference | null,
-  mapFn: (id: string, data: FirebaseFirestoreTypes.DocumentData) => T,
+  docFactory: () => FirestoreDocRef | null,
+  mapFn: (id: string, data: DocumentData) => T,
 ): { data: T | null; loading: boolean; error: Error | null } {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -129,7 +137,8 @@ export function useDocument<T>(
       return;
     }
 
-    const unsub = ref.onSnapshot(
+    const unsub = onSnapshot(
+      ref,
       (snap) => {
         const snapData = snap.data();
         if (snapData) {

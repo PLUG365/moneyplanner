@@ -1,4 +1,13 @@
-import { FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
+import {
+    getDocs,
+    getDocsFromCache,
+    getDocsFromServer,
+    limit,
+    orderBy,
+    query,
+    startAfter,
+    where,
+} from "@react-native-firebase/firestore";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -6,6 +15,9 @@ import {
     mapTransaction,
     readHouseholdDataVersionPreferServer,
     Transaction,
+    type FirestoreQuery,
+    type FirestoreQueryDocSnapshot,
+    type FirestoreQuerySnapshot,
 } from "@/lib/firestore";
 import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
 import {
@@ -38,7 +50,7 @@ export type PaginatedTransactions = {
 type CachedPage = {
   items: Transaction[];
   version: DataVersion;
-  lastDoc: FirebaseFirestoreTypes.QueryDocumentSnapshot | null;
+  lastDoc: FirestoreQueryDocSnapshot | null;
   hasMore: boolean;
 };
 
@@ -55,11 +67,13 @@ function buildScopeKey(
 }
 
 async function getQuerySnapshot(
-  query: FirebaseFirestoreTypes.Query,
+  targetQuery: FirestoreQuery,
   source: "cache" | "server",
-): Promise<FirebaseFirestoreTypes.QuerySnapshot | null> {
+): Promise<FirestoreQuerySnapshot | null> {
   try {
-    return await query.get({ source });
+    return source === "cache"
+      ? await getDocsFromCache(targetQuery)
+      : await getDocsFromServer(targetQuery);
   } catch (error) {
     if (source === "cache") return null;
     throw error;
@@ -84,7 +98,7 @@ export function usePaginatedTransactions(
   const [hasMore, setHasMore] = useState(false);
 
   const lastDocRef =
-    useRef<FirebaseFirestoreTypes.QueryDocumentSnapshot | null>(null);
+    useRef<FirestoreQueryDocSnapshot | null>(null);
   // 多重実行防止（onEndReached連打・refresh重複など）
   const inFlightRef = useRef(false);
   // 進行中に scope（日付範囲）変更などで来た再読込要求を、完了後にやり直すための予約。
@@ -105,15 +119,15 @@ export function usePaginatedTransactions(
   const queryLimit = fetchAll ? RANGE_FETCH_LIMIT : TRANSACTIONS_PAGE_SIZE;
 
   const buildBaseQuery =
-    useCallback((): FirebaseFirestoreTypes.Query | null => {
+    useCallback((): FirestoreQuery | null => {
       if (!householdId) return null;
-      let query: FirebaseFirestoreTypes.Query = householdCollection(
+      let base: FirestoreQuery = householdCollection(
         householdId,
         "transactions",
       );
-      if (range.from) query = query.where("date", ">=", range.from);
-      if (range.to) query = query.where("date", "<=", range.to);
-      return query.orderBy("date", "desc");
+      if (range.from) base = query(base, where("date", ">=", range.from));
+      if (range.to) base = query(base, where("date", "<=", range.to));
+      return query(base, orderBy("date", "desc"));
     }, [householdId, range.from, range.to]);
 
   const refresh = useCallback(
@@ -173,7 +187,7 @@ export function usePaginatedTransactions(
 
         if (!options?.forceServer) {
           const cacheSnap = await getQuerySnapshot(
-            base.limit(queryLimit),
+            query(base, limit(queryLimit)),
             "cache",
           );
           if (cacheSnap && cacheSnap.docs.length > 0) {
@@ -208,7 +222,10 @@ export function usePaginatedTransactions(
           }
         }
 
-        const snap = await getQuerySnapshot(base.limit(queryLimit), "server");
+        const snap = await getQuerySnapshot(
+          query(base, limit(queryLimit)),
+          "server",
+        );
         const docs = snap?.docs ?? [];
         const nextItems = docs.map((doc) => mapTransaction(doc.id, doc.data()));
         const nextHasMore = fetchAll
@@ -249,10 +266,13 @@ export function usePaginatedTransactions(
     inFlightRef.current = true;
     setLoadingMore(true);
     try {
-      const snap = await base
-        .startAfter(lastDocRef.current)
-        .limit(TRANSACTIONS_PAGE_SIZE)
-        .get();
+      const snap = await getDocs(
+        query(
+          base,
+          startAfter(lastDocRef.current),
+          limit(TRANSACTIONS_PAGE_SIZE),
+        ),
+      );
       setItems((prev) => {
         const seen = new Set(prev.map((tx) => tx.id));
         const next = snap.docs

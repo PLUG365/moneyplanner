@@ -1,3 +1,4 @@
+import { query, where } from "@react-native-firebase/firestore";
 import { router, useFocusEffect, type Href } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import {
@@ -82,10 +83,9 @@ export default function SummaryScreen() {
     buildFirestoreQueryKey(householdId, "categories", "expense"),
     () =>
       householdId
-        ? householdCollection(householdId, "categories").where(
-            "type",
-            "==",
-            "expense",
+        ? query(
+            householdCollection(householdId, "categories"),
+            where("type", "==", "expense"),
           )
         : null,
     mapCategory,

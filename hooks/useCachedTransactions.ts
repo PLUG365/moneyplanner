@@ -1,4 +1,10 @@
-import { FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
+import {
+    getDocsFromCache,
+    getDocsFromServer,
+    orderBy,
+    query,
+    where,
+} from "@react-native-firebase/firestore";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -6,6 +12,8 @@ import {
     mapTransaction,
     readHouseholdDataVersionPreferServer,
     Transaction,
+    type FirestoreQuery,
+    type FirestoreQuerySnapshot,
 } from "@/lib/firestore";
 import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
 import {
@@ -42,25 +50,26 @@ function buildTransactionQuery(
   householdId: string,
   range: CachedTransactionsRange,
   orderByDateDesc: boolean,
-): FirebaseFirestoreTypes.Query {
-  let query: FirebaseFirestoreTypes.Query = householdCollection(
-    householdId,
-    "transactions",
-  )
-    .where("date", ">=", range.from)
-    .where("date", "<=", range.to);
+): FirestoreQuery {
+  let transactionsQuery: FirestoreQuery = query(
+    householdCollection(householdId, "transactions"),
+    where("date", ">=", range.from),
+    where("date", "<=", range.to),
+  );
   if (orderByDateDesc) {
-    query = query.orderBy("date", "desc");
+    transactionsQuery = query(transactionsQuery, orderBy("date", "desc"));
   }
-  return query;
+  return transactionsQuery;
 }
 
 async function getTransactionSnapshot(
-  query: FirebaseFirestoreTypes.Query,
+  targetQuery: FirestoreQuery,
   source: "cache" | "server",
-): Promise<FirebaseFirestoreTypes.QuerySnapshot | null> {
+): Promise<FirestoreQuerySnapshot | null> {
   try {
-    return await query.get({ source });
+    return source === "cache"
+      ? await getDocsFromCache(targetQuery)
+      : await getDocsFromServer(targetQuery);
   } catch (error) {
     if (source === "cache") return null;
     throw error;

@@ -1,4 +1,13 @@
-import auth, { FirebaseAuthTypes } from "@react-native-firebase/auth";
+import {
+  AppleAuthProvider,
+  deleteUser,
+  getAuth,
+  onAuthStateChanged,
+  reauthenticateWithCredential,
+  signInWithCredential,
+  signOut as firebaseSignOut,
+  type FirebaseAuthTypes,
+} from "@react-native-firebase/auth";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useEffect, useState } from "react";
 
@@ -8,7 +17,7 @@ import { useEffect, useState } from "react";
 export async function signInWithApple(): Promise<FirebaseAuthTypes.UserCredential> {
   const appleCredential = await createAppleAuthCredential();
 
-  return auth().signInWithCredential(appleCredential);
+  return signInWithCredential(getAuth(), appleCredential);
 }
 
 async function createAppleAuthCredential(): Promise<FirebaseAuthTypes.AuthCredential> {
@@ -20,7 +29,7 @@ async function createAppleAuthCredential(): Promise<FirebaseAuthTypes.AuthCreden
     throw new Error("Apple Sign-In: identityToken が取得できませんでした");
   }
 
-  return auth.AppleAuthProvider.credential(
+  return AppleAuthProvider.credential(
     credential.identityToken,
     credential.authorizationCode ?? undefined,
   );
@@ -30,39 +39,39 @@ async function createAppleAuthCredential(): Promise<FirebaseAuthTypes.AuthCreden
  * 現在のユーザーをApple Sign-Inで再認証する
  */
 export async function reauthenticateCurrentUserWithApple(): Promise<void> {
-  const user = auth().currentUser;
+  const user = getAuth().currentUser;
   if (!user) {
     throw new Error("ログインしていません");
   }
 
   const appleCredential = await createAppleAuthCredential();
-  await user.reauthenticateWithCredential(appleCredential);
+  await reauthenticateWithCredential(user, appleCredential);
 }
 
 /**
  * 現在のFirebase Authアカウントを削除する
  */
 export async function deleteCurrentUserAccount(): Promise<void> {
-  const user = auth().currentUser;
+  const user = getAuth().currentUser;
   if (!user) {
     throw new Error("ログインしていません");
   }
 
-  await user.delete();
+  await deleteUser(user);
 }
 
 /**
  * ログアウト
  */
 export async function signOut(): Promise<void> {
-  await auth().signOut();
+  await firebaseSignOut(getAuth());
 }
 
 /**
  * 現在のユーザーを取得
  */
 export function getCurrentUser(): FirebaseAuthTypes.User | null {
-  return auth().currentUser;
+  return getAuth().currentUser;
 }
 
 /**
@@ -70,12 +79,12 @@ export function getCurrentUser(): FirebaseAuthTypes.User | null {
  */
 export function useAuth() {
   const [user, setUser] = useState<FirebaseAuthTypes.User | null>(
-    auth().currentUser,
+    getAuth().currentUser,
   );
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = auth().onAuthStateChanged((u) => {
+    const unsubscribe = onAuthStateChanged(getAuth(), (u) => {
       setUser(u);
       setLoading(false);
     });

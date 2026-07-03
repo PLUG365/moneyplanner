@@ -1,7 +1,20 @@
 import { getApp } from "@react-native-firebase/app";
-import appCheck, { initializeAppCheck } from "@react-native-firebase/app-check";
+import * as appCheckModule from "@react-native-firebase/app-check";
+import {
+    initializeAppCheck,
+    type ReactNativeFirebaseAppCheckProvider,
+} from "@react-native-firebase/app-check";
 
 import { buildAppCheckProviderOptions } from "./appCheckConfig";
+
+// パッケージルートが ReactNativeFirebaseAppCheckProvider を「型」として再エクスポート
+// しており、名前でimportするとクラス実体（値）に解決されない。実行時には値が
+// エクスポートされているため、名前空間import経由でコンストラクタを取り出す。
+const ProviderCtor = (
+  appCheckModule as unknown as {
+    ReactNativeFirebaseAppCheckProvider: new () => ReactNativeFirebaseAppCheckProvider;
+  }
+).ReactNativeFirebaseAppCheckProvider;
 
 let appCheckInitPromise: Promise<void> | null = null;
 
@@ -10,7 +23,7 @@ export function initAppCheck(): Promise<void> {
     return appCheckInitPromise;
   }
 
-  const provider = appCheck().newReactNativeFirebaseAppCheckProvider();
+  const provider = new ProviderCtor();
   provider.configure(
     buildAppCheckProviderOptions(
       __DEV__,

@@ -1,3 +1,4 @@
+import { query, where } from "@react-native-firebase/firestore";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect } from "expo-router";
 import React, {
@@ -97,10 +98,9 @@ export default function RecordScreen() {
     buildFirestoreQueryKey(householdId, "categories", type),
     () =>
       householdId
-        ? householdCollection(householdId, "categories").where(
-            "type",
-            "==",
-            type,
+        ? query(
+            householdCollection(householdId, "categories"),
+            where("type", "==", type),
           )
         : null,
     mapCategory,
