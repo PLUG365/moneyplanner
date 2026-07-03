@@ -940,7 +940,7 @@ export default function HistoryScreen() {
             ) : null}
             {tx.memo ? (
               <View style={styles.txMetaRow}>
-                <IconSymbol name="note.text" size={12} color={colors.subText} />
+                <IconSymbol name="pencil" size={12} color={colors.subText} />
                 <Text
                   style={[styles.txMetaText, { color: colors.subText }]}
                   numberOfLines={1}
