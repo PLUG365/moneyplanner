@@ -1,41 +1,41 @@
 import {
-  collection,
-  deleteField,
-  doc,
-  getDoc,
-  getDocs,
-  getFirestore,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  setDoc,
-  where,
-  writeBatch,
+    collection,
+    deleteField,
+    doc,
+    getDoc,
+    getDocs,
+    getFirestore,
+    onSnapshot,
+    query,
+    serverTimestamp,
+    setDoc,
+    where,
+    writeBatch,
 } from "@react-native-firebase/firestore";
 import { getHouseholdDeletionCollectionNames } from "./accountDeletion";
 import { getCurrentUser } from "./auth";
 import { getSnapshotDataOrNull } from "./firestoreSnapshot";
 import {
-  normalizeJoinDisplayName,
-  validateJoinDisplayName,
+    normalizeJoinDisplayName,
+    validateJoinDisplayName,
 } from "./householdJoinRequestValidation";
 import {
-  isActiveHouseholdMember,
-  mapHouseholdMember,
+    isActiveHouseholdMember,
+    mapHouseholdMember,
 } from "./householdMembership";
 import {
-  buildInviteCodeExpiryDate,
-  createReplacementInviteCode,
-  isInviteCodeFormat,
-  resolveInviteCodeState,
+    buildInviteCodeExpiryDate,
+    createReplacementInviteCode,
+    isInviteCodeFormat,
+    resolveInviteCodeState,
 } from "./inviteCode";
 import { createSecureInviteCode } from "./inviteCodeSecure";
 import {
-  buildInviteJoinFailurePatch,
-  buildInviteJoinResetPatch,
-  getInviteJoinCooldownRemainingMs,
-  isInviteJoinCooldownActive,
-  parseInviteJoinAttemptState,
+    buildInviteJoinFailurePatch,
+    buildInviteJoinResetPatch,
+    getInviteJoinCooldownRemainingMs,
+    isInviteJoinCooldownActive,
+    parseInviteJoinAttemptState,
 } from "./inviteJoinRateLimit";
 
 export interface HouseholdMember {
@@ -205,7 +205,8 @@ export async function requestJoinHousehold(
 
     const failJoinAttempt = async (message: string): Promise<never> => {
       const failurePatch = buildInviteJoinFailurePatch(attemptState);
-      await setDoc(userRef, 
+      await setDoc(
+        userRef,
         {
           inviteJoinFailedAttempts: failurePatch.failedAttempts,
           inviteJoinLastFailedAt: serverTimestamp(),
@@ -297,7 +298,9 @@ export async function requestJoinHousehold(
 export async function getPendingJoinRequests(
   householdId: string,
 ): Promise<HouseholdJoinRequest[]> {
-  const snapshot = await getDocs(collection(getFirestore(), "households", householdId, "joinRequests"));
+  const snapshot = await getDocs(
+    collection(getFirestore(), "households", householdId, "joinRequests"),
+  );
 
   return snapshot.docs
     .map((doc) => ({
@@ -319,7 +322,10 @@ export async function approveJoinRequest(
   if (!user) throw new Error("未ログインです");
 
   const householdRef = doc(getFirestore(), "households", householdId);
-  const requestRef = doc(collection(householdRef, "joinRequests"), requestUserId);
+  const requestRef = doc(
+    collection(householdRef, "joinRequests"),
+    requestUserId,
+  );
   const memberRef = doc(collection(householdRef, "members"), requestUserId);
 
   const requestSnap = await getDoc(requestRef);
@@ -369,7 +375,13 @@ export async function completeJoinAfterApproval(
   const user = getCurrentUser();
   if (!user) throw new Error("未ログインです");
 
-  const requestRef = doc(getFirestore(), "households", householdId, "joinRequests", user.uid);
+  const requestRef = doc(
+    getFirestore(),
+    "households",
+    householdId,
+    "joinRequests",
+    user.uid,
+  );
   const requestSnap = await getDoc(requestRef);
   const requestData = getSnapshotDataOrNull(requestSnap);
   if (!requestData || requestData.status !== "approved") {
@@ -384,7 +396,8 @@ export async function completeJoinAfterApproval(
     throw new Error(validationError);
   }
 
-  await setDoc(doc(getFirestore(), "users", user.uid), 
+  await setDoc(
+    doc(getFirestore(), "users", user.uid),
     {
       householdId,
       displayName: normalizedDisplayName,
@@ -404,7 +417,13 @@ export function watchJoinRequestApproval(
   const user = getCurrentUser();
   if (!user) return () => {};
 
-  const ref = doc(getFirestore(), "households", householdId, "joinRequests", user.uid);
+  const ref = doc(
+    getFirestore(),
+    "households",
+    householdId,
+    "joinRequests",
+    user.uid,
+  );
 
   return onSnapshot(ref, (snap) => {
     const data = getSnapshotDataOrNull(snap);
@@ -425,7 +444,13 @@ export async function cancelJoinRequest(householdId: string): Promise<void> {
   if (!user) throw new Error("未ログインです");
 
   const userRef = doc(getFirestore(), "users", user.uid);
-  const requestRef = doc(getFirestore(), "households", householdId, "joinRequests", user.uid);
+  const requestRef = doc(
+    getFirestore(),
+    "households",
+    householdId,
+    "joinRequests",
+    user.uid,
+  );
 
   const requestSnap = await getDoc(requestRef);
   const requestData = getSnapshotDataOrNull(requestSnap);
@@ -464,7 +489,8 @@ export async function clearPendingHouseholdId(): Promise<void> {
   const user = getCurrentUser();
   if (!user) throw new Error("未ログインです");
 
-  await setDoc(doc(getFirestore(), "users", user.uid), 
+  await setDoc(
+    doc(getFirestore(), "users", user.uid),
     {
       pendingHouseholdId: deleteField(),
     },
@@ -479,7 +505,13 @@ export async function rejectJoinRequest(
   const user = getCurrentUser();
   if (!user) throw new Error("未ログインです");
 
-  const requestRef = doc(getFirestore(), "households", householdId, "joinRequests", requestUserId);
+  const requestRef = doc(
+    getFirestore(),
+    "households",
+    householdId,
+    "joinRequests",
+    requestUserId,
+  );
 
   const requestSnap = await getDoc(requestRef);
   const requestData = getSnapshotDataOrNull(requestSnap);
@@ -487,7 +519,8 @@ export async function rejectJoinRequest(
     throw new Error("却下対象の参加リクエストが見つかりません");
   }
 
-  await setDoc(requestRef, 
+  await setDoc(
+    requestRef,
     {
       status: "rejected",
       reviewedAt: serverTimestamp(),
@@ -511,10 +544,13 @@ export async function getHouseholdId(): Promise<string | null> {
   const householdId = userData.householdId;
   if (!householdId) return null;
 
-  const memberDoc = await getDoc(doc(getFirestore(), "households", householdId, "members", user.uid));
+  const memberDoc = await getDoc(
+    doc(getFirestore(), "households", householdId, "members", user.uid),
+  );
 
   if (!isActiveHouseholdMember(memberDoc.data())) {
-    await setDoc(doc(getFirestore(), "users", user.uid), 
+    await setDoc(
+      doc(getFirestore(), "users", user.uid),
       {
         householdId: deleteField(),
       },
@@ -532,7 +568,9 @@ export async function getHouseholdId(): Promise<string | null> {
 export async function getInviteCode(
   householdId: string,
 ): Promise<string | null> {
-  const householdSnap = await getDoc(doc(getFirestore(), "households", householdId));
+  const householdSnap = await getDoc(
+    doc(getFirestore(), "households", householdId),
+  );
   const data = getSnapshotDataOrNull(householdSnap);
   if (!data) return null;
 
@@ -613,7 +651,9 @@ export async function regenerateInviteCode(
 export async function getHouseholdMembers(
   householdId: string,
 ): Promise<HouseholdMember[]> {
-  const snapshot = await getDocs(collection(getFirestore(), "households", householdId, "members"));
+  const snapshot = await getDocs(
+    collection(getFirestore(), "households", householdId, "members"),
+  );
 
   return snapshot.docs
     .map((doc) => mapHouseholdMember(doc.id, doc.data()))
@@ -622,10 +662,12 @@ export async function getHouseholdMembers(
 
 /**
  * 世帯メンバーを解除する
+ * onProgress は最後の1人の退出（世帯全削除）時のみ呼ばれる。
  */
 export async function removeHouseholdMember(
   householdId: string,
   userId: string,
+  onProgress?: (done: number, total: number) => void,
 ): Promise<void> {
   const currentUser = getCurrentUser();
   if (!currentUser) throw new Error("未ログインです");
@@ -646,17 +688,24 @@ export async function removeHouseholdMember(
     // データ → 招待コード → (members + 世帯ドキュメントを1バッチ) の順で消す。
     if (activeMembers.length <= 1) {
       const collectionNames = getHouseholdDeletionCollectionNames();
+      // サブコレクション群 + 招待コード + (members+世帯doc) + users クリア
+      const totalSteps = collectionNames.length + 3;
+      let doneSteps = 0;
+      const reportProgress = () => onProgress?.(doneSteps, totalSteps);
+      reportProgress();
 
       for (const name of collectionNames) {
         const collectionSnap = await getDocs(collection(householdRef, name));
-        if (collectionSnap.empty) continue;
-
-        const docs = collectionSnap.docs;
-        for (let i = 0; i < docs.length; i += 499) {
-          const batch = writeBatch(getFirestore());
-          docs.slice(i, i + 499).forEach((doc) => batch.delete(doc.ref));
-          await batch.commit();
+        if (!collectionSnap.empty) {
+          const docs = collectionSnap.docs;
+          for (let i = 0; i < docs.length; i += 499) {
+            const batch = writeBatch(getFirestore());
+            docs.slice(i, i + 499).forEach((doc) => batch.delete(doc.ref));
+            await batch.commit();
+          }
         }
+        doneSteps += 1;
+        reportProgress();
       }
 
       const inviteCodesSnap = await getDocs(
@@ -673,6 +722,8 @@ export async function removeHouseholdMember(
           await batch.commit();
         }
       }
+      doneSteps += 1;
+      reportProgress();
 
       // members と世帯ドキュメントは1バッチで削除する
       // （ルールはバッチ前の状態で評価されるため、まとめてなら消せる）。
@@ -680,18 +731,24 @@ export async function removeHouseholdMember(
       finalBatch.delete(householdRef);
       membersSnap.docs.forEach((memberDoc) => finalBatch.delete(memberDoc.ref));
       await finalBatch.commit();
+      doneSteps += 1;
+      reportProgress();
 
-      await setDoc(doc(getFirestore(), "users", currentUser.uid),
+      await setDoc(
+        doc(getFirestore(), "users", currentUser.uid),
         {
           householdId: deleteField(),
         },
         { merge: true },
       );
+      doneSteps += 1;
+      reportProgress();
       return;
     }
   }
 
-  await setDoc(doc(membersRef, userId),
+  await setDoc(
+    doc(membersRef, userId),
     {
       removedAt: serverTimestamp(),
     },

@@ -1,114 +1,114 @@
 import { router, useFocusEffect, type Href } from "expo-router";
 import React, {
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 import {
-    ActionSheetIOS,
-    Alert,
-    Animated,
-    InputAccessoryView,
-    Keyboard,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActionSheetIOS,
+  Alert,
+  Animated,
+  InputAccessoryView,
+  Keyboard,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { InviteQrCode } from "@/components/InviteQrCode";
 import MoneyInputModal from "@/components/MoneyInputModal";
 import ProgressOverlay, {
-    type ProgressOverlayProgress,
+  type ProgressOverlayProgress,
 } from "@/components/ProgressOverlay";
 import { THEME_IDS, THEMES } from "@/constants/Themes";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useCsvImportPurchase } from "@/hooks/useCsvImportPurchase";
 import { useCollection } from "@/hooks/useFirestore";
 import {
-    ACCOUNT_DELETION_CONFIRMATION_TEXT,
-    isAccountDeletionConfirmationValid,
+  ACCOUNT_DELETION_CONFIRMATION_TEXT,
+  isAccountDeletionConfirmationValid,
 } from "@/lib/accountDeletion";
 import {
-    deleteCurrentUserAccount,
-    getCurrentUser,
-    reauthenticateCurrentUserWithApple,
-    signOut,
+  deleteCurrentUserAccount,
+  getCurrentUser,
+  reauthenticateCurrentUserWithApple,
+  signOut,
 } from "@/lib/auth";
 import { } from "@/lib/categoryOrdering";
 import { exportCSV } from "@/lib/csvExport";
 import { formatImportErrors, prepareCsvImport } from "@/lib/csvImport";
-import { useCsvImportPurchase } from "@/hooks/useCsvImportPurchase";
 import {
-    Account,
-    addAccount,
-    addBreakdown,
-    addCategory,
-    Breakdown,
-    Category,
-    DEFAULT_ACCOUNT_ID,
-    deleteAccountAndMoveToDefault,
-    deleteBreakdown,
-    deleteCategory,
-    deleteHouseholdDataAndCurrentUserProfile,
-    deleteMonthlyBudget,
-    getAccounts,
-    getAllTransactions,
-    getBreakdownsByCategory,
-    getCategories,
-    getCategoryDeletionImpact,
-    getMonthlyBudgets,
-    householdCollection,
-    mapAccount,
-    resetCategoryAndBreakdownsToDefault,
-    resetFirestoreForDevelopment,
-    setMonthlyBudget,
-    TransactionType,
-    updateAccountBalance,
-    updateAccountName,
-    updateBreakdown,
-    updateCategory,
-    updateCategoryDisplayOrders,
+  Account,
+  addAccount,
+  addBreakdown,
+  addCategory,
+  Breakdown,
+  Category,
+  DEFAULT_ACCOUNT_ID,
+  deleteAccountAndMoveToDefault,
+  deleteBreakdown,
+  deleteCategory,
+  deleteHouseholdDataAndCurrentUserProfile,
+  deleteMonthlyBudget,
+  getAccounts,
+  getAllTransactions,
+  getBreakdownsByCategory,
+  getCategories,
+  getCategoryDeletionImpact,
+  getMonthlyBudgets,
+  householdCollection,
+  mapAccount,
+  resetCategoryAndBreakdownsToDefault,
+  resetFirestoreForDevelopment,
+  setMonthlyBudget,
+  TransactionType,
+  updateAccountBalance,
+  updateAccountName,
+  updateBreakdown,
+  updateCategory,
+  updateCategoryDisplayOrders,
 } from "@/lib/firestore";
 import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
 import {
-    approveJoinRequest,
-    getHouseholdId,
-    getHouseholdMembers,
-    getInviteCode,
-    getPendingJoinRequests,
-    HouseholdJoinRequest,
-    regenerateInviteCode,
-    rejectJoinRequest,
-    removeHouseholdMember,
-    type HouseholdMember,
+  approveJoinRequest,
+  getHouseholdId,
+  getHouseholdMembers,
+  getInviteCode,
+  getPendingJoinRequests,
+  HouseholdJoinRequest,
+  regenerateInviteCode,
+  rejectJoinRequest,
+  removeHouseholdMember,
+  type HouseholdMember,
 } from "@/lib/household";
 import { waitForPendingWrite } from "@/lib/pendingWrite";
 import { buildBudgetInputMap } from "@/lib/settingsBudgetEditor";
 import { getMemberRemovalActionLabel } from "@/lib/settingsHouseholdMembers";
 import {
-    formatAccountBalanceInputDisplay,
-    formatBudgetInputDisplay,
-    getSettingsKeyboardAccessoryPreview,
-    resolveAccountBalanceInput,
-    resolveBudgetInput,
-    type SettingsKeyboardField,
+  formatAccountBalanceInputDisplay,
+  formatBudgetInputDisplay,
+  getSettingsKeyboardAccessoryPreview,
+  resolveAccountBalanceInput,
+  resolveBudgetInput,
+  type SettingsKeyboardField,
 } from "@/lib/settingsKeyboardAccessory";
 import {
-    buildAccountEditorDraft,
-    buildBreakdownEditorDraft,
-    buildCategoryEditorDraft,
-    buildEditorMeta,
-    buildEmptyAccountEditorDraft,
-    buildEmptyBreakdownEditorDraft,
-    buildEmptyCategoryEditorDraft,
-    type SettingsManagerTab,
+  buildAccountEditorDraft,
+  buildBreakdownEditorDraft,
+  buildCategoryEditorDraft,
+  buildEditorMeta,
+  buildEmptyAccountEditorDraft,
+  buildEmptyBreakdownEditorDraft,
+  buildEmptyCategoryEditorDraft,
+  type SettingsManagerTab,
 } from "@/lib/settingsManagerEditor";
 import { getSettingsWriteAvailability } from "@/lib/settingsWriteAvailability";
 
@@ -220,6 +220,13 @@ export default function SettingsScreen() {
   const [householdLoading, setHouseholdLoading] = useState(false);
   const [regeneratingInviteCode, setRegeneratingInviteCode] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [accountDeletionProgress, setAccountDeletionProgress] =
+    useState<ProgressOverlayProgress | null>(null);
+  const [memberRemovalMessage, setMemberRemovalMessage] = useState<
+    string | null
+  >(null);
+  const [memberRemovalProgress, setMemberRemovalProgress] =
+    useState<ProgressOverlayProgress | null>(null);
   const currentUser = getCurrentUser();
 
   const settingsConnectivitySubscription = useCollection<Account>(
@@ -1108,14 +1115,14 @@ export default function SettingsScreen() {
     setDeletingAccount(true);
     try {
       await reauthenticateCurrentUserWithApple();
-      await waitForPendingWrite(
-        deleteHouseholdDataAndCurrentUserProfile(),
-        WRITE_ACK_TIMEOUT_MS,
+      // 削除は完全性が必須のため、900ms打ち切りの waitForPendingWrite は使わず
+      // サーバー反映まで待つ（build 26 で Auth 先行削除により Firestore 側の
+      // 削除が認証失効で失われる競合が発生した）。オフライン時は
+      // guardSettingsWrite が先にブロックする。
+      await deleteHouseholdDataAndCurrentUserProfile((done, total) =>
+        setAccountDeletionProgress({ done, total }),
       );
-      await waitForPendingWrite(
-        deleteCurrentUserAccount(),
-        WRITE_ACK_TIMEOUT_MS,
-      );
+      await deleteCurrentUserAccount();
       router.replace("/auth" as Href);
     } catch (error) {
       Alert.alert(
@@ -1125,6 +1132,7 @@ export default function SettingsScreen() {
           : "認証解除と全データ削除に失敗しました",
       );
     } finally {
+      setAccountDeletionProgress(null);
       setDeletingAccount(false);
     }
   };
@@ -1195,10 +1203,17 @@ export default function SettingsScreen() {
           text: isSelf ? "退出" : "解除",
           style: "destructive",
           onPress: async () => {
+            // 最後の1人の退出は世帯データの全削除を伴うため、900ms打ち切りの
+            // waitForPendingWrite は使わずサーバー反映まで待つ。
+            setMemberRemovalMessage(
+              isSelf ? "世帯から退出しています…" : "メンバーを解除しています…",
+            );
             try {
-              await waitForPendingWrite(
-                removeHouseholdMember(householdId, member.uid),
-                WRITE_ACK_TIMEOUT_MS,
+              await removeHouseholdMember(
+                householdId,
+                member.uid,
+                // 最後の1人の退出（世帯全削除）時のみ呼ばれ、進捗バーを出す。
+                (done, total) => setMemberRemovalProgress({ done, total }),
               );
               if (isSelf) {
                 router.replace("/household" as Href);
@@ -1218,6 +1233,9 @@ export default function SettingsScreen() {
                     ? "退出に失敗しました"
                     : "解除に失敗しました",
               );
+            } finally {
+              setMemberRemovalMessage(null);
+              setMemberRemovalProgress(null);
             }
           },
         },
@@ -1632,9 +1650,7 @@ export default function SettingsScreen() {
               onPress={() => setShowInviteQr(true)}
               disabled={!inviteCode || householdLoading}
             >
-              <Text style={styles.actionButtonText}>
-                招待コードをQRで表示
-              </Text>
+              <Text style={styles.actionButtonText}>招待コードをQRで表示</Text>
             </TouchableOpacity>
             <Text style={[styles.groupLabel, { color: colors.subText }]}>
               メンバー
@@ -2665,9 +2681,22 @@ export default function SettingsScreen() {
       ) : null}
 
       <ProgressOverlay
-        visible={importProgress !== null || savingAccount}
-        message={importProgress !== null ? "CSVを取り込んでいます…" : "保存中…"}
-        progress={importProgress}
+        visible={
+          importProgress !== null ||
+          savingAccount ||
+          accountDeletionProgress !== null ||
+          memberRemovalMessage !== null
+        }
+        message={
+          importProgress !== null
+            ? "CSVを取り込んでいます…"
+            : accountDeletionProgress !== null
+              ? "全データを削除しています…"
+              : (memberRemovalMessage ?? "保存中…")
+        }
+        progress={
+          importProgress ?? accountDeletionProgress ?? memberRemovalProgress
+        }
       />
     </ScrollView>
   );

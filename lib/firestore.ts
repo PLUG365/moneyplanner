@@ -1,55 +1,55 @@
 import {
-    addDoc,
-    collection,
-    deleteDoc,
-    doc,
-    getDoc,
-    getDocFromCache,
-    getDocFromServer,
-    getDocs,
-    getFirestore,
-    increment,
-    limit,
-    orderBy,
-    query,
-    runTransaction,
-    serverTimestamp,
-    setDoc,
-    Timestamp,
-    updateDoc,
-    where,
-    writeBatch,
-    type DocumentData,
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocFromCache,
+  getDocFromServer,
+  getDocs,
+  getFirestore,
+  increment,
+  limit,
+  orderBy,
+  query,
+  runTransaction,
+  serverTimestamp,
+  setDoc,
+  Timestamp,
+  updateDoc,
+  where,
+  writeBatch,
+  type DocumentData,
 } from "@react-native-firebase/firestore";
 import { buildAccountBalanceReconciliation } from "./accountBalanceReconciliation";
 import { getHouseholdDeletionCollectionNames } from "./accountDeletion";
 import { getCurrentUser } from "./auth";
 import {
-    buildCategoryDisplayOrderPatch,
-    sortCategoriesForDisplay,
+  buildCategoryDisplayOrderPatch,
+  sortCategoriesForDisplay,
 } from "./categoryOrdering";
 import { getSnapshotDataOrNull, snapshotExists } from "./firestoreSnapshot";
 import { getHouseholdId } from "./household";
 import {
-    buildBudgetMasterRestorePlan,
-    buildStoreMasterRestorePlan,
-    buildTransactionMasterRelinkPatch,
+  buildBudgetMasterRestorePlan,
+  buildStoreMasterRestorePlan,
+  buildTransactionMasterRelinkPatch,
 } from "./masterRelink";
 import { type DataVersion } from "./readFreshness";
 import { buildStoreOptionsForCategory, findStoreByName } from "./storeOptions";
 import {
-    buildBudgetStatusesFromData,
-    buildMonthCategorySummaryFromTransactions,
-    buildYearMonthlyTotalsFromTransactions,
+  buildBudgetStatusesFromData,
+  buildMonthCategorySummaryFromTransactions,
+  buildYearMonthlyTotalsFromTransactions,
 } from "./summaryAggregation";
 import {
-    buildBalanceAdjustmentsForCreate,
-    buildBalanceAdjustmentsForDelete,
-    buildBalanceAdjustmentsForUpdate,
+  buildBalanceAdjustmentsForCreate,
+  buildBalanceAdjustmentsForDelete,
+  buildBalanceAdjustmentsForUpdate,
 } from "./transactionBalance";
 import {
-    buildTransactionWriteMetadata,
-    type TransactionWriteMetadataInput,
+  buildTransactionWriteMetadata,
+  type TransactionWriteMetadataInput,
 } from "./transactionWriteMetadata";
 import { fromYearMonthDate, toYearMonthDate } from "./yearMonthDateRange";
 
@@ -74,9 +74,7 @@ type FirestoreDocSnapshot = Awaited<
   ReturnType<typeof getDoc<DocumentData, DocumentData>>
 >;
 type FirestoreWriteBatch = ReturnType<typeof writeBatch>;
-type FirestoreTransaction = Parameters<
-  Parameters<typeof runTransaction>[1]
->[0];
+type FirestoreTransaction = Parameters<Parameters<typeof runTransaction>[1]>[0];
 
 // ── 定数 ──────────────────────────────────────────────
 export const DEFAULT_ACCOUNT_ID = "default";
@@ -218,9 +216,7 @@ export function householdCollection(
   return collection(getFirestore(), "households", householdId, collectionName);
 }
 
-function toISOString(
-  ts: Timestamp | null | undefined,
-): string {
+function toISOString(ts: Timestamp | null | undefined): string {
   if (!ts) return new Date().toISOString();
   return ts.toDate().toISOString();
 }
@@ -249,9 +245,7 @@ function bumpDataVersionInTransaction(
   transaction.set(dataVersionDoc(hDoc), dataVersionPayload(), { merge: true });
 }
 
-function dataVersionFromSnapshot(
-  snap: FirestoreDocSnapshot,
-): DataVersion {
+function dataVersionFromSnapshot(snap: FirestoreDocSnapshot): DataVersion {
   const updatedAt = snap.data()?.updatedAt;
   if (!updatedAt) return null;
   if (typeof updatedAt.toMillis === "function") {
@@ -371,10 +365,7 @@ async function restoreStoreMastersFromTransactionSnapshots(
 
   if (plan.stores.length === 0) return;
 
-  const storeRefsByKey = new Map<
-    string,
-    FirestoreDocRef
-  >();
+  const storeRefsByKey = new Map<string, FirestoreDocRef>();
   const ops: BatchOp[] = [];
 
   for (const store of plan.stores) {
@@ -394,7 +385,10 @@ async function restoreStoreMastersFromTransactionSnapshots(
     if (!storeRef) continue;
     ops.push((batch) =>
       batch.set(
-        doc(collection(hDoc, "storeCategoryUsage"), `${storeRef.id}_${usage.categoryId}`),
+        doc(
+          collection(hDoc, "storeCategoryUsage"),
+          `${storeRef.id}_${usage.categoryId}`,
+        ),
         {
           storeId: storeRef.id,
           categoryId: usage.categoryId,
@@ -432,7 +426,9 @@ async function resolveTransactionSnapshot(
   categoryColor: string;
   breakdownName: string;
 }> {
-  const categoryPromise = getDoc(doc(collection(hDoc, "categories"), categoryId));
+  const categoryPromise = getDoc(
+    doc(collection(hDoc, "categories"), categoryId),
+  );
   const breakdownPromise = breakdownId
     ? getDoc(doc(collection(hDoc, "breakdowns"), breakdownId))
     : Promise.resolve(null);
@@ -467,10 +463,7 @@ async function resolveStoreName(
 }
 
 // ── マッピング ───────────────────────────────────────
-export function mapCategory(
-  id: string,
-  data: DocumentData,
-): Category {
+export function mapCategory(id: string, data: DocumentData): Category {
   return {
     id,
     name: data.name,
@@ -482,10 +475,7 @@ export function mapCategory(
   };
 }
 
-export function mapBreakdown(
-  id: string,
-  data: DocumentData,
-): Breakdown {
+export function mapBreakdown(id: string, data: DocumentData): Breakdown {
   return {
     id,
     categoryId: data.categoryId,
@@ -494,10 +484,7 @@ export function mapBreakdown(
   };
 }
 
-export function mapTransaction(
-  id: string,
-  data: DocumentData,
-): Transaction {
+export function mapTransaction(id: string, data: DocumentData): Transaction {
   return {
     id,
     date: data.date,
@@ -517,10 +504,7 @@ export function mapTransaction(
   };
 }
 
-export function mapAccount(
-  id: string,
-  data: DocumentData,
-): Account {
+export function mapAccount(id: string, data: DocumentData): Account {
   return {
     id,
     name: data.name,
@@ -543,10 +527,7 @@ export function mapBudgetDefinition(
   };
 }
 
-function mapStore(
-  id: string,
-  data: DocumentData,
-): Store {
+function mapStore(id: string, data: DocumentData): Store {
   return {
     id,
     name: data.name,
@@ -722,7 +703,9 @@ const DEFAULT_CATEGORIES: {
 export async function initFirestore(): Promise<void> {
   const hDoc = await householdDoc();
 
-  const categoriesSnap = await getDocs(query(collection(hDoc, "categories"), limit(1)));
+  const categoriesSnap = await getDocs(
+    query(collection(hDoc, "categories"), limit(1)),
+  );
   if (!categoriesSnap.empty) return;
 
   const batch = writeBatch(getFirestore());
@@ -795,7 +778,9 @@ export async function resetFirestoreForDevelopment(): Promise<void> {
   await versionBatch.commit();
 }
 
-export async function deleteHouseholdDataAndCurrentUserProfile(): Promise<void> {
+export async function deleteHouseholdDataAndCurrentUserProfile(
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> {
   const uid = getCurrentUser()?.uid;
   if (!uid) {
     throw new Error("ログイン情報を確認できません");
@@ -803,15 +788,29 @@ export async function deleteHouseholdDataAndCurrentUserProfile(): Promise<void> 
 
   const hDoc = await householdDoc();
   const collectionNames = getHouseholdDeletionCollectionNames();
+  // サブコレクション群 + 招待コード + (members+世帯doc) + users プロフィール
+  const totalSteps = collectionNames.length + 3;
+  let doneSteps = 0;
+  const reportProgress = () => onProgress?.(doneSteps, totalSteps);
+  reportProgress();
+
   for (const name of collectionNames) {
     await deleteCollectionDocs(collection(hDoc, name));
+    doneSteps += 1;
+    reportProgress();
   }
 
   // 招待コード → (members + 世帯ドキュメント) → users の順を守る。
   // members 削除後は activeMember 資格を失い、世帯側の削除ができなくなる。
   await deleteHouseholdInviteCodes(hDoc.id);
+  doneSteps += 1;
+  reportProgress();
   await deleteHouseholdDocAndMembers(hDoc);
+  doneSteps += 1;
+  reportProgress();
   await deleteDoc(doc(getFirestore(), "users", uid));
+  doneSteps += 1;
+  reportProgress();
   clearHouseholdCache();
 }
 
@@ -960,10 +959,7 @@ export async function getCategories(
   type?: TransactionType,
 ): Promise<Category[]> {
   const hDoc = await householdDoc();
-  let categoriesQuery: FirestoreQuery = collection(
-    hDoc,
-    "categories",
-  );
+  let categoriesQuery: FirestoreQuery = collection(hDoc, "categories");
   if (type) {
     categoriesQuery = query(categoriesQuery, where("type", "==", type));
   }
@@ -979,7 +975,9 @@ export async function addCategory(
   color: string,
 ): Promise<string> {
   const hDoc = await householdDoc();
-  const sameTypeSnap = await getDocs(query(collection(hDoc, "categories"), where("type", "==", type)));
+  const sameTypeSnap = await getDocs(
+    query(collection(hDoc, "categories"), where("type", "==", type)),
+  );
   const displayOrder = sameTypeSnap.docs.reduce((maxOrder, doc) => {
     const value = doc.data().displayOrder;
     return typeof value === "number" ? Math.max(maxOrder, value + 1) : maxOrder;
@@ -1015,7 +1013,9 @@ export async function deleteCategory(id: string): Promise<void> {
   const ops: BatchOp[] = [];
 
   // トランザクション更新
-  const txSnap = await getDocs(query(collection(hDoc, "transactions"), where("categoryId", "==", id)));
+  const txSnap = await getDocs(
+    query(collection(hDoc, "transactions"), where("categoryId", "==", id)),
+  );
   for (const doc of txSnap.docs) {
     ops.push((batch) =>
       batch.update(doc.ref, {
@@ -1030,7 +1030,9 @@ export async function deleteCategory(id: string): Promise<void> {
   ops.push((batch) => batch.delete(doc(collection(hDoc, "budgets"), id)));
 
   // 内訳削除
-  const bdSnap = await getDocs(query(collection(hDoc, "breakdowns"), where("categoryId", "==", id)));
+  const bdSnap = await getDocs(
+    query(collection(hDoc, "breakdowns"), where("categoryId", "==", id)),
+  );
   for (const doc of bdSnap.docs) {
     ops.push((batch) => batch.delete(doc.ref));
   }
@@ -1050,8 +1052,12 @@ export async function getCategoryDeletionImpact(
 ): Promise<CategoryDeletionImpact> {
   const hDoc = await householdDoc();
   const [txSnap, bdSnap, budgetSnap] = await Promise.all([
-    getDocs(query(collection(hDoc, "transactions"), where("categoryId", "==", id))),
-    getDocs(query(collection(hDoc, "breakdowns"), where("categoryId", "==", id))),
+    getDocs(
+      query(collection(hDoc, "transactions"), where("categoryId", "==", id)),
+    ),
+    getDocs(
+      query(collection(hDoc, "breakdowns"), where("categoryId", "==", id)),
+    ),
     getDoc(doc(collection(hDoc, "budgets"), id)),
   ]);
   return {
@@ -1088,7 +1094,12 @@ export async function getBreakdownsByCategory(
   categoryId: string,
 ): Promise<Breakdown[]> {
   const hDoc = await householdDoc();
-  const snap = await getDocs(query(collection(hDoc, "breakdowns"), where("categoryId", "==", categoryId)));
+  const snap = await getDocs(
+    query(
+      collection(hDoc, "breakdowns"),
+      where("categoryId", "==", categoryId),
+    ),
+  );
   return snap.docs
     .map((doc) => mapBreakdown(doc.id, doc.data()))
     .sort((a, b) => {
@@ -1129,7 +1140,9 @@ export async function deleteBreakdown(id: string): Promise<void> {
   const hDoc = await householdDoc();
   const ops: BatchOp[] = [];
 
-  const txSnap = await getDocs(query(collection(hDoc, "transactions"), where("breakdownId", "==", id)));
+  const txSnap = await getDocs(
+    query(collection(hDoc, "transactions"), where("breakdownId", "==", id)),
+  );
   for (const doc of txSnap.docs) {
     ops.push((batch) =>
       batch.update(doc.ref, {
@@ -1360,7 +1373,10 @@ export async function updateTransaction(
       });
       if (categoryId) {
         transaction.set(
-          doc(collection(hDoc, "storeCategoryUsage"), `${storeId}_${categoryId}`),
+          doc(
+            collection(hDoc, "storeCategoryUsage"),
+            `${storeId}_${categoryId}`,
+          ),
           {
             storeId,
             categoryId,
@@ -1549,7 +1565,9 @@ export async function updateAccountName(
   );
 
   // スナップショット更新
-  const txSnap = await getDocs(query(collection(hDoc, "transactions"), where("accountId", "==", id)));
+  const txSnap = await getDocs(
+    query(collection(hDoc, "transactions"), where("accountId", "==", id)),
+  );
   for (const doc of txSnap.docs) {
     ops.push((batch) =>
       batch.update(doc.ref, {
@@ -1641,12 +1659,16 @@ export async function deleteAccountAndMoveToDefault(id: string): Promise<void> {
   if (!snapshotExists(accountSnap)) return;
 
   // 既定口座名を取得
-  const defaultAccountSnap = await getDoc(doc(collection(hDoc, "accounts"), DEFAULT_ACCOUNT_ID));
+  const defaultAccountSnap = await getDoc(
+    doc(collection(hDoc, "accounts"), DEFAULT_ACCOUNT_ID),
+  );
   const defaultAccountName =
     defaultAccountSnap.data()?.name ?? DEFAULT_ACCOUNT_NAME;
 
   // 該当口座の取引を取得
-  const txSnap = await getDocs(query(collection(hDoc, "transactions"), where("accountId", "==", id)));
+  const txSnap = await getDocs(
+    query(collection(hDoc, "transactions"), where("accountId", "==", id)),
+  );
 
   // 純額を計算
   let net = 0;
@@ -1723,7 +1745,9 @@ export async function upsertStore(
   }
 
   const hDoc = await householdDoc();
-  const existing = await getDocs(query(collection(hDoc, "stores"), where("name", "==", trimmed), limit(1)));
+  const existing = await getDocs(
+    query(collection(hDoc, "stores"), where("name", "==", trimmed), limit(1)),
+  );
 
   if (!existing.empty) {
     const existingDoc = existing.docs[0];
@@ -1736,14 +1760,18 @@ export async function upsertStore(
       updatedAt: serverTimestamp(),
     });
     if (categoryId != null) {
-      await setDoc(doc(collection(hDoc, "storeCategoryUsage"), `${existingDoc.id}_${categoryId}`), 
-          {
-            storeId: existingDoc.id,
-            categoryId,
-            lastUsedAt: serverTimestamp(),
-          },
-          { merge: true },
-        );
+      await setDoc(
+        doc(
+          collection(hDoc, "storeCategoryUsage"),
+          `${existingDoc.id}_${categoryId}`,
+        ),
+        {
+          storeId: existingDoc.id,
+          categoryId,
+          lastUsedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
     }
     return existingDoc.id;
   }
@@ -1756,14 +1784,15 @@ export async function upsertStore(
   });
 
   if (categoryId != null) {
-    await setDoc(doc(collection(hDoc, "storeCategoryUsage"), `${ref.id}_${categoryId}`), 
-        {
-          storeId: ref.id,
-          categoryId,
-          lastUsedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
+    await setDoc(
+      doc(collection(hDoc, "storeCategoryUsage"), `${ref.id}_${categoryId}`),
+      {
+        storeId: ref.id,
+        categoryId,
+        lastUsedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
   }
 
   return ref.id;
@@ -1779,8 +1808,9 @@ export async function createStoreMasterWrite(
   }
 
   const hDoc = await householdDoc();
-  const existingSnap = await getDocs(query(collection(hDoc, "stores"), where("name", "==", trimmed)))
-    .catch(() => null);
+  const existingSnap = await getDocs(
+    query(collection(hDoc, "stores"), where("name", "==", trimmed)),
+  ).catch(() => null);
   const existingStore = findStoreByName(
     trimmed,
     existingSnap?.docs.map((doc) => mapStore(doc.id, doc.data())) ?? [],
@@ -1832,7 +1862,14 @@ export async function getTransactionsByMonth(
   const from = fromYearMonthDate(year, month);
   const to = toYearMonthDate(year, month);
 
-  const snap = await getDocs(query(collection(hDoc, "transactions"), where("date", ">=", from), where("date", "<=", to), orderBy("date", "desc")));
+  const snap = await getDocs(
+    query(
+      collection(hDoc, "transactions"),
+      where("date", ">=", from),
+      where("date", "<=", to),
+      orderBy("date", "desc"),
+    ),
+  );
 
   return snap.docs
     .map((doc) => mapTransaction(doc.id, doc.data()))
@@ -1847,7 +1884,9 @@ export async function getTransactionsByDate(
   date: string,
 ): Promise<Transaction[]> {
   const hDoc = await householdDoc();
-  const snap = await getDocs(query(collection(hDoc, "transactions"), where("date", "==", date)));
+  const snap = await getDocs(
+    query(collection(hDoc, "transactions"), where("date", "==", date)),
+  );
 
   return snap.docs
     .map((doc) => mapTransaction(doc.id, doc.data()))
@@ -1858,7 +1897,14 @@ export async function getTransactionsByYear(
   year: number,
 ): Promise<Transaction[]> {
   const hDoc = await householdDoc();
-  const snap = await getDocs(query(collection(hDoc, "transactions"), where("date", ">=", `${year}-01-01`), where("date", "<=", `${year}-12-31`), orderBy("date", "desc")));
+  const snap = await getDocs(
+    query(
+      collection(hDoc, "transactions"),
+      where("date", ">=", `${year}-01-01`),
+      where("date", "<=", `${year}-12-31`),
+      orderBy("date", "desc"),
+    ),
+  );
 
   return snap.docs.map((doc) => mapTransaction(doc.id, doc.data()));
 }
@@ -1886,7 +1932,13 @@ export async function getMonthCategorySummary(
   const from = fromYearMonthDate(year, month);
   const to = toYearMonthDate(year, month);
 
-  const snap = await getDocs(query(collection(hDoc, "transactions"), where("date", ">=", from), where("date", "<=", to)));
+  const snap = await getDocs(
+    query(
+      collection(hDoc, "transactions"),
+      where("date", ">=", from),
+      where("date", "<=", to),
+    ),
+  );
 
   return buildMonthCategorySummaryFromTransactions(
     snap.docs.map((doc) => mapTransaction(doc.id, doc.data())),
@@ -1900,7 +1952,8 @@ export async function setMonthlyBudget(
   amount: number,
 ): Promise<void> {
   const hDoc = await householdDoc();
-  await setDoc(doc(collection(hDoc, "budgets"), categoryId), 
+  await setDoc(
+    doc(collection(hDoc, "budgets"), categoryId),
     {
       categoryId,
       amount,
@@ -1999,7 +2052,9 @@ export async function getBudgetStatusForDate(
 
   const hDoc = await householdDoc();
 
-  const categorySnap = await getDoc(doc(collection(hDoc, "categories"), categoryId));
+  const categorySnap = await getDoc(
+    doc(collection(hDoc, "categories"), categoryId),
+  );
   const catData = getSnapshotDataOrNull(categorySnap);
   if (!catData) return null;
   if (catData.type !== "expense") return null;
@@ -2013,7 +2068,14 @@ export async function getBudgetStatusForDate(
   const from = fromYearMonthDate(year, month);
   const to = toYearMonthDate(year, month);
 
-  const txSnap = await getDocs(query(collection(hDoc, "transactions"), where("categoryId", "==", categoryId), where("date", ">=", from), where("date", "<=", to)));
+  const txSnap = await getDocs(
+    query(
+      collection(hDoc, "transactions"),
+      where("categoryId", "==", categoryId),
+      where("date", ">=", from),
+      where("date", "<=", to),
+    ),
+  );
 
   let spentAmount = 0;
   for (const doc of txSnap.docs) {
@@ -2045,7 +2107,13 @@ export async function getYearMonthlyTotals(
   year: number,
 ): Promise<MonthlyTotal[]> {
   const hDoc = await householdDoc();
-  const snap = await getDocs(query(collection(hDoc, "transactions"), where("date", ">=", `${year}-01-01`), where("date", "<=", `${year}-12-31`)));
+  const snap = await getDocs(
+    query(
+      collection(hDoc, "transactions"),
+      where("date", ">=", `${year}-01-01`),
+      where("date", "<=", `${year}-12-31`),
+    ),
+  );
 
   return buildYearMonthlyTotalsFromTransactions(
     snap.docs.map((doc) => mapTransaction(doc.id, doc.data())),
@@ -2061,7 +2129,13 @@ export async function getDatesWithTransactions(
   const from = fromYearMonthDate(year, month);
   const to = toYearMonthDate(year, month);
 
-  const snap = await getDocs(query(collection(hDoc, "transactions"), where("date", ">=", from), where("date", "<=", to)));
+  const snap = await getDocs(
+    query(
+      collection(hDoc, "transactions"),
+      where("date", ">=", from),
+      where("date", "<=", to),
+    ),
+  );
 
   const dates = new Set<string>();
   for (const doc of snap.docs) {
