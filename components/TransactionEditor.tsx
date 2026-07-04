@@ -80,6 +80,7 @@ type Props = {
   expenseColor: string;
   bottomInset?: number;
   onAccountPickerOpen?: () => void | Promise<unknown>;
+  onStorePickerOpen?: () => void | Promise<unknown>;
   submitLabel: string;
   onTypeChange: (type: TransactionType) => void;
   onAmountRawChange: (amountRaw: string) => void;
@@ -140,6 +141,7 @@ export default function TransactionEditor({
   expenseColor,
   bottomInset = 0,
   onAccountPickerOpen,
+  onStorePickerOpen,
   submitLabel,
   onTypeChange,
   onAmountRawChange,
@@ -215,6 +217,7 @@ export default function TransactionEditor({
 
   const openStorePicker = () => {
     setStoreSearchQuery("");
+    void onStorePickerOpen?.();
     setShowStoreModal(true);
   };
 

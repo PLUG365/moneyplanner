@@ -422,7 +422,12 @@ export default function HistoryScreen() {
     useCallback(() => {
       refreshPaginatedTransactionsIfStale();
       refreshMonthTransactionsIfStale();
-    }, [refreshMonthTransactionsIfStale, refreshPaginatedTransactionsIfStale]),
+      refreshCachedStoreOptions();
+    }, [
+      refreshCachedStoreOptions,
+      refreshMonthTransactionsIfStale,
+      refreshPaginatedTransactionsIfStale,
+    ]),
   );
 
   // プルリフレッシュのスピナーは専用stateで制御する。共有の loadingInitial に紐づけると
@@ -1521,6 +1526,7 @@ export default function HistoryScreen() {
                 onCategoryChange={handleEditCategoryChange}
                 onBreakdownChange={setEditBreakdownId}
                 onStoreChange={setEditStoreName}
+                onStorePickerOpen={refreshCachedStoreOptions}
                 onMemoChange={setEditMemo}
                 onSubmit={handleUpdate}
               />

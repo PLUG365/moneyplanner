@@ -192,7 +192,8 @@ export default function RecordScreen() {
   useFocusEffect(
     useCallback(() => {
       resetForm();
-    }, [resetForm]),
+      refreshStoreOptions();
+    }, [refreshStoreOptions, resetForm]),
   );
 
   useEffect(() => {
@@ -397,6 +398,7 @@ export default function RecordScreen() {
         onCategoryChange={handleCategoryChange}
         onBreakdownChange={setBreakdownId}
         onStoreChange={setStoreName}
+        onStorePickerOpen={refreshStoreOptions}
         onMemoChange={setMemo}
         onSubmit={handleSave}
       />
