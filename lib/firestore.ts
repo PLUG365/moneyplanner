@@ -314,35 +314,20 @@ async function deleteCollectionDocs(
   await commitBatchOps(ops);
 }
 
-/** members と世帯ドキュメントを1バッチで削除する。
- *  Security Rules は members の存在を activeMember 判定の根拠にするため、
- *  members を先に消すと以降の操作が permission-denied になる。
- *  1バッチならルールはバッチ前の状態で評価されるため、まとめて消せる。 */
-async function deleteHouseholdDocAndMembers(
-  hDoc: FirestoreDocRef,
+/** スナップショットのドキュメント群を499件ずつのバッチで削除し、
+ *  コミットごとに削除件数をコールバックする（進捗表示用）。 */
+async function deleteDocsInBatches(
+  docs: FirestoreQueryDocSnapshot[],
+  onDocsDeleted?: (count: number) => void,
 ): Promise<void> {
-  const membersSnap = await getDocs(collection(hDoc, "members"));
-  const batch = writeBatch(getFirestore());
-  batch.delete(hDoc);
-  membersSnap.docs.forEach((doc) => batch.delete(doc.ref));
-  await batch.commit();
-}
-
-/** 世帯に紐づく招待コード（有効・失効・無効化済みすべて）を削除する。
- *  Rules 上、一覧取得と削除には activeMember 資格が必要なため、
- *  members を削除する前に呼ぶこと。 */
-async function deleteHouseholdInviteCodes(householdId: string): Promise<void> {
-  const snap = await getDocs(
-    query(
-      collection(getFirestore(), "inviteCodes"),
-      where("householdId", "==", householdId),
-    ),
-  );
-  if (snap.empty) return;
-  const ops: BatchOp[] = snap.docs.map(
-    (codeDoc) => (batch) => batch.delete(codeDoc.ref),
-  );
-  await commitBatchOps(ops);
+  const LIMIT = 499;
+  for (let i = 0; i < docs.length; i += LIMIT) {
+    const chunk = docs.slice(i, i + LIMIT);
+    const batch = writeBatch(getFirestore());
+    chunk.forEach((docSnap) => batch.delete(docSnap.ref));
+    await batch.commit();
+    onDocsDeleted?.(chunk.length);
+  }
 }
 
 async function restoreStoreMastersFromTransactionSnapshots(
@@ -788,28 +773,57 @@ export async function deleteHouseholdDataAndCurrentUserProfile(
 
   const hDoc = await householdDoc();
   const collectionNames = getHouseholdDeletionCollectionNames();
-  // サブコレクション群 + 招待コード + (members+世帯doc) + users プロフィール
-  const totalSteps = collectionNames.length + 3;
-  let doneSteps = 0;
-  const reportProgress = () => onProgress?.(doneSteps, totalSteps);
+
+  // 進捗はドキュメント件数ベースで報告する。コレクション単位だと transactions の
+  // 大量削除中にバーが止まって見える（build 27 実機報告）。削除対象を先に
+  // 読み取って総件数を確定してから、バッチコミットごとに進捗を進める。
+  const collectionSnaps: FirestoreQuerySnapshot[] = [];
+  for (const name of collectionNames) {
+    collectionSnaps.push(await getDocs(collection(hDoc, name)));
+  }
+  const inviteSnap = await getDocs(
+    query(
+      collection(getFirestore(), "inviteCodes"),
+      where("householdId", "==", hDoc.id),
+    ),
+  );
+  const membersSnap = await getDocs(collection(hDoc, "members"));
+
+  const totalDocs =
+    collectionSnaps.reduce((sum, snap) => sum + snap.size, 0) +
+    inviteSnap.size +
+    membersSnap.size +
+    2; // 世帯ドキュメント + users プロフィール
+  let doneDocs = 0;
+  const reportProgress = () => onProgress?.(doneDocs, totalDocs);
   reportProgress();
 
-  for (const name of collectionNames) {
-    await deleteCollectionDocs(collection(hDoc, name));
-    doneSteps += 1;
-    reportProgress();
+  for (const snap of collectionSnaps) {
+    await deleteDocsInBatches(snap.docs, (count) => {
+      doneDocs += count;
+      reportProgress();
+    });
   }
 
   // 招待コード → (members + 世帯ドキュメント) → users の順を守る。
   // members 削除後は activeMember 資格を失い、世帯側の削除ができなくなる。
-  await deleteHouseholdInviteCodes(hDoc.id);
-  doneSteps += 1;
+  await deleteDocsInBatches(inviteSnap.docs, (count) => {
+    doneDocs += count;
+    reportProgress();
+  });
+
+  // members と世帯ドキュメントは1バッチで削除する。Security Rules は members の
+  // 存在を activeMember 判定の根拠にするが、ルールはバッチ前の状態で評価されるため
+  // まとめてなら消せる。
+  const finalBatch = writeBatch(getFirestore());
+  finalBatch.delete(hDoc);
+  membersSnap.docs.forEach((memberDoc) => finalBatch.delete(memberDoc.ref));
+  await finalBatch.commit();
+  doneDocs += membersSnap.size + 1;
   reportProgress();
-  await deleteHouseholdDocAndMembers(hDoc);
-  doneSteps += 1;
-  reportProgress();
+
   await deleteDoc(doc(getFirestore(), "users", uid));
-  doneSteps += 1;
+  doneDocs += 1;
   reportProgress();
   clearHouseholdCache();
 }

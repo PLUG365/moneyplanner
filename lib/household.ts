@@ -688,42 +688,41 @@ export async function removeHouseholdMember(
     // データ → 招待コード → (members + 世帯ドキュメントを1バッチ) の順で消す。
     if (activeMembers.length <= 1) {
       const collectionNames = getHouseholdDeletionCollectionNames();
-      // サブコレクション群 + 招待コード + (members+世帯doc) + users クリア
-      const totalSteps = collectionNames.length + 3;
-      let doneSteps = 0;
-      const reportProgress = () => onProgress?.(doneSteps, totalSteps);
-      reportProgress();
-
+      // 進捗はドキュメント件数ベースで報告する（コレクション単位だと大量データの
+      // 削除中にバーが止まって見える。build 27 実機報告）。
+      const collectionSnaps = [];
       for (const name of collectionNames) {
-        const collectionSnap = await getDocs(collection(householdRef, name));
-        if (!collectionSnap.empty) {
-          const docs = collectionSnap.docs;
-          for (let i = 0; i < docs.length; i += 499) {
-            const batch = writeBatch(getFirestore());
-            docs.slice(i, i + 499).forEach((doc) => batch.delete(doc.ref));
-            await batch.commit();
-          }
-        }
-        doneSteps += 1;
-        reportProgress();
+        collectionSnaps.push(await getDocs(collection(householdRef, name)));
       }
-
       const inviteCodesSnap = await getDocs(
         query(
           collection(getFirestore(), "inviteCodes"),
           where("householdId", "==", householdId),
         ),
       );
-      if (!inviteCodesSnap.empty) {
-        const docs = inviteCodesSnap.docs;
+      const totalDocs =
+        collectionSnaps.reduce((sum, snap) => sum + snap.size, 0) +
+        inviteCodesSnap.size +
+        membersSnap.size +
+        2; // 世帯ドキュメント + users.householdId クリア
+      let doneDocs = 0;
+      const reportProgress = () => onProgress?.(doneDocs, totalDocs);
+      reportProgress();
+
+      // データ → 招待コード → (members + 世帯ドキュメントを1バッチ) の順で消す。
+      // members を先に消すと Security Rules の activeMember 資格を失い、
+      // 以降の削除がすべて permission-denied になる（build 26 発見事項 #2）。
+      for (const snap of [...collectionSnaps, inviteCodesSnap]) {
+        const docs = snap.docs;
         for (let i = 0; i < docs.length; i += 499) {
           const batch = writeBatch(getFirestore());
-          docs.slice(i, i + 499).forEach((doc) => batch.delete(doc.ref));
+          const chunk = docs.slice(i, i + 499);
+          chunk.forEach((doc) => batch.delete(doc.ref));
           await batch.commit();
+          doneDocs += chunk.length;
+          reportProgress();
         }
       }
-      doneSteps += 1;
-      reportProgress();
 
       // members と世帯ドキュメントは1バッチで削除する
       // （ルールはバッチ前の状態で評価されるため、まとめてなら消せる）。
@@ -731,7 +730,7 @@ export async function removeHouseholdMember(
       finalBatch.delete(householdRef);
       membersSnap.docs.forEach((memberDoc) => finalBatch.delete(memberDoc.ref));
       await finalBatch.commit();
-      doneSteps += 1;
+      doneDocs += membersSnap.size + 1;
       reportProgress();
 
       await setDoc(
@@ -741,7 +740,7 @@ export async function removeHouseholdMember(
         },
         { merge: true },
       );
-      doneSteps += 1;
+      doneDocs += 1;
       reportProgress();
       return;
     }

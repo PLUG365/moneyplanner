@@ -1122,7 +1122,22 @@ export default function SettingsScreen() {
       await deleteHouseholdDataAndCurrentUserProfile((done, total) =>
         setAccountDeletionProgress({ done, total }),
       );
-      await deleteCurrentUserAccount();
+      try {
+        await deleteCurrentUserAccount();
+      } catch (deleteError) {
+        // 大量データの削除に時間がかかると、削除前の再認証が失効して
+        // auth/requires-recent-login になることがある（Firestore は消えたのに
+        // Auth だけ残る）。その場合は再認証してもう一度だけ試す。
+        if (
+          (deleteError as { code?: string })?.code ===
+          "auth/requires-recent-login"
+        ) {
+          await reauthenticateCurrentUserWithApple();
+          await deleteCurrentUserAccount();
+        } else {
+          throw deleteError;
+        }
+      }
       router.replace("/auth" as Href);
     } catch (error) {
       Alert.alert(
