@@ -61,6 +61,7 @@ import {
     type HistorySearchType,
 } from "@/lib/historySearch";
 import { hasHistorySearchCriteria } from "@/lib/historySearchCriteria";
+import { buildHistorySearchStoreOptions } from "@/lib/historySearchOptions";
 import { formatYearMonthLabel, shiftYearMonth } from "@/lib/monthPicker";
 import { waitForPendingWrite } from "@/lib/pendingWrite";
 import { buildRecordCategoryOptions } from "@/lib/recordOptions";
@@ -367,17 +368,11 @@ export default function HistoryScreen() {
 
   const historySearchStoreOptions = useMemo(
     () =>
-      uniqueNonEmpty(
-        listTransactions
-          .filter(
-            (tx) =>
-              tx.type === "expense" &&
-              (!historySearchCategoryName ||
-                tx.categoryName === historySearchCategoryName),
-          )
-          .map((tx) => tx.storeName),
-      ),
-    [historySearchCategoryName, listTransactions],
+      buildHistorySearchStoreOptions(listTransactions, {
+        categoryName: historySearchCategoryName,
+        storeQuery: historySearchStoreName,
+      }),
+    [historySearchCategoryName, historySearchStoreName, listTransactions],
   );
 
   const load = useCallback(async () => {
