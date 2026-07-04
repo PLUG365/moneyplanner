@@ -1,6 +1,5 @@
 import {
   collection,
-  deleteDoc,
   deleteField,
   doc,
   getDoc,
@@ -716,11 +715,11 @@ export async function removeHouseholdMember(
     );
 
     // 最後のメンバー退出時は世帯ごと削除する。
+    // members を先に消すと Security Rules の activeMember 資格を失い、
+    // 以降の削除がすべて permission-denied になるため（build 26 発見事項 #2）、
+    // データ → 招待コード → (members + 世帯ドキュメントを1バッチ) の順で消す。
     if (activeMembers.length <= 1) {
-      const collectionNames = [
-        ...getHouseholdDeletionCollectionNames(),
-        "joinRequests",
-      ];
+      const collectionNames = getHouseholdDeletionCollectionNames();
 
       for (const name of collectionNames) {
         const collectionSnap = await getDocs(collection(householdRef, name));
@@ -734,7 +733,12 @@ export async function removeHouseholdMember(
         }
       }
 
-      const inviteCodesSnap = await getDocs(query(collection(getFirestore(), "inviteCodes"), where("householdId", "==", householdId)));
+      const inviteCodesSnap = await getDocs(
+        query(
+          collection(getFirestore(), "inviteCodes"),
+          where("householdId", "==", householdId),
+        ),
+      );
       if (!inviteCodesSnap.empty) {
         const docs = inviteCodesSnap.docs;
         for (let i = 0; i < docs.length; i += 499) {
@@ -744,8 +748,14 @@ export async function removeHouseholdMember(
         }
       }
 
-      await deleteDoc(householdRef);
-      await setDoc(doc(getFirestore(), "users", currentUser.uid), 
+      // members と世帯ドキュメントは1バッチで削除する
+      // （ルールはバッチ前の状態で評価されるため、まとめてなら消せる）。
+      const finalBatch = writeBatch(getFirestore());
+      finalBatch.delete(householdRef);
+      membersSnap.docs.forEach((memberDoc) => finalBatch.delete(memberDoc.ref));
+      await finalBatch.commit();
+
+      await setDoc(doc(getFirestore(), "users", currentUser.uid),
         {
           householdId: deleteField(),
         },

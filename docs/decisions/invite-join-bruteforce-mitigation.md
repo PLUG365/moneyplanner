@@ -9,6 +9,15 @@
 > 旧6文字コードは有効期限内に限り参加に使用できる（`lib/inviteCode.ts`）。
 > 総当たり空間は 32^6 ≒ 10^9 から 32^10 ≒ 10^15 へ拡大し、Math.random による予測可能性も解消した。
 
+> 追記（2026-07-04）: `/inviteCodes` の一覧取得（list）は全面禁止としていたが、
+> 世帯退出・全データ削除時のクリーンアップ（`householdId` 一致検索での自世帯コード削除）が
+> permission-denied になる不具合（build 26 発見事項 #2）が判明したため、
+> **自世帯のコードに限り list を許可**する形へ緩和した
+> （`allow list: if signedIn() && activeMember(resource.data.householdId)`）。
+> activeMember は members サブコレクション（本人が偽造できない）を根拠とするため、
+> 自分の `users.householdId` を書き換えた非メンバーには一覧できず、総当たり耐性は維持される。
+> Rulesテストで「自世帯はlist可 / 偽造users docではlist不可 / 無条件listは不可」を検証済み。
+
 ## 決定
 
 - `/inviteCodes/{code}` の直接 `get` 方式は現行維持とする

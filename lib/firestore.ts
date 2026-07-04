@@ -320,6 +320,10 @@ async function deleteCollectionDocs(
   await commitBatchOps(ops);
 }
 
+/** members と世帯ドキュメントを1バッチで削除する。
+ *  Security Rules は members の存在を activeMember 判定の根拠にするため、
+ *  members を先に消すと以降の操作が permission-denied になる。
+ *  1バッチならルールはバッチ前の状態で評価されるため、まとめて消せる。 */
 async function deleteHouseholdDocAndMembers(
   hDoc: FirestoreDocRef,
 ): Promise<void> {
@@ -328,6 +332,23 @@ async function deleteHouseholdDocAndMembers(
   batch.delete(hDoc);
   membersSnap.docs.forEach((doc) => batch.delete(doc.ref));
   await batch.commit();
+}
+
+/** 世帯に紐づく招待コード（有効・失効・無効化済みすべて）を削除する。
+ *  Rules 上、一覧取得と削除には activeMember 資格が必要なため、
+ *  members を削除する前に呼ぶこと。 */
+async function deleteHouseholdInviteCodes(householdId: string): Promise<void> {
+  const snap = await getDocs(
+    query(
+      collection(getFirestore(), "inviteCodes"),
+      where("householdId", "==", householdId),
+    ),
+  );
+  if (snap.empty) return;
+  const ops: BatchOp[] = snap.docs.map(
+    (codeDoc) => (batch) => batch.delete(codeDoc.ref),
+  );
+  await commitBatchOps(ops);
 }
 
 async function restoreStoreMastersFromTransactionSnapshots(
@@ -786,6 +807,9 @@ export async function deleteHouseholdDataAndCurrentUserProfile(): Promise<void> 
     await deleteCollectionDocs(collection(hDoc, name));
   }
 
+  // 招待コード → (members + 世帯ドキュメント) → users の順を守る。
+  // members 削除後は activeMember 資格を失い、世帯側の削除ができなくなる。
+  await deleteHouseholdInviteCodes(hDoc.id);
   await deleteHouseholdDocAndMembers(hDoc);
   await deleteDoc(doc(getFirestore(), "users", uid));
   clearHouseholdCache();

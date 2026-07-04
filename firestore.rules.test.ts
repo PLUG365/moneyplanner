@@ -8,12 +8,16 @@ import {
     type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
 import {
+    collection,
     deleteDoc,
     doc,
     getDoc,
+    getDocs,
+    query,
     setDoc,
     setLogLevel,
     updateDoc,
+    where,
     writeBatch,
 } from "firebase/firestore";
 
@@ -557,6 +561,96 @@ rulesTest(
         { merge: true },
       ),
     );
+  },
+);
+
+// ── 世帯削除・退出フロー（build 26 発見事項 #2/#3 の回帰テスト）──
+
+rulesTest(
+  "active members can list their own household's invite codes",
+  async () => {
+    const db = testEnv!.authenticatedContext("alice").firestore();
+
+    await assertSucceeds(
+      getDocs(
+        query(
+          collection(db, "inviteCodes"),
+          where("householdId", "==", HOUSEHOLD_ID),
+        ),
+      ),
+    );
+  },
+);
+
+rulesTest(
+  "non-members cannot list invite codes even with a forged users doc",
+  async () => {
+    // charlie は users.householdId を持つが member ドキュメントがない
+    // （自分で users を書き換えた攻撃者と同じ状態）
+    const db = testEnv!.authenticatedContext("charlie").firestore();
+
+    await assertFails(
+      getDocs(
+        query(
+          collection(db, "inviteCodes"),
+          where("householdId", "==", HOUSEHOLD_ID),
+        ),
+      ),
+    );
+  },
+);
+
+rulesTest(
+  "unfiltered invite code listing is denied even for active members",
+  async () => {
+    const db = testEnv!.authenticatedContext("alice").firestore();
+
+    await assertFails(getDocs(collection(db, "inviteCodes")));
+  },
+);
+
+rulesTest("active members can delete their household's invite code", async () => {
+  const db = testEnv!.authenticatedContext("alice").firestore();
+
+  await assertSucceeds(deleteDoc(doc(db, "inviteCodes", "123456")));
+});
+
+rulesTest(
+  "last member can delete household data, invite codes, then members+household in one batch",
+  async () => {
+    // removeHouseholdMember（最後の1人退出）/ 全データ削除と同じ順序を再現する:
+    // サブコレクション → inviteCodes → (members + 世帯ドキュメントを1バッチ)
+    const db = testEnv!.authenticatedContext("alice").firestore();
+
+    await assertSucceeds(
+      deleteDoc(doc(db, "households", HOUSEHOLD_ID, "transactions", "tx-1")),
+    );
+    await assertSucceeds(deleteDoc(doc(db, "inviteCodes", "123456")));
+
+    const finalBatch = writeBatch(db);
+    finalBatch.delete(doc(db, "households", HOUSEHOLD_ID));
+    finalBatch.delete(doc(db, "households", HOUSEHOLD_ID, "members", "alice"));
+    finalBatch.delete(doc(db, "households", HOUSEHOLD_ID, "members", "bob"));
+    await assertSucceeds(finalBatch.commit());
+
+    // 世帯削除後も自分の users ドキュメントは更新できる
+    await assertSucceeds(
+      setDoc(doc(db, "users", "alice"), { householdId: null }, { merge: true }),
+    );
+  },
+);
+
+rulesTest(
+  "deleting own member doc first locks out later household deletion (regression guard)",
+  async () => {
+    // members を先に消すと activeMember 資格を失い世帯ドキュメントを消せなくなる。
+    // 削除フロー実装が順序を誤った場合に検知するためのガード。
+    const db = testEnv!.authenticatedContext("alice").firestore();
+
+    await assertSucceeds(
+      deleteDoc(doc(db, "households", HOUSEHOLD_ID, "members", "alice")),
+    );
+    await assertFails(deleteDoc(doc(db, "households", HOUSEHOLD_ID)));
   },
 );
 

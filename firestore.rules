@@ -47,10 +47,14 @@ service cloud.firestore {
       allow read, write: if signedIn() && request.auth.uid == userId;
     }
 
-    // 招待コード: コードを知っている認証済みユーザーのみ直接参照する
+    // 招待コード: コードを知っている認証済みユーザーのみ直接参照する。
+    // 一覧取得は総当たり対策で原則禁止だが、自世帯のコードに限り許可する
+    // （世帯退出・全データ削除時のクリーンアップで householdId 一致検索が必要。
+    // activeMember は members サブコレクションを根拠にするため、自分の users.householdId を
+    // 書き換えただけの非メンバーには一覧できず、総当たり耐性は維持される）。
     match /inviteCodes/{code} {
       allow get: if signedIn();
-      allow list: if false;
+      allow list: if signedIn() && activeMember(resource.data.householdId);
       allow create: if signedIn()
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.householdId is string
