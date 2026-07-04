@@ -13,7 +13,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import MoneyInputModal from "@/components/MoneyInputModal";
 import {
@@ -156,6 +156,10 @@ export default function TransactionEditor({
   onMemoChange,
   onSubmit,
 }: Props) {
+  // RNの Modal は別ネイティブウィンドウに描画されるため、Modal内の SafeAreaView は
+  // inset計測に失敗して0になることがある（閉じるボタンがノッチに被る。issue #3）。
+  // ルートの SafeAreaProvider からJS値として取れる useSafeAreaInsets を使う。
+  const insets = useSafeAreaInsets();
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showAmountModal, setShowAmountModal] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
@@ -620,10 +624,10 @@ export default function TransactionEditor({
       ) : null}
 
       <Modal visible={showCategoryModal} animationType="slide">
-        <SafeAreaView
+        <View
           style={[
             styles.fullModalContainer,
-            { backgroundColor: colors.background },
+            { backgroundColor: colors.background, paddingTop: insets.top },
           ]}
         >
           <View
@@ -637,7 +641,10 @@ export default function TransactionEditor({
                 ? "内訳を選択"
                 : "カテゴリを選択"}
             </Text>
-            <TouchableOpacity onPress={closeCategoryPicker}>
+            <TouchableOpacity
+              onPress={closeCategoryPicker}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
               <Text style={[styles.fullModalClose, { color: colors.tint }]}>
                 閉じる
               </Text>
@@ -753,14 +760,14 @@ export default function TransactionEditor({
               </>
             )}
           </ScrollView>
-        </SafeAreaView>
+        </View>
       </Modal>
 
       <Modal visible={showAccountModal} animationType="slide">
-        <SafeAreaView
+        <View
           style={[
             styles.fullModalContainer,
-            { backgroundColor: colors.background },
+            { backgroundColor: colors.background, paddingTop: insets.top },
           ]}
         >
           <View
@@ -772,7 +779,10 @@ export default function TransactionEditor({
             <Text style={[styles.fullModalTitle, { color: colors.text }]}>
               口座を選択
             </Text>
-            <TouchableOpacity onPress={() => setShowAccountModal(false)}>
+            <TouchableOpacity
+              onPress={() => setShowAccountModal(false)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
               <Text style={[styles.fullModalClose, { color: colors.tint }]}>
                 閉じる
               </Text>
@@ -809,14 +819,14 @@ export default function TransactionEditor({
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </SafeAreaView>
+        </View>
       </Modal>
 
       <Modal visible={showStoreModal} animationType="slide">
-        <SafeAreaView
+        <View
           style={[
             styles.fullModalContainer,
-            { backgroundColor: colors.background },
+            { backgroundColor: colors.background, paddingTop: insets.top },
           ]}
         >
           <View
@@ -828,7 +838,10 @@ export default function TransactionEditor({
             <Text style={[styles.fullModalTitle, { color: colors.text }]}>
               お店を選択
             </Text>
-            <TouchableOpacity onPress={() => setShowStoreModal(false)}>
+            <TouchableOpacity
+              onPress={() => setShowStoreModal(false)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
               <Text style={[styles.fullModalClose, { color: colors.tint }]}>
                 閉じる
               </Text>
@@ -921,7 +934,7 @@ export default function TransactionEditor({
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </SafeAreaView>
+        </View>
       </Modal>
     </>
   );
