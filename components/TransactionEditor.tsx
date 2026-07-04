@@ -16,18 +16,17 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import MoneyInputModal from "@/components/MoneyInputModal";
+import { TransactionType } from "@/lib/firestore";
 import {
-    createStoreMasterWrite,
-    getStoresByCategory,
-    TransactionType,
-} from "@/lib/firestore";
+    buildVisibleStorePickerOptions,
+    type StorePickerOption,
+} from "@/lib/storeOptions";
 import { formatTransactionAmountInputDisplay } from "@/lib/transactionAmountInput";
 import {
     buildCategoryDisplayName,
     getBreakdownChoicesForCategory,
     getCategoryModalNextStep,
 } from "@/lib/transactionEditorPresentation";
-import { buildVisibleStorePickerOptions } from "@/lib/storeOptions";
 
 type EditorId = string | number;
 
@@ -46,11 +45,6 @@ type Category = {
 type Breakdown = {
   id: EditorId;
   categoryId: EditorId;
-  name: string;
-};
-
-type Store = {
-  id: EditorId;
   name: string;
 };
 
@@ -79,8 +73,8 @@ type Props = {
   categoryId: EditorId | null;
   breakdowns: Breakdown[];
   breakdownId: EditorId | null;
-  storeId: EditorId | null;
   storeName: string;
+  storeOptions: StorePickerOption[];
   memo: string;
   incomeColor: string;
   expenseColor: string;
@@ -93,7 +87,7 @@ type Props = {
   onAccountChange: (accountId: any) => void;
   onCategoryChange: (categoryId: any) => void;
   onBreakdownChange: (breakdownId: any) => void;
-  onStoreChange: (storeId: any, storeName: string) => void;
+  onStoreChange: (storeName: string) => void;
   onMemoChange: (memo: string) => void;
   onSubmit: () => void;
 };
@@ -139,8 +133,8 @@ export default function TransactionEditor({
   categoryId,
   breakdowns,
   breakdownId,
-  storeId,
   storeName,
+  storeOptions,
   memo,
   incomeColor,
   expenseColor,
@@ -167,7 +161,6 @@ export default function TransactionEditor({
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showStoreModal, setShowStoreModal] = useState(false);
   const [storeSearchQuery, setStoreSearchQuery] = useState("");
-  const [categoryStores, setCategoryStores] = useState<Store[]>([]);
   const [categoryModalStep, setCategoryModalStep] =
     useState<CategoryModalStep>("category");
   const [modalBreakdownCategory, setModalBreakdownCategory] =
@@ -208,20 +201,19 @@ export default function TransactionEditor({
     breakdownName: selectedBreakdown?.name,
   });
   const filteredStores = useMemo(() => {
-    return buildVisibleStorePickerOptions(categoryStores, storeSearchQuery);
-  }, [categoryStores, storeSearchQuery]);
+    return buildVisibleStorePickerOptions(storeOptions, storeSearchQuery);
+  }, [storeOptions, storeSearchQuery]);
 
   const exactStoreMatchExists = useMemo(
-    () => categoryStores.some((s) => s.name === storeSearchQuery.trim()),
-    [categoryStores, storeSearchQuery],
+    () =>
+      storeOptions.some(
+        (s) =>
+          s.name.trim().toLowerCase() === storeSearchQuery.trim().toLowerCase(),
+      ),
+    [storeOptions, storeSearchQuery],
   );
 
-  const openStorePicker = async () => {
-    setCategoryStores(
-      await getStoresByCategory(
-        typeof categoryId === "string" ? categoryId : null,
-      ),
-    );
+  const openStorePicker = () => {
     setStoreSearchQuery("");
     setShowStoreModal(true);
   };
@@ -550,7 +542,7 @@ export default function TransactionEditor({
                   <TouchableOpacity
                     style={styles.storeClearButton}
                     hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                    onPress={() => onStoreChange(null, "")}
+                    onPress={() => onStoreChange("")}
                   >
                     <Text
                       style={[styles.selectorAction, { color: colors.subText }]}
@@ -878,48 +870,42 @@ export default function TransactionEditor({
                   styles.addStoreButton,
                   { backgroundColor: colors.tint },
                 ]}
-                onPress={async () => {
+                onPress={() => {
                   const name = storeSearchQuery.trim();
-                  const { storeId: sid, pendingWrite } =
-                    await createStoreMasterWrite(
-                      name,
-                      typeof categoryId === "string" ? categoryId : null,
-                    );
-                  void pendingWrite.catch(() => undefined);
-                  onStoreChange(sid, name);
+                  onStoreChange(name);
                   setShowStoreModal(false);
                 }}
               >
                 <Text style={styles.addStoreButtonText}>
-                  「{storeSearchQuery.trim()}」を追加して選択
+                  「{storeSearchQuery.trim()}」を選択
                 </Text>
               </TouchableOpacity>
             )}
             {filteredStores.length === 0 && storeSearchQuery.trim() === "" && (
               <Text style={[styles.storeEmptyText, { color: colors.subText }]}>
-                まだお店が登録されていません
+                候補のお店がありません
               </Text>
             )}
             {filteredStores.map((store) => (
               <TouchableOpacity
-                key={store.id}
+                key={store.id ?? store.name}
                 style={[
                   styles.fullCategoryRow,
                   { borderColor: colors.border, backgroundColor: colors.card },
-                  storeId === store.id && {
+                  storeName.trim() === store.name.trim() && {
                     borderColor: colors.tint,
                     borderWidth: 2,
                   },
                 ]}
                 onPress={() => {
-                  onStoreChange(store.id, store.name);
+                  onStoreChange(store.name);
                   setShowStoreModal(false);
                 }}
               >
                 <Text style={[styles.fullCategoryName, { color: colors.text }]}>
                   {store.name}
                 </Text>
-                {storeId === store.id ? (
+                {storeName.trim() === store.name.trim() ? (
                   <Text
                     style={[
                       styles.fullCategorySelected,

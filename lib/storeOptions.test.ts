@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  buildStoreOptionsForCategory,
-  buildVisibleStorePickerOptions,
-  findStoreByName,
+    buildStoreOptionsForCategory,
+    buildStoreOptionsFromTransactions,
+    buildVisibleStorePickerOptions,
+    findStoreByName,
 } from "./storeOptions";
 
 test("buildStoreOptionsForCategory shows all stores and prioritizes stores used with the category", () => {
@@ -156,5 +157,85 @@ test("buildVisibleStorePickerOptions narrows stores by partial search query befo
       (store) => store.id,
     ),
     ["store-1", "store-2"],
+  );
+});
+
+test("buildStoreOptionsFromTransactions builds unique store names by recent transaction date", () => {
+  const options = buildStoreOptionsFromTransactions([
+    {
+      date: "2026-05-01",
+      createdAt: "2026-05-01T09:00:00.000Z",
+      categoryName: "食費",
+      storeName: "駅前スーパー",
+    },
+    {
+      date: "2026-05-03",
+      createdAt: "2026-05-03T09:00:00.000Z",
+      categoryName: "日用品",
+      storeName: "薬局",
+    },
+    {
+      date: "2026-05-05",
+      createdAt: "2026-05-05T09:00:00.000Z",
+      categoryName: "食費",
+      storeName: " 駅前スーパー ",
+    },
+  ]);
+
+  assert.deepEqual(
+    options.map((store) => ({ id: store.id, name: store.name })),
+    [
+      { id: null, name: "駅前スーパー" },
+      { id: null, name: "薬局" },
+    ],
+  );
+});
+
+test("buildStoreOptionsFromTransactions prioritizes stores recently used with the selected category", () => {
+  const options = buildStoreOptionsFromTransactions(
+    [
+      {
+        date: "2026-05-10",
+        createdAt: "2026-05-10T09:00:00.000Z",
+        categoryName: "日用品",
+        storeName: "薬局",
+      },
+      {
+        date: "2026-05-01",
+        createdAt: "2026-05-01T09:00:00.000Z",
+        categoryName: "食費",
+        storeName: "駅前スーパー",
+      },
+    ],
+    "食費",
+  );
+
+  assert.deepEqual(
+    options.map((store) => store.name),
+    ["駅前スーパー", "薬局"],
+  );
+});
+
+test("buildStoreOptionsFromTransactions ignores income transaction store names", () => {
+  const options = buildStoreOptionsFromTransactions([
+    {
+      type: "income",
+      date: "2026-05-10",
+      createdAt: "2026-05-10T09:00:00.000Z",
+      categoryName: "給与",
+      storeName: "勤務先",
+    },
+    {
+      type: "expense",
+      date: "2026-05-01",
+      createdAt: "2026-05-01T09:00:00.000Z",
+      categoryName: "食費",
+      storeName: "駅前スーパー",
+    },
+  ]);
+
+  assert.deepEqual(
+    options.map((store) => store.name),
+    ["駅前スーパー"],
   );
 });

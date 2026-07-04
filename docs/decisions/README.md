@@ -11,5 +11,6 @@
 - [CSVインポートの未知口座はnull紐付け](import-unknown-account-nullable.md)
 - [世帯削除フローの恒久方針](household-deletion-flow.md)
 - [取引のソフトデリート採用](transaction-soft-delete.md)
+- [お店候補は取引スナップショットから生成](store-candidates-from-transactions.md)
 
 新しい重要判断を追加した場合は、この一覧と [README.md](../../README.md#ドキュメント構成) の更新要否も確認します。

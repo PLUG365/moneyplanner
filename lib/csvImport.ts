@@ -9,7 +9,6 @@ import {
     getAccounts,
     getAllBreakdowns,
     getCategories,
-    getStoresByCategory,
     importTransactions,
     readHouseholdDataVersionPreferServer,
 } from "./firestore";
@@ -54,18 +53,17 @@ export async function prepareCsvImport(): Promise<CsvImportPrepareResult> {
     return { status: "format-error", errors };
   }
 
-  const [accounts, categories, breakdowns, stores] = await Promise.all([
+  const [accounts, categories, breakdowns] = await Promise.all([
     getAccounts(),
     getCategories(),
     getAllBreakdowns(),
-    getStoresByCategory(),
   ]);
 
   const resolved = resolveImportRows(rows, {
     accounts,
     categories,
     breakdowns,
-    stores,
+    stores: [],
     defaultAccountId: DEFAULT_ACCOUNT_ID,
   });
 

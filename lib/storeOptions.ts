@@ -11,6 +11,20 @@ type StoreCategoryUsage = {
   lastUsedAt: string;
 };
 
+type TransactionStoreSource = {
+  type?: "income" | "expense";
+  date: string;
+  createdAt: string;
+  categoryName?: string | null;
+  storeName?: string | null;
+};
+
+export type StorePickerOption = {
+  id: string | null;
+  name: string;
+  lastUsedDate: string;
+};
+
 export const STORE_PICKER_OPTION_LIMIT = 40;
 
 function normalizeStoreName(name: string): string {
@@ -45,6 +59,118 @@ export function buildVisibleStorePickerOptions<T extends { name: string }>(
   }
 
   return options;
+}
+
+function compareStoreRecency(
+  leftDate: string,
+  leftCreatedAt: string,
+  rightDate: string,
+  rightCreatedAt: string,
+): number {
+  const dateCmp = rightDate.localeCompare(leftDate);
+  if (dateCmp !== 0) return dateCmp;
+  return rightCreatedAt.localeCompare(leftCreatedAt);
+}
+
+export function buildStoreOptionsFromTransactions(
+  transactions: TransactionStoreSource[],
+  selectedCategoryName = "",
+): StorePickerOption[] {
+  const categoryName = selectedCategoryName.trim();
+  const storesByName = new Map<
+    string,
+    {
+      name: string;
+      latestDate: string;
+      latestCreatedAt: string;
+      categoryLatestDate: string | null;
+      categoryLatestCreatedAt: string | null;
+    }
+  >();
+
+  for (const tx of transactions) {
+    if (tx.type === "income") continue;
+
+    const name = tx.storeName?.trim();
+    if (!name) continue;
+
+    const key = normalizeStoreName(name);
+    const date = tx.date || "";
+    const createdAt = tx.createdAt || "";
+    const existing = storesByName.get(key);
+    const matchedCategory =
+      !!categoryName && tx.categoryName?.trim() === categoryName;
+
+    if (!existing) {
+      storesByName.set(key, {
+        name,
+        latestDate: date,
+        latestCreatedAt: createdAt,
+        categoryLatestDate: matchedCategory ? date : null,
+        categoryLatestCreatedAt: matchedCategory ? createdAt : null,
+      });
+      continue;
+    }
+
+    if (
+      compareStoreRecency(
+        existing.latestDate,
+        existing.latestCreatedAt,
+        date,
+        createdAt,
+      ) > 0
+    ) {
+      existing.latestDate = date;
+      existing.latestCreatedAt = createdAt;
+      existing.name = name;
+    }
+
+    if (matchedCategory) {
+      if (
+        !existing.categoryLatestDate ||
+        compareStoreRecency(
+          existing.categoryLatestDate,
+          existing.categoryLatestCreatedAt ?? "",
+          date,
+          createdAt,
+        ) > 0
+      ) {
+        existing.categoryLatestDate = date;
+        existing.categoryLatestCreatedAt = createdAt;
+      }
+    }
+  }
+
+  return Array.from(storesByName.values())
+    .sort((a, b) => {
+      const aCategory = !!a.categoryLatestDate;
+      const bCategory = !!b.categoryLatestDate;
+      if (aCategory !== bCategory) return aCategory ? -1 : 1;
+
+      if (aCategory && bCategory) {
+        const categoryRecency = compareStoreRecency(
+          a.categoryLatestDate ?? "",
+          a.categoryLatestCreatedAt ?? "",
+          b.categoryLatestDate ?? "",
+          b.categoryLatestCreatedAt ?? "",
+        );
+        if (categoryRecency !== 0) return categoryRecency;
+      }
+
+      const recency = compareStoreRecency(
+        a.latestDate,
+        a.latestCreatedAt,
+        b.latestDate,
+        b.latestCreatedAt,
+      );
+      if (recency !== 0) return recency;
+      return a.name.localeCompare(b.name);
+    })
+    .map((store) => ({
+      id: null,
+      name: store.name,
+      lastUsedDate: store.latestDate,
+    }));
 }
 
 function pickRecentStore(a: StoreOption, b: StoreOption): StoreOption {

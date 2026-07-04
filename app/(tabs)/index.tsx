@@ -20,6 +20,7 @@ import {
 
 import TransactionEditor from "@/components/TransactionEditor";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useCachedStoreOptions } from "@/hooks/useCachedStoreOptions";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import {
     Account,
@@ -38,7 +39,10 @@ import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
 import { waitForPendingWrite } from "@/lib/pendingWrite";
 import { buildRecordCategoryOptions } from "@/lib/recordOptions";
 import { resolveTransactionAmountInput } from "@/lib/transactionAmountInput";
-import { isValidTransactionAmount, MAX_TRANSACTION_AMOUNT } from "@/lib/transactionAmountValidation";
+import {
+    isValidTransactionAmount,
+    MAX_TRANSACTION_AMOUNT,
+} from "@/lib/transactionAmountValidation";
 
 function formatDate(date: Date): string {
   const y = date.getFullYear();
@@ -79,7 +83,6 @@ export default function RecordScreen() {
   const [accountId, setAccountId] = useState<string | null>(null);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [breakdownId, setBreakdownId] = useState<string | null>(null);
-  const [storeId, setStoreId] = useState<string | null>(null);
   const [storeName, setStoreName] = useState("");
   const [memo, setMemo] = useState("");
   const [saving, setSaving] = useState(false);
@@ -143,6 +146,10 @@ export default function RecordScreen() {
     () => breakdowns.find((breakdown) => breakdown.id === breakdownId) ?? null,
     [breakdownId, breakdowns],
   );
+  const { storeOptions, refresh: refreshStoreOptions } = useCachedStoreOptions(
+    householdId,
+    selectedCategory?.name ?? "",
+  );
 
   useEffect(() => {
     setAccountId((prev) => {
@@ -177,7 +184,6 @@ export default function RecordScreen() {
     setAmountRaw("");
     setMemo("");
     setDate(formatDate(new Date()));
-    setStoreId(null);
     setStoreName("");
     setCategoryId(null);
     setBreakdownId(null);
@@ -251,14 +257,12 @@ export default function RecordScreen() {
     setType(newType);
     setCategoryId(null);
     setBreakdownId(null);
-    setStoreId(null);
     setStoreName("");
   };
 
   const handleCategoryChange = (nextCategoryId: string) => {
     setCategoryId(nextCategoryId);
     setBreakdownId(null);
-    setStoreId(null);
     setStoreName("");
   };
 
@@ -294,7 +298,7 @@ export default function RecordScreen() {
           accountId,
           memo,
           breakdownId,
-          storeId,
+          null,
           {
             accountName: selectedAccount?.name,
             categoryName: selectedCategory?.name,
@@ -334,6 +338,7 @@ export default function RecordScreen() {
       }
 
       resetForm();
+      refreshStoreOptions();
       showToast(nextToastMessage, nextToastVariant);
     } catch (error) {
       Alert.alert(
@@ -378,8 +383,8 @@ export default function RecordScreen() {
         categoryId={categoryId}
         breakdowns={breakdowns}
         breakdownId={breakdownId}
-        storeId={storeId}
         storeName={storeName}
+        storeOptions={storeOptions}
         memo={memo}
         incomeColor={incomeColor}
         expenseColor={expenseColor}
@@ -391,10 +396,7 @@ export default function RecordScreen() {
         onAccountChange={setAccountId}
         onCategoryChange={handleCategoryChange}
         onBreakdownChange={setBreakdownId}
-        onStoreChange={(id, name) => {
-          setStoreId(id);
-          setStoreName(name);
-        }}
+        onStoreChange={setStoreName}
         onMemoChange={setMemo}
         onSubmit={handleSave}
       />

@@ -30,6 +30,7 @@ import TransactionEditor from "@/components/TransactionEditor";
 import { IconSymbol } from "@/components/ui/IconSymbol";
 import { useBottomTabOverflow } from "@/components/ui/TabBarBackground";
 import { useAppTheme } from "@/hooks/useAppTheme";
+import { useCachedStoreOptions } from "@/hooks/useCachedStoreOptions";
 import { useCachedTransactions } from "@/hooks/useCachedTransactions";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import { usePaginatedTransactions } from "@/hooks/usePaginatedTransactions";
@@ -38,7 +39,6 @@ import {
     addTransaction,
     Breakdown,
     Category,
-    createStoreMasterWrite,
     DEFAULT_ACCOUNT_ID,
     deleteTransactionFromPrevious,
     householdCollection,
@@ -51,10 +51,7 @@ import {
 } from "@/lib/firestore";
 import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
 import { parseHistoryDrilldownParams } from "@/lib/historyDrilldown";
-import {
-    getHistoryEditEditorBreakdowns,
-    resolveHistoryEditStoreForWrite,
-} from "@/lib/historyEditForm";
+import { getHistoryEditEditorBreakdowns } from "@/lib/historyEditForm";
 import { buildHistoryListTransactions } from "@/lib/historyList";
 import {
     filterHistoryTransactions,
@@ -70,6 +67,7 @@ import { getHistorySearchExpandedAfterClear } from "@/lib/historySearchPanelStat
 import { formatYearMonthLabel, shiftYearMonth } from "@/lib/monthPicker";
 import { waitForPendingWrite } from "@/lib/pendingWrite";
 import { buildRecordCategoryOptions } from "@/lib/recordOptions";
+import { buildStoreOptionsFromTransactions } from "@/lib/storeOptions";
 import { resolveTransactionAmountInput } from "@/lib/transactionAmountInput";
 import {
     isValidTransactionAmount,
@@ -81,7 +79,6 @@ import {
     resolveTransactionCopyTarget,
     resolveTransactionMasterSelection,
 } from "@/lib/transactionCopy";
-import { buildStoreEditResolution } from "@/lib/transactionStoreEdit";
 import {
     fromYearMonthDate as fromYearMonthDateString,
     toYearMonthDate as toYearMonthDateString,
@@ -168,7 +165,6 @@ export default function HistoryScreen() {
   const [editCategoryId, setEditCategoryId] = useState<string | null>(null);
   const [editBreakdownId, setEditBreakdownId] = useState<string | null>(null);
   const [editMemo, setEditMemo] = useState("");
-  const [editStoreId, setEditStoreId] = useState<string | null>(null);
   const [editStoreName, setEditStoreName] = useState("");
   const [editCategories, setEditCategories] = useState<Category[]>([]);
   const [editBreakdowns, setEditBreakdowns] = useState<Breakdown[]>([]);
@@ -340,29 +336,64 @@ export default function HistoryScreen() {
       null,
     [editBreakdowns, editBreakdownId],
   );
+  const {
+    transactions: cachedStoreTransactions,
+    refresh: refreshCachedStoreOptions,
+  } = useCachedStoreOptions(householdId, "");
 
   const historySearchCategoryOptions = useMemo(
     () =>
-      buildHistorySearchCategoryOptions(listTransactions, historySearchType),
-    [historySearchType, listTransactions],
+      buildHistorySearchCategoryOptions(
+        listTransactions,
+        historySearchType,
+        cachedStoreTransactions,
+      ),
+    [cachedStoreTransactions, historySearchType, listTransactions],
   );
 
   const historySearchBreakdownOptions = useMemo(
     () =>
-      buildHistorySearchBreakdownOptions(listTransactions, {
-        type: historySearchType,
-        categoryName: historySearchCategoryName,
-      }),
-    [historySearchCategoryName, historySearchType, listTransactions],
+      buildHistorySearchBreakdownOptions(
+        listTransactions,
+        {
+          type: historySearchType,
+          categoryName: historySearchCategoryName,
+        },
+        cachedStoreTransactions,
+      ),
+    [
+      cachedStoreTransactions,
+      historySearchCategoryName,
+      historySearchType,
+      listTransactions,
+    ],
   );
 
   const historySearchStoreOptions = useMemo(
     () =>
-      buildHistorySearchStoreOptions(listTransactions, {
-        categoryName: historySearchCategoryName,
-        storeQuery: historySearchStoreName,
-      }),
-    [historySearchCategoryName, historySearchStoreName, listTransactions],
+      buildHistorySearchStoreOptions(
+        listTransactions,
+        {
+          categoryName: historySearchCategoryName,
+          storeQuery: historySearchStoreName,
+        },
+        cachedStoreTransactions,
+      ),
+    [
+      cachedStoreTransactions,
+      historySearchCategoryName,
+      historySearchStoreName,
+      listTransactions,
+    ],
+  );
+
+  const editStoreOptions = useMemo(
+    () =>
+      buildStoreOptionsFromTransactions(
+        cachedStoreTransactions,
+        selectedEditCategory?.name ?? "",
+      ),
+    [cachedStoreTransactions, selectedEditCategory?.name],
   );
 
   const load = useCallback(async () => {
@@ -380,6 +411,10 @@ export default function HistoryScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    refreshCachedStoreOptions();
+  }, [listTransactions.length, refreshCachedStoreOptions]);
 
   // 履歴リストはリアルタイム購読ではなくページング取得のため、
   // タブにフォーカスするたびにマーカーだけ確認し、変更がある場合のみ先頭ページを取り直す。
@@ -583,6 +618,7 @@ export default function HistoryScreen() {
             );
             refreshPaginatedTransactions();
             refreshMonthTransactions();
+            refreshCachedStoreOptions();
           },
         },
       ],
@@ -681,7 +717,7 @@ export default function HistoryScreen() {
           target.accountId,
           tx.memo ?? "",
           target.breakdownId,
-          tx.storeId,
+          null,
           {
             accountName:
               accounts.find((account) => account.id === target.accountId)
@@ -712,6 +748,7 @@ export default function HistoryScreen() {
     exitSelectionMode();
     refreshPaginatedTransactions();
     refreshMonthTransactions();
+    refreshCachedStoreOptions();
     await load();
 
     setUncopiedRecords(failed);
@@ -801,7 +838,6 @@ export default function HistoryScreen() {
             null),
     );
     setEditMemo(tx.memo || "");
-    setEditStoreId(tx.storeId);
     setEditStoreName(tx.storeName);
     syncEditCategories(
       tx.type,
@@ -815,7 +851,6 @@ export default function HistoryScreen() {
 
   const handleEditTypeChange = (nextType: TransactionType) => {
     setEditType(nextType);
-    setEditStoreId(null);
     setEditStoreName("");
     syncEditCategories(nextType);
   };
@@ -825,7 +860,6 @@ export default function HistoryScreen() {
     const bds = breakdownsByCategory.get(nextCategoryId) ?? [];
     setEditBreakdowns(bds);
     setEditBreakdownId(null);
-    setEditStoreId(null);
     setEditStoreName("");
   };
 
@@ -851,15 +885,6 @@ export default function HistoryScreen() {
       return;
     }
 
-    const storeResolution = buildStoreEditResolution({
-      storeId: editStoreId,
-      storeName: editStoreName,
-      categoryId: editCategoryId,
-    });
-    const resolvedStore = await resolveHistoryEditStoreForWrite(
-      storeResolution,
-      createStoreMasterWrite,
-    );
     const updateWrite = updateTransactionFromPrevious(
       editingTx,
       editDate,
@@ -869,29 +894,24 @@ export default function HistoryScreen() {
       editAccountId,
       editMemo,
       editBreakdownId,
-      resolvedStore.storeId,
+      null,
       {
         accountName: selectedEditAccount?.name ?? editingTx.accountName,
         categoryName: selectedEditCategory?.name ?? editingTx.categoryName,
         categoryColor: selectedEditCategory?.color ?? editingTx.categoryColor,
         breakdownName: selectedEditBreakdown?.name ?? editingTx.breakdownName,
-        storeName:
-          storeResolution.kind === "restore"
-            ? storeResolution.storeName
-            : editStoreName,
+        storeName: editStoreName,
       },
     );
-    const pendingWrites = resolvedStore.pendingWrite
-      ? [resolvedStore.pendingWrite, updateWrite]
-      : [updateWrite];
 
-    await waitForPendingWrite(Promise.all(pendingWrites), WRITE_ACK_TIMEOUT_MS);
+    await waitForPendingWrite(updateWrite, WRITE_ACK_TIMEOUT_MS);
 
     setShowEditModal(false);
     setEditingTxId(null);
     setEditingTx(null);
     refreshPaginatedTransactions();
     refreshMonthTransactions();
+    refreshCachedStoreOptions();
   };
 
   const handleEditAccountPickerOpen = async () => {
@@ -1486,8 +1506,8 @@ export default function HistoryScreen() {
                 categoryId={editCategoryId}
                 breakdowns={getHistoryEditEditorBreakdowns(breakdownOptions)}
                 breakdownId={editBreakdownId}
-                storeId={editStoreId}
                 storeName={editStoreName}
+                storeOptions={editStoreOptions}
                 memo={editMemo}
                 incomeColor={incomeColor}
                 expenseColor={expenseColor}
@@ -1500,10 +1520,7 @@ export default function HistoryScreen() {
                 onAccountChange={setEditAccountId}
                 onCategoryChange={handleEditCategoryChange}
                 onBreakdownChange={setEditBreakdownId}
-                onStoreChange={(id, name) => {
-                  setEditStoreId(id);
-                  setEditStoreName(name);
-                }}
+                onStoreChange={setEditStoreName}
                 onMemoChange={setEditMemo}
                 onSubmit={handleUpdate}
               />

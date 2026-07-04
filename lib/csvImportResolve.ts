@@ -74,11 +74,6 @@ export function resolveImportRows(
     );
   }
 
-  const storeByName = new Map<string, ResolveMasterStore>();
-  for (const store of masters.stores) {
-    storeByName.set(store.name.trim(), store);
-  }
-
   return rows.map((row) => {
     const account = row.accountName
       ? accountByName.get(row.accountName)
@@ -92,8 +87,6 @@ export function resolveImportRows(
             `${category.id}\u0000${row.breakdownName}`,
           )
         : undefined;
-    const store = row.storeName ? storeByName.get(row.storeName) : undefined;
-
     return {
       line: row.line,
       date: row.date,
@@ -107,7 +100,7 @@ export function resolveImportRows(
         : masters.defaultAccountId,
       categoryId: category?.id ?? null,
       breakdownId: breakdown?.id ?? null,
-      storeId: store?.id ?? null,
+      storeId: null,
       accountName: row.accountName,
       categoryName: row.categoryName,
       categoryColor: category?.color ?? null,

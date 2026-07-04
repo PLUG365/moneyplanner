@@ -36,12 +36,13 @@ function makeRow(overrides: Partial<ParsedImportRow> = {}): ParsedImportRow {
   };
 }
 
-test("resolveImportRows links all entities on exact name match", () => {
+test("resolveImportRows links account category and breakdown on exact name match", () => {
   const [resolved] = resolveImportRows([makeRow()], masters);
   assert.equal(resolved.accountId, "default");
   assert.equal(resolved.categoryId, "cat1");
   assert.equal(resolved.breakdownId, "bd1");
-  assert.equal(resolved.storeId, "st1");
+  assert.equal(resolved.storeId, null);
+  assert.equal(resolved.storeName, "スーパーA");
   assert.equal(resolved.categoryColor, "#FF0000");
   assert.equal(resolved.amount, 980);
   assert.equal(resolved.memo, "弁当");

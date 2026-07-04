@@ -73,6 +73,32 @@ test("buildHistorySearchStoreOptions narrows by partial store text", () => {
   );
 });
 
+test("buildHistorySearchStoreOptions searches cached all-history stores beyond the visible list", () => {
+  const visibleTransactions = [transactions[0]];
+  const cachedTransactions = [
+    ...visibleTransactions,
+    {
+      type: "expense" as const,
+      categoryName: "食費",
+      breakdownName: "スーパー",
+      storeName: "遠方スーパー",
+    },
+  ];
+
+  assert.deepEqual(
+    buildHistorySearchStoreOptions(
+      visibleTransactions,
+      {
+        categoryName: "",
+        storeQuery: "遠方",
+        limit: 10,
+      },
+      cachedTransactions,
+    ),
+    ["遠方スーパー"],
+  );
+});
+
 test("buildHistorySearchCategoryOptions includes both income and expense categories for all type", () => {
   assert.deepEqual(buildHistorySearchCategoryOptions(transactions, "all"), [
     "食費",
@@ -89,6 +115,28 @@ test("buildHistorySearchCategoryOptions narrows categories by selected type", ()
   assert.deepEqual(buildHistorySearchCategoryOptions(transactions, "income"), [
     "給与",
   ]);
+});
+
+test("buildHistorySearchCategoryOptions searches cached all-history categories beyond the visible list", () => {
+  const visibleTransactions = [transactions[0]];
+  const cachedTransactions = [
+    ...visibleTransactions,
+    {
+      type: "expense" as const,
+      categoryName: "医療費",
+      breakdownName: "薬",
+      storeName: "薬局",
+    },
+  ];
+
+  assert.deepEqual(
+    buildHistorySearchCategoryOptions(
+      visibleTransactions,
+      "expense",
+      cachedTransactions,
+    ),
+    ["食費", "医療費"],
+  );
 });
 
 test("buildHistorySearchBreakdownOptions includes matching category breakdowns for all type", () => {
@@ -108,5 +156,30 @@ test("buildHistorySearchBreakdownOptions narrows breakdowns by selected type", (
       categoryName: "給与",
     }),
     ["本業"],
+  );
+});
+
+test("buildHistorySearchBreakdownOptions searches cached all-history breakdowns beyond the visible list", () => {
+  const visibleTransactions = [transactions[0]];
+  const cachedTransactions = [
+    ...visibleTransactions,
+    {
+      type: "expense" as const,
+      categoryName: "食費",
+      breakdownName: "まとめ買い",
+      storeName: "大型スーパー",
+    },
+  ];
+
+  assert.deepEqual(
+    buildHistorySearchBreakdownOptions(
+      visibleTransactions,
+      {
+        type: "expense",
+        categoryName: "食費",
+      },
+      cachedTransactions,
+    ),
+    ["スーパー", "まとめ買い"],
   );
 });

@@ -115,7 +115,7 @@ erDiagram
         string categoryColorSnapshot
         string breakdownId FK
         string breakdownNameSnapshot
-        string storeId FK
+        string storeId FK "通常保存はnull（表示はstoreNameSnapshot）"
         string storeNameSnapshot
         string memo
         string createdBy
@@ -199,7 +199,7 @@ erDiagram
     categories ||--o{ budgets : "categoryId"
     categories ||--o{ transactions : "categoryId"
     accounts ||--o{ transactions : "accountId"
-    stores ||--o{ transactions : "storeId"
+    stores ||--o{ transactions : "storeId (legacy)"
 ```
 
 ### Firestore コレクション詳細
@@ -259,16 +259,20 @@ erDiagram
         - createdBy: string (userId)
         - deleted?: boolean （ソフトデリート。true=削除済み。読み側は
           mapActiveTransactions で除外。[docs/decisions/transaction-soft-delete.md](docs/decisions/transaction-soft-delete.md)）
+        - storeId は旧データ互換用。通常の記録・履歴編集・選択コピー・CSV取り込みは null を保存し、
+          店舗表示・検索・候補生成は storeNameSnapshot と Firestore SDK ローカル取引キャッシュから行う
 
     /accounts/{accountId}
         - name, balance, initialBalance, isDefault
         - createdAt, updatedAt: Timestamp
 
-    /stores/{storeId}
+    /stores/{storeId} （legacy）
         - name, categoryId, lastUsedAt: Timestamp
+        - 通常導線では新規参照・更新しない。旧ビルド/旧データ互換のため当面残す
 
-    /storeCategoryUsage/{storeId_categoryId}
+    /storeCategoryUsage/{storeId_categoryId} （legacy）
         - storeId, categoryId, lastUsedAt: Timestamp
+        - 通常導線では新規参照・更新しない。旧ビルド/旧データ互換のため当面残す
 
     /budgets/{categoryId}
         - categoryId, amount
@@ -362,7 +366,7 @@ sequenceDiagram
     Note over A,B: 同一レコード同時更新時はlast-write-wins
 ```
 
-- **同期方式**: Cloud Firestoreリアルタイムリスナー（`onSnapshot`）
+- **同期方式**: マスタ/世帯設定は Cloud Firestore リアルタイムリスナー（`onSnapshot`）。履歴・集計の取引読み取りは大量データ対策として `.get()` + Firestore SDK ローカルキャッシュ + `meta/dataVersion` マーカーで更新判定する
 - **オフライン**: Firestore内蔵のオフライン永続化で自動対応
 - **認証**: Apple Sign-In + Firebase Auth
 - **世帯共有**: 招待コード方式（新規発行は10文字、CSPRNG生成）で家族が同一世帯に参加
@@ -382,7 +386,7 @@ moneyplanner/
 ├── lib/                     # ドメインロジック（Firestore CRUD、認証、世帯、集計、CSV、入力検証など）
 ├── components/              # 再利用UIコンポーネント（TransactionEditor、MoneyInputModal等）
 ├── constants/               # カラーパレット、固定値
-├── hooks/                   # useFirestore（リアルタイムリスナー）、useColorScheme等
+├── hooks/                   # useFirestore（リアルタイムリスナー）、取引キャッシュリーダー、useColorScheme等
 ├── assets/                  # フォント、アイコン
 ├── firestore.rules          # Firestore Security Rules
 ├── firestore.rules.test.ts  # Rules エミュレータテスト
@@ -396,24 +400,28 @@ moneyplanner/
 
 主要モジュールの責務:
 
-| ディレクトリ/ファイル                                      | 責務                                                                  |
-| ---------------------------------------------------------- | --------------------------------------------------------------------- |
-| `lib/firestore.ts`                                         | Firestore CRUD 全体（取引/カテゴリ/口座/予算/世帯設定）と型定義の中心 |
-| `lib/auth.ts`                                              | Firebase Auth + Apple Sign-In                                         |
-| `lib/household.ts`                                         | 世帯作成・招待コード・参加リクエスト・メンバー管理                    |
-| `lib/summaryAggregation.ts`                                | 月次/年次集計・予算進捗の純関数集計ロジック                           |
-| `lib/csvExport.ts`                                         | CSV生成・共有                                                         |
-| `lib/csvImport.ts`                                         | CSV取り込み（検証は `csvImportParse.ts`、マスタ解決は Resolve に分離）|
-| `lib/csvImportIap.ts`                                      | CSVインポートIAPの購入/復元（expo-iap。判定は `csvImportPurchaseGate.ts`）|
-| `lib/inviteQr.ts`                                          | 招待コードQRの行列生成（純JS）とスキャン結果の検証                    |
-| `components/InviteQrCode.tsx` / `InviteQrScanner.tsx`      | 招待QRの表示（Viewグリッド描画）と読み取り（expo-camera、遅延ロード） |
-| `lib/historySearch.ts`                                     | 履歴フィルタリング条件                                                |
-| `lib/moneyInput.ts`                                        | 金額入力の正規化・四則演算評価                                        |
-| `hooks/useFirestore.ts`                                    | Firestore リアルタイム購読 + fromCache メタデータ                     |
-| `components/TransactionEditor.tsx`                         | 記録/履歴編集の共通フォーム                                           |
-| `components/MoneyInputModal.tsx` / `NumericInputModal.tsx` | 金額・数値入力モーダル（共通部品）                                    |
-| `components/HistorySearchPanel.tsx`                        | 履歴の検索条件パネル                                                  |
-| `components/ProgressOverlay.tsx`                           | 重い処理用の進捗オーバーレイ（CSV取り込み等。件数表示/不明の2モード） |
+| ディレクトリ/ファイル                                      | 責務                                                                       |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `lib/firestore.ts`                                         | Firestore CRUD 全体（取引/カテゴリ/口座/予算/世帯設定）と型定義の中心      |
+| `lib/auth.ts`                                              | Firebase Auth + Apple Sign-In                                              |
+| `lib/household.ts`                                         | 世帯作成・招待コード・参加リクエスト・メンバー管理                         |
+| `lib/summaryAggregation.ts`                                | 月次/年次集計・予算進捗の純関数集計ロジック                                |
+| `lib/csvExport.ts`                                         | CSV生成・共有                                                              |
+| `lib/csvImport.ts`                                         | CSV取り込み（検証は `csvImportParse.ts`、マスタ解決は Resolve に分離）     |
+| `lib/csvImportIap.ts`                                      | CSVインポートIAPの購入/復元（expo-iap。判定は `csvImportPurchaseGate.ts`） |
+| `lib/inviteQr.ts`                                          | 招待コードQRの行列生成（純JS）とスキャン結果の検証                         |
+| `components/InviteQrCode.tsx` / `InviteQrScanner.tsx`      | 招待QRの表示（Viewグリッド描画）と読み取り（expo-camera、遅延ロード）      |
+| `lib/historySearch.ts`                                     | 履歴フィルタリング条件                                                     |
+| `lib/historySearchOptions.ts`                              | 履歴検索パネルのカテゴリ/内訳/お店候補生成                                 |
+| `lib/moneyInput.ts`                                        | 金額入力の正規化・四則演算評価                                             |
+| `hooks/useFirestore.ts`                                    | Firestore リアルタイム購読 + fromCache メタデータ                          |
+| `hooks/useCachedTransactions.ts`                           | 集計・カレンダー向けの取引キャッシュ読み取り                               |
+| `hooks/usePaginatedTransactions.ts`                        | 履歴リスト/検索向けの取引読み取り                                          |
+| `hooks/useCachedStoreOptions.ts`                           | 取引キャッシュ由来のお店候補                                               |
+| `components/TransactionEditor.tsx`                         | 記録/履歴編集の共通フォーム                                                |
+| `components/MoneyInputModal.tsx` / `NumericInputModal.tsx` | 金額・数値入力モーダル（共通部品）                                         |
+| `components/HistorySearchPanel.tsx`                        | 履歴の検索条件パネル                                                       |
+| `components/ProgressOverlay.tsx`                           | 重い処理用の進捗オーバーレイ（CSV取り込み等。件数表示/不明の2モード）      |
 
 ---
 

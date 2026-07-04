@@ -46,11 +46,12 @@ function pushUniqueNonEmpty(
 export function buildHistorySearchCategoryOptions(
   transactions: SearchOptionTransaction[],
   type: HistorySearchType,
+  candidateTransactions: SearchOptionTransaction[] = transactions,
 ): string[] {
   const seen = new Set<string>();
   const options: string[] = [];
 
-  for (const tx of transactions) {
+  for (const tx of candidateTransactions) {
     if (!matchesType(tx, type)) continue;
     pushUniqueNonEmpty(options, seen, tx.categoryName);
   }
@@ -61,12 +62,13 @@ export function buildHistorySearchCategoryOptions(
 export function buildHistorySearchBreakdownOptions(
   transactions: SearchOptionTransaction[],
   criteria: BreakdownOptionCriteria,
+  candidateTransactions: SearchOptionTransaction[] = transactions,
 ): string[] {
   const categoryName = criteria.categoryName.trim();
   const seen = new Set<string>();
   const options: string[] = [];
 
-  for (const tx of transactions) {
+  for (const tx of candidateTransactions) {
     if (!matchesType(tx, criteria.type)) continue;
     if (categoryName && tx.categoryName !== categoryName) continue;
     pushUniqueNonEmpty(options, seen, tx.breakdownName);
@@ -78,6 +80,7 @@ export function buildHistorySearchBreakdownOptions(
 export function buildHistorySearchStoreOptions(
   transactions: SearchOptionTransaction[],
   criteria: StoreOptionCriteria,
+  candidateTransactions: SearchOptionTransaction[] = transactions,
 ): string[] {
   const categoryName = criteria.categoryName.trim();
   const storeQuery = normalize(criteria.storeQuery);
@@ -85,7 +88,7 @@ export function buildHistorySearchStoreOptions(
   const seen = new Set<string>();
   const options: string[] = [];
 
-  for (const tx of transactions) {
+  for (const tx of candidateTransactions) {
     if (tx.type !== "expense") continue;
     if (categoryName && tx.categoryName !== categoryName) continue;
 

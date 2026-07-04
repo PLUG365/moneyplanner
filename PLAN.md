@@ -113,7 +113,8 @@ Firestoreのコレクション/フィールド定義は [ARCHITECTURE.md](ARCHIT
 - 取り込み（`lib/csvImport.ts` / `csvImportParse.ts` / `csvImportResolve.ts`）:
   - 全行を事前検証し、エラーが1件でもあれば行番号付きで表示して全件中断（部分取り込みなし）
   - 検証: 日付は実在日のYYYY-MM-DD、種別は収入/支出、金額は0以上の整数（0円はメモ必須＝記録画面の登録ルールと同一。エクスポート→再取り込みの往復を保証するため）。口座/カテゴリ/内訳/店舗/メモは空欄許容
-  - カテゴリ/内訳/店舗はtrim後の名前完全一致でマスタ紐付け（カテゴリは種別も一致条件、内訳はカテゴリ配下のみ）。不一致は `id=null`＋名前スナップショットのみで、マスタは自動作成しない
+  - カテゴリ/内訳はtrim後の名前完全一致でマスタ紐付け（カテゴリは種別も一致条件、内訳はカテゴリ配下のみ）。不一致は `id=null`＋名前スナップショットのみで、マスタは自動作成しない
+  - 店舗はマスタ紐付けを行わず、取り込み時も `storeId=null` と店名スナップショットのみを保存する。店舗候補は取引の `storeNameSnapshot` をローカル取引キャッシュから集約して表示する（[docs/decisions/store-candidates-from-transactions.md](docs/decisions/store-candidates-from-transactions.md)）
   - 口座は名前一致でマスタ紐付け。口座名が空の行はデフォルト口座（`DEFAULT_ACCOUNT_ID`）に紐付ける。口座名ありで不一致の場合はカテゴリ等と同様に `accountId=null`＋名前スナップショットのみとし、デフォルト口座へ偽紐付けしない（詳細は [docs/decisions/import-unknown-account-nullable.md](docs/decisions/import-unknown-account-nullable.md)）
   - 取り込みでは口座残高・店舗の使用履歴（`lastUsedAt` / `storeCategoryUsage`）を更新しない。**インポート取引は口座残高に影響しない**（自動 reconcile を廃止したため折り込まれない。[docs/decisions/account-balance-incremental-only.md](docs/decisions/account-balance-incremental-only.md)）
   - 重複検出なし（同一行の再取り込みは重複登録される）。文字コードはUTF-8（BOM有無）/ UTF-16LE（BOM付き）/ Shift_JIS（ExcelのCSV保存互換）に対応
@@ -378,6 +379,7 @@ AI活用、外部ツール、レビュー、知見退避ルールの詳細は [d
 - [x] 実装済み: カテゴリリセット後も、既存取引をスナップショット名から同名デフォルトカテゴリ/内訳へ再リンクし、集計タブではID未設定取引もスナップショット名でカテゴリ別に表示する（TestFlight build 21で実機確認予定）
 - [x] 実装済み: カテゴリリセット後も、既存取引の店舗スナップショットからお店マスタとカテゴリ別使用履歴を復元する（TestFlight build 21で実機確認予定）
 - [x] 実装済み: カテゴリリセット後、店名は表示されているが `storeId` が未復元の過去履歴を編集保存しても、お店名が消えないようにする（TestFlight build 21で実機確認予定）
+- [x] 方針更新: 通常の記録・履歴編集・CSV取り込みではお店マスタを参照/更新せず、取引の店名スナップショットから候補を生成する（[docs/decisions/store-candidates-from-transactions.md](docs/decisions/store-candidates-from-transactions.md)）
 - [x] 実装済み: 口座管理でマイナス残高を入力できるようにする（TestFlight build 21で実機確認予定）
 - [x] 実装済み: 口座管理の残高入力とカテゴリ月次予算入力を、iPhone標準キーボードではなく共通の数値入力モーダルで操作できるようにする（TestFlight build 21で実機確認予定）
 - [x] 実装済み: 記録タブと履歴編集の金額入力も、口座管理と同じ共通の金額入力モーダルで四則演算と「計算」確定を操作でき、計算成功時はモーダルが閉じるようにする（TestFlight build 21で実機確認予定）
