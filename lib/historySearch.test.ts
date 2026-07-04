@@ -68,6 +68,16 @@ test("filterHistoryTransactions filters by selected category, breakdown, and sto
   );
 });
 
+test("filterHistoryTransactions matches store by partial text", () => {
+  assert.deepEqual(
+    filterHistoryTransactions(transactions, {
+      type: "expense",
+      storeName: "スーパー",
+    }).map((tx) => tx.id),
+    ["expense-food"],
+  );
+});
+
 test("filterHistoryTransactions applies store condition to income search", () => {
   // income-salary has empty storeName, so specifying a store filters it out
   assert.deepEqual(

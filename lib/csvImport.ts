@@ -11,7 +11,11 @@ import {
     getCategories,
     getStoresByCategory,
     importTransactions,
+    readHouseholdDataVersionPreferServer,
 } from "./firestore";
+  import { getHouseholdId } from "./household";
+  import { buildPaginatedTransactionsScopeKey } from "./paginatedTransactionsMode";
+  import { setPersistedScopeVersion } from "./scopeVersionStore";
 
 export type CsvImportPrepareResult =
   | { status: "cancelled" }
@@ -68,8 +72,8 @@ export async function prepareCsvImport(): Promise<CsvImportPrepareResult> {
   return {
     status: "ready",
     rowCount: resolved.length,
-    execute: (onProgress) =>
-      importTransactions(
+    execute: async (onProgress) => {
+      const count = await importTransactions(
         resolved.map((row) => ({
           date: row.date,
           amount: row.amount,
@@ -88,7 +92,21 @@ export async function prepareCsvImport(): Promise<CsvImportPrepareResult> {
           },
         })),
         onProgress,
-      ),
+      );
+      const householdId = await getHouseholdId();
+      if (householdId) {
+        const version = await readHouseholdDataVersionPreferServer(householdId);
+        setPersistedScopeVersion(
+          buildPaginatedTransactionsScopeKey(
+            householdId,
+            { from: null, to: null },
+            true,
+          ),
+          version,
+        );
+      }
+      return count;
+    },
   };
 }
 

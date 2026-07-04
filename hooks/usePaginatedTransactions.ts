@@ -6,6 +6,7 @@ import {
     orderBy,
     query,
     startAfter,
+    Timestamp,
     where,
 } from "@react-native-firebase/firestore";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -25,12 +26,15 @@ import {
     loadScopeVersions,
     setPersistedScopeVersion,
 } from "@/lib/scopeVersionStore";
+import {
+  buildPaginatedTransactionsScopeKey,
+  pickNewestDataVersion,
+  shouldFetchAllTransactions,
+} from "@/lib/paginatedTransactionsMode";
+import { mergeTransactionCacheItems } from "@/lib/transactionCacheMerge";
+import { isDeletedTransactionData } from "@/lib/transactionSoftDelete";
 
 export const TRANSACTIONS_PAGE_SIZE = 100;
-// 日付範囲が指定されている時（ドリルダウン・期間検索）は、その範囲を一括取得して
-// クライアント側フィルタ（カテゴリ等）が全件に効くようにする。範囲は有界なので安全。
-// 念のため上限を設けて極端に広い範囲での過大読み取りを防ぐ。
-export const RANGE_FETCH_LIMIT = 1000;
 
 export type PaginatedTransactionsRange = {
   from: string | null;
@@ -47,6 +51,10 @@ export type PaginatedTransactions = {
   refreshIfStale: () => void;
 };
 
+export type PaginatedTransactionsOptions = {
+  readAll?: boolean;
+};
+
 type CachedPage = {
   items: Transaction[];
   version: DataVersion;
@@ -57,13 +65,13 @@ type CachedPage = {
 const firstPageCache = new Map<string, CachedPage>();
 const currentVersionByHousehold = new Map<string, DataVersion>();
 
-function buildScopeKey(
-  householdId: string,
-  range: PaginatedTransactionsRange,
-): string {
-  return `${householdId}:transactions:history:${range.from ?? ""}:${
-    range.to ?? ""
-  }`;
+function dataVersionToTimestamp(version: DataVersion): Timestamp | null {
+  if (!version) return null;
+  const millis = Number(version);
+  if (Number.isFinite(millis)) return Timestamp.fromMillis(millis);
+  const date = new Date(version);
+  if (!Number.isNaN(date.getTime())) return Timestamp.fromDate(date);
+  return null;
 }
 
 async function getQuerySnapshot(
@@ -91,6 +99,7 @@ async function getQuerySnapshot(
 export function usePaginatedTransactions(
   householdId: string | null,
   range: PaginatedTransactionsRange,
+  options: PaginatedTransactionsOptions = {},
 ): PaginatedTransactions {
   const [items, setItems] = useState<Transaction[]>([]);
   const [loadingInitial, setLoadingInitial] = useState(false);
@@ -113,10 +122,21 @@ export function usePaginatedTransactions(
       }) => Promise<void>)
     | null
   >(null);
-  const scopeKey = householdId ? buildScopeKey(householdId, range) : null;
-  // 日付範囲指定時は一括取得（ページングしない）。範囲なし（全履歴）は従来どおりページング。
-  const fetchAll = !!(range.from && range.to);
-  const queryLimit = fetchAll ? RANGE_FETCH_LIMIT : TRANSACTIONS_PAGE_SIZE;
+  const readAll = !!options.readAll;
+  // 検索実行時、または日付範囲指定時は全件取得してクライアント側フィルタの網羅性を保証する。
+  // 通常の履歴表示は従来どおりページングし、初期表示の読み取り量を抑える。
+  const fetchAll = shouldFetchAllTransactions({ range, readAll });
+  const queryLimit = fetchAll ? null : TRANSACTIONS_PAGE_SIZE;
+  const scopeKey = householdId
+    ? buildPaginatedTransactionsScopeKey(householdId, range, fetchAll)
+    : null;
+  const fullHistoryScopeKey = householdId
+    ? buildPaginatedTransactionsScopeKey(
+        householdId,
+        { from: null, to: null },
+        true,
+      )
+    : null;
 
   const buildBaseQuery =
     useCallback((): FirestoreQuery | null => {
@@ -174,11 +194,15 @@ export function usePaginatedTransactions(
           setItems(cached.items);
           lastDocRef.current = cached.lastDoc;
           setHasMore(cached.hasMore);
+          const effectiveCurrentVersion = pickNewestDataVersion(
+            comparableVersion,
+            cached.version,
+          );
           if (
             !shouldReadServerForScope({
               hasCachedData: true,
               scopeVersion: cached.version,
-              currentDataVersion: comparableVersion,
+              currentDataVersion: effectiveCurrentVersion,
             })
           ) {
             return;
@@ -187,7 +211,7 @@ export function usePaginatedTransactions(
 
         if (!options?.forceServer) {
           const cacheSnap = await getQuerySnapshot(
-            query(base, limit(queryLimit)),
+            queryLimit == null ? base : query(base, limit(queryLimit)),
             "cache",
           );
           if (cacheSnap && cacheSnap.docs.length > 0) {
@@ -195,7 +219,12 @@ export function usePaginatedTransactions(
             const page: CachedPage = {
               items: cachedItems,
               // ディスクキャッシュの版は永続化した「最後にサーバー読みした時点の版」を使う（案B）。
-              version: scopeKey ? getPersistedScopeVersion(scopeKey) : null,
+              version: scopeKey
+                ? (getPersistedScopeVersion(scopeKey) ??
+                  (fetchAll && fullHistoryScopeKey
+                    ? getPersistedScopeVersion(fullHistoryScopeKey)
+                    : null))
+                : null,
               lastDoc:
                 cacheSnap.docs.length > 0
                   ? cacheSnap.docs[cacheSnap.docs.length - 1]
@@ -208,20 +237,64 @@ export function usePaginatedTransactions(
             setItems(page.items);
             lastDocRef.current = page.lastDoc;
             setHasMore(page.hasMore);
+            const effectiveCurrentVersion = pickNewestDataVersion(
+              comparableVersion,
+              page.version,
+            );
+            const shouldReadServer = shouldReadServerForScope({
+              hasCachedData: true,
+              scopeVersion: page.version,
+              currentDataVersion: effectiveCurrentVersion,
+            });
+            if (!shouldReadServer) {
+              return;
+            }
+            const incrementalSince = dataVersionToTimestamp(page.version);
             if (
-              !shouldReadServerForScope({
-                hasCachedData: true,
-                scopeVersion: page.version,
-                currentDataVersion: comparableVersion,
-              })
+              householdId &&
+              fetchAll &&
+              !range.from &&
+              !range.to &&
+              incrementalSince
             ) {
+              const incrementalSnap = await getQuerySnapshot(
+                query(
+                  householdCollection(householdId, "transactions"),
+                  where("updatedAt", ">", incrementalSince),
+                  orderBy("updatedAt", "asc"),
+                ),
+                "server",
+              );
+              const changedDocs = incrementalSnap?.docs ?? [];
+              const deletedIds = new Set(
+                changedDocs
+                  .filter((doc) => isDeletedTransactionData(doc.data()))
+                  .map((doc) => doc.id),
+              );
+              const nextItems = mergeTransactionCacheItems(
+                page.items,
+                mapActiveTransactions(changedDocs),
+                deletedIds,
+              );
+              setItems(nextItems);
+              lastDocRef.current = null;
+              setHasMore(false);
+              if (scopeKey) {
+                firstPageCache.set(scopeKey, {
+                  items: nextItems,
+                  version: effectiveCurrentVersion,
+                  lastDoc: null,
+                  hasMore: false,
+                });
+                setPersistedScopeVersion(scopeKey, effectiveCurrentVersion);
+              }
               return;
             }
           }
         }
 
         const snap = await getQuerySnapshot(
-          query(base, limit(queryLimit)),
+          queryLimit == null ? base : query(base, limit(queryLimit)),
           "server",
         );
         const docs = snap?.docs ?? [];
@@ -252,7 +325,16 @@ export function usePaginatedTransactions(
         }
       }
     },
-    [buildBaseQuery, fetchAll, householdId, queryLimit, scopeKey],
+    [
+      buildBaseQuery,
+      fetchAll,
+      fullHistoryScopeKey,
+      householdId,
+      queryLimit,
+      range.from,
+      range.to,
+      scopeKey,
+    ],
   );
   refreshRef.current = refresh;
 

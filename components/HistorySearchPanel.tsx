@@ -51,6 +51,7 @@ type HistorySearchPanelProps = {
   onToDateChange: (date: string | null) => void;
   onDatePickerTargetChange: (target: HistorySearchDateTarget | null) => void;
   onClearConditions: () => void;
+  onSubmit: () => void;
 };
 
 function parseYMD(dateStr: string) {
@@ -99,6 +100,7 @@ export default function HistorySearchPanel({
   onToDateChange,
   onDatePickerTargetChange,
   onClearConditions,
+  onSubmit,
 }: HistorySearchPanelProps) {
   const summary = buildHistorySearchConditionSummary({
     type,
@@ -356,13 +358,26 @@ export default function HistorySearchPanel({
                 </>
               )}
 
-              {!categoryName || type !== "expense" ? null : (
+              {type !== "expense" ? null : (
                 <>
                   <Text style={[styles.searchLabel, { color: colors.subText }]}>
                     お店
                   </Text>
+                  <TextInput
+                    style={[
+                      styles.searchInput,
+                      { borderColor: colors.border, color: colors.text },
+                    ]}
+                    value={storeName}
+                    onChangeText={onStoreNameChange}
+                    placeholder="お店名を部分一致で検索"
+                    placeholderTextColor={colors.subText}
+                    returnKeyType="search"
+                    onSubmitEditing={onSubmit}
+                    autoCorrect={false}
+                  />
                   <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <View style={styles.searchChipRow}>
+                    <View style={[styles.searchChipRow, { marginTop: 8 }]}>
                       <TouchableOpacity
                         style={[
                           styles.searchChip,
@@ -425,6 +440,7 @@ export default function HistorySearchPanel({
             placeholder="メモを部分一致で検索"
             placeholderTextColor={colors.subText}
             returnKeyType="search"
+            onSubmitEditing={onSubmit}
             autoCorrect={false}
           />
 
@@ -525,6 +541,13 @@ export default function HistorySearchPanel({
               />
             </View>
           ) : null}
+          <TouchableOpacity
+            style={[styles.searchSubmitButton, { backgroundColor: colors.tint }]}
+            onPress={onSubmit}
+          >
+            <Ionicons name="search" size={16} color="#fff" />
+            <Text style={styles.searchSubmitButtonText}>検索</Text>
+          </TouchableOpacity>
         </>
       )}
     </View>
@@ -635,6 +658,17 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   searchClearText: { fontSize: 13, fontWeight: "700" },
+  searchSubmitButton: {
+    marginTop: 12,
+    borderRadius: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  searchSubmitButtonText: { color: "#fff", fontSize: 14, fontWeight: "700" },
   inlineDatePickerWrap: {
     marginTop: 10,
     borderWidth: 1,

@@ -242,6 +242,7 @@ export default function DevUiPreviewScreen() {
           onToDateChange={setToDate}
           onDatePickerTargetChange={setDatePickerTarget}
           onClearConditions={clearConditions}
+          onSubmit={() => setIsSearchExpanded(false)}
         />
 
         <Text style={[styles.resultTitle, { color: colors.subText }]}>

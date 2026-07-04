@@ -60,6 +60,7 @@ import {
     filterHistoryTransactions,
     type HistorySearchType,
 } from "@/lib/historySearch";
+import { hasHistorySearchCriteria } from "@/lib/historySearchCriteria";
 import { formatYearMonthLabel, shiftYearMonth } from "@/lib/monthPicker";
 import { waitForPendingWrite } from "@/lib/pendingWrite";
 import { buildRecordCategoryOptions } from "@/lib/recordOptions";
@@ -189,9 +190,48 @@ export default function HistoryScreen() {
   const [historySearchToDate, setHistorySearchToDate] = useState<string | null>(
     null,
   );
+  const [appliedHistorySearchType, setAppliedHistorySearchType] =
+    useState<HistorySearchType>("all");
+  const [appliedHistorySearchCategoryName, setAppliedHistorySearchCategoryName] =
+    useState("");
+  const [appliedHistorySearchBreakdownName, setAppliedHistorySearchBreakdownName] =
+    useState("");
+  const [appliedHistorySearchStoreName, setAppliedHistorySearchStoreName] =
+    useState("");
+  const [appliedHistorySearchMemoQuery, setAppliedHistorySearchMemoQuery] =
+    useState("");
+  const [appliedHistorySearchFromDate, setAppliedHistorySearchFromDate] =
+    useState<string | null>(null);
+  const [appliedHistorySearchToDate, setAppliedHistorySearchToDate] = useState<
+    string | null
+  >(null);
   const [searchDatePickerTarget, setSearchDatePickerTarget] =
     useState<HistorySearchDateTarget | null>(null);
   const [isHistorySearchExpanded, setIsHistorySearchExpanded] = useState(false);
+
+  const appliedHistorySearchCriteria = useMemo(
+    () => ({
+      type: appliedHistorySearchType,
+      categoryName: appliedHistorySearchCategoryName,
+      breakdownName: appliedHistorySearchBreakdownName,
+      storeName: appliedHistorySearchStoreName,
+      memoQuery: appliedHistorySearchMemoQuery,
+      fromDate: appliedHistorySearchFromDate,
+      toDate: appliedHistorySearchToDate,
+    }),
+    [
+      appliedHistorySearchBreakdownName,
+      appliedHistorySearchCategoryName,
+      appliedHistorySearchFromDate,
+      appliedHistorySearchMemoQuery,
+      appliedHistorySearchStoreName,
+      appliedHistorySearchToDate,
+      appliedHistorySearchType,
+    ],
+  );
+  const shouldReadAllHistory = hasHistorySearchCriteria(
+    appliedHistorySearchCriteria,
+  );
 
   const monthScope = `${year}-${String(month).padStart(2, "0")}`;
   const accountSubscription = useCollection<Account>(
@@ -209,9 +249,9 @@ export default function HistoryScreen() {
     refresh: refreshPaginatedTransactions,
     refreshIfStale: refreshPaginatedTransactionsIfStale,
   } = usePaginatedTransactions(householdId, {
-    from: historySearchFromDate,
-    to: historySearchToDate,
-  });
+    from: appliedHistorySearchFromDate,
+    to: appliedHistorySearchToDate,
+  }, { readAll: shouldReadAllHistory });
 
   const {
     data: monthTransactionData,
@@ -248,25 +288,11 @@ export default function HistoryScreen() {
 
   const filteredListTransactions = useMemo(
     () =>
-      filterHistoryTransactions(listTransactions, {
-        type: historySearchType,
-        categoryName: historySearchCategoryName,
-        breakdownName: historySearchBreakdownName,
-        storeName: historySearchStoreName,
-        memoQuery: historySearchMemoQuery,
-        fromDate: historySearchFromDate,
-        toDate: historySearchToDate,
-      }),
-    [
-      historySearchBreakdownName,
-      historySearchCategoryName,
-      historySearchFromDate,
-      historySearchMemoQuery,
-      historySearchStoreName,
-      historySearchToDate,
-      historySearchType,
-      listTransactions,
-    ],
+      filterHistoryTransactions(
+        listTransactions,
+        appliedHistorySearchCriteria,
+      ),
+    [appliedHistorySearchCriteria, listTransactions],
   );
 
   const accountOptions = useMemo(
@@ -392,13 +418,13 @@ export default function HistoryScreen() {
   useEffect(() => {
     canLoadMoreRef.current = true;
   }, [
-    historySearchFromDate,
-    historySearchToDate,
-    historySearchType,
-    historySearchCategoryName,
-    historySearchBreakdownName,
-    historySearchStoreName,
-    historySearchMemoQuery,
+    appliedHistorySearchFromDate,
+    appliedHistorySearchToDate,
+    appliedHistorySearchType,
+    appliedHistorySearchCategoryName,
+    appliedHistorySearchBreakdownName,
+    appliedHistorySearchStoreName,
+    appliedHistorySearchMemoQuery,
   ]);
   const handleListEndReached = useCallback(() => {
     if (!canLoadMoreRef.current) return;
@@ -424,6 +450,13 @@ export default function HistoryScreen() {
     setHistorySearchMemoQuery("");
     setHistorySearchFromDate(parsed.fromDate || null);
     setHistorySearchToDate(parsed.toDate || null);
+    setAppliedHistorySearchType(parsed.type);
+    setAppliedHistorySearchCategoryName(parsed.categoryName);
+    setAppliedHistorySearchBreakdownName("");
+    setAppliedHistorySearchStoreName("");
+    setAppliedHistorySearchMemoQuery("");
+    setAppliedHistorySearchFromDate(parsed.fromDate || null);
+    setAppliedHistorySearchToDate(parsed.toDate || null);
     setSearchDatePickerTarget(null);
     setIsHistorySearchExpanded(parsed.expandSearch);
     clearCalendarSelection();
@@ -444,7 +477,27 @@ export default function HistoryScreen() {
     setHistorySearchMemoQuery("");
     setHistorySearchFromDate(null);
     setHistorySearchToDate(null);
+    setAppliedHistorySearchType("all");
+    setAppliedHistorySearchCategoryName("");
+    setAppliedHistorySearchBreakdownName("");
+    setAppliedHistorySearchStoreName("");
+    setAppliedHistorySearchMemoQuery("");
+    setAppliedHistorySearchFromDate(null);
+    setAppliedHistorySearchToDate(null);
     setSearchDatePickerTarget(null);
+  };
+
+  const applyHistorySearchConditions = () => {
+    setAppliedHistorySearchType(historySearchType);
+    setAppliedHistorySearchCategoryName(historySearchCategoryName);
+    setAppliedHistorySearchBreakdownName(historySearchBreakdownName);
+    setAppliedHistorySearchStoreName(historySearchStoreName);
+    setAppliedHistorySearchMemoQuery(historySearchMemoQuery);
+    setAppliedHistorySearchFromDate(historySearchFromDate);
+    setAppliedHistorySearchToDate(historySearchToDate);
+    setSearchDatePickerTarget(null);
+    setIsHistorySearchExpanded(false);
+    clearCalendarSelection();
   };
 
   const handleHistorySearchTypeChange = (nextType: HistorySearchType) => {
@@ -501,6 +554,13 @@ export default function HistoryScreen() {
     setHistorySearchMemoQuery("");
     setHistorySearchFromDate(null);
     setHistorySearchToDate(null);
+    setAppliedHistorySearchType("all");
+    setAppliedHistorySearchCategoryName("");
+    setAppliedHistorySearchBreakdownName("");
+    setAppliedHistorySearchStoreName("");
+    setAppliedHistorySearchMemoQuery("");
+    setAppliedHistorySearchFromDate(null);
+    setAppliedHistorySearchToDate(null);
   };
 
   const handleHistoryScrollBeginDrag = () => {
@@ -1104,6 +1164,7 @@ export default function HistoryScreen() {
           onToDateChange={setHistorySearchToDate}
           onDatePickerTargetChange={setSearchDatePickerTarget}
           onClearConditions={clearHistorySearchConditions}
+          onSubmit={applyHistorySearchConditions}
         />
       ) : null}
 

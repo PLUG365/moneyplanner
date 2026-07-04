@@ -71,7 +71,10 @@ export function filterHistoryTransactions<T extends SearchableTransaction>(
       return false;
     }
 
-    if (storeName && normalizeOptional(transaction.storeName) !== storeName) {
+    if (
+      storeName &&
+      !normalizeOptional(transaction.storeName).includes(storeName)
+    ) {
       return false;
     }
 
