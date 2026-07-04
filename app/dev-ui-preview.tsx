@@ -1,29 +1,29 @@
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import HistorySearchPanel, {
-  type HistorySearchDateTarget,
+    type HistorySearchDateTarget,
 } from "@/components/HistorySearchPanel";
 import ProgressOverlay, {
-  type ProgressOverlayProgress,
+    type ProgressOverlayProgress,
 } from "@/components/ProgressOverlay";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import {
-  filterHistoryTransactions,
-  type HistorySearchType,
+    filterHistoryTransactions,
+    type HistorySearchType,
 } from "@/lib/historySearch";
 import {
-  buildHistorySearchPreviewOptions,
-  historySearchPreviewTransactions,
-  type HistorySearchPreviewTransaction,
+    buildHistorySearchPreviewOptions,
+    historySearchPreviewTransactions,
+    type HistorySearchPreviewTransaction,
 } from "@/lib/historySearchPreview";
 
 function formatAmount(amount: number): string {

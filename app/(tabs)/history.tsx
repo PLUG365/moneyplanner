@@ -65,7 +65,10 @@ import { formatYearMonthLabel, shiftYearMonth } from "@/lib/monthPicker";
 import { waitForPendingWrite } from "@/lib/pendingWrite";
 import { buildRecordCategoryOptions } from "@/lib/recordOptions";
 import { resolveTransactionAmountInput } from "@/lib/transactionAmountInput";
-import { isValidTransactionAmount, MAX_TRANSACTION_AMOUNT } from "@/lib/transactionAmountValidation";
+import {
+    isValidTransactionAmount,
+    MAX_TRANSACTION_AMOUNT,
+} from "@/lib/transactionAmountValidation";
 import {
     buildBreakdownsByCategory,
     resolveTransactionCopyTarget,
@@ -192,10 +195,14 @@ export default function HistoryScreen() {
   );
   const [appliedHistorySearchType, setAppliedHistorySearchType] =
     useState<HistorySearchType>("all");
-  const [appliedHistorySearchCategoryName, setAppliedHistorySearchCategoryName] =
-    useState("");
-  const [appliedHistorySearchBreakdownName, setAppliedHistorySearchBreakdownName] =
-    useState("");
+  const [
+    appliedHistorySearchCategoryName,
+    setAppliedHistorySearchCategoryName,
+  ] = useState("");
+  const [
+    appliedHistorySearchBreakdownName,
+    setAppliedHistorySearchBreakdownName,
+  ] = useState("");
   const [appliedHistorySearchStoreName, setAppliedHistorySearchStoreName] =
     useState("");
   const [appliedHistorySearchMemoQuery, setAppliedHistorySearchMemoQuery] =
@@ -248,10 +255,14 @@ export default function HistoryScreen() {
     loadMore: loadMorePaginatedTransactions,
     refresh: refreshPaginatedTransactions,
     refreshIfStale: refreshPaginatedTransactionsIfStale,
-  } = usePaginatedTransactions(householdId, {
-    from: appliedHistorySearchFromDate,
-    to: appliedHistorySearchToDate,
-  }, { readAll: shouldReadAllHistory });
+  } = usePaginatedTransactions(
+    householdId,
+    {
+      from: appliedHistorySearchFromDate,
+      to: appliedHistorySearchToDate,
+    },
+    { readAll: shouldReadAllHistory },
+  );
 
   const {
     data: monthTransactionData,
@@ -288,10 +299,7 @@ export default function HistoryScreen() {
 
   const filteredListTransactions = useMemo(
     () =>
-      filterHistoryTransactions(
-        listTransactions,
-        appliedHistorySearchCriteria,
-      ),
+      filterHistoryTransactions(listTransactions, appliedHistorySearchCriteria),
     [appliedHistorySearchCriteria, listTransactions],
   );
 
@@ -1585,7 +1593,9 @@ export default function HistoryScreen() {
       </Modal>
 
       <ProgressOverlay
-        visible={paginatedLoadingInitial && filteredListTransactions.length === 0}
+        visible={
+          paginatedLoadingInitial && filteredListTransactions.length === 0
+        }
         message="読み込み中…"
       />
     </View>

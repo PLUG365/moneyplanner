@@ -20,17 +20,17 @@ import {
     type FirestoreQueryDocSnapshot,
     type FirestoreQuerySnapshot,
 } from "@/lib/firestore";
+import {
+    buildPaginatedTransactionsScopeKey,
+    pickNewestDataVersion,
+    shouldFetchAllTransactions,
+} from "@/lib/paginatedTransactionsMode";
 import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
 import {
     getPersistedScopeVersion,
     loadScopeVersions,
     setPersistedScopeVersion,
 } from "@/lib/scopeVersionStore";
-import {
-  buildPaginatedTransactionsScopeKey,
-  pickNewestDataVersion,
-  shouldFetchAllTransactions,
-} from "@/lib/paginatedTransactionsMode";
 import { mergeTransactionCacheItems } from "@/lib/transactionCacheMerge";
 import { isDeletedTransactionData } from "@/lib/transactionSoftDelete";
 
@@ -106,8 +106,7 @@ export function usePaginatedTransactions(
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
 
-  const lastDocRef =
-    useRef<FirestoreQueryDocSnapshot | null>(null);
+  const lastDocRef = useRef<FirestoreQueryDocSnapshot | null>(null);
   // 多重実行防止（onEndReached連打・refresh重複など）
   const inFlightRef = useRef(false);
   // 進行中に scope（日付範囲）変更などで来た再読込要求を、完了後にやり直すための予約。
@@ -138,17 +137,13 @@ export function usePaginatedTransactions(
       )
     : null;
 
-  const buildBaseQuery =
-    useCallback((): FirestoreQuery | null => {
-      if (!householdId) return null;
-      let base: FirestoreQuery = householdCollection(
-        householdId,
-        "transactions",
-      );
-      if (range.from) base = query(base, where("date", ">=", range.from));
-      if (range.to) base = query(base, where("date", "<=", range.to));
-      return query(base, orderBy("date", "desc"));
-    }, [householdId, range.from, range.to]);
+  const buildBaseQuery = useCallback((): FirestoreQuery | null => {
+    if (!householdId) return null;
+    let base: FirestoreQuery = householdCollection(householdId, "transactions");
+    if (range.from) base = query(base, where("date", ">=", range.from));
+    if (range.to) base = query(base, where("date", "<=", range.to));
+    return query(base, orderBy("date", "desc"));
+  }, [householdId, range.from, range.to]);
 
   const refresh = useCallback(
     async (options?: { forceServer?: boolean; refreshMarker?: boolean }) => {
@@ -355,8 +350,9 @@ export function usePaginatedTransactions(
       );
       setItems((prev) => {
         const seen = new Set(prev.map((tx) => tx.id));
-        const next = mapActiveTransactions(snap.docs)
-          .filter((tx) => !seen.has(tx.id));
+        const next = mapActiveTransactions(snap.docs).filter(
+          (tx) => !seen.has(tx.id),
+        );
         return [...prev, ...next];
       });
       if (snap.docs.length > 0) {

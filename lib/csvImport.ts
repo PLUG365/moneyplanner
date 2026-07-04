@@ -13,9 +13,9 @@ import {
     importTransactions,
     readHouseholdDataVersionPreferServer,
 } from "./firestore";
-  import { getHouseholdId } from "./household";
-  import { buildPaginatedTransactionsScopeKey } from "./paginatedTransactionsMode";
-  import { setPersistedScopeVersion } from "./scopeVersionStore";
+import { getHouseholdId } from "./household";
+import { buildPaginatedTransactionsScopeKey } from "./paginatedTransactionsMode";
+import { setPersistedScopeVersion } from "./scopeVersionStore";
 
 export type CsvImportPrepareResult =
   | { status: "cancelled" }

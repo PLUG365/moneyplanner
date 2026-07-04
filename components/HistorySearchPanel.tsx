@@ -542,7 +542,10 @@ export default function HistorySearchPanel({
             </View>
           ) : null}
           <TouchableOpacity
-            style={[styles.searchSubmitButton, { backgroundColor: colors.tint }]}
+            style={[
+              styles.searchSubmitButton,
+              { backgroundColor: colors.tint },
+            ]}
             onPress={onSubmit}
           >
             <Ionicons name="search" size={16} color="#fff" />

@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  buildPaginatedTransactionsScopeKey,
-  pickNewestDataVersion,
-  shouldFetchAllTransactions,
+    buildPaginatedTransactionsScopeKey,
+    pickNewestDataVersion,
+    shouldFetchAllTransactions,
 } from "./paginatedTransactionsMode";
 
 test("shouldFetchAllTransactions keeps normal history on paginated mode", () => {
@@ -52,5 +52,11 @@ test("pickNewestDataVersion keeps a newer persisted cache version over stale mem
   assert.equal(pickNewestDataVersion("200", "100"), "200");
   assert.equal(pickNewestDataVersion("100", "200"), "200");
   assert.equal(pickNewestDataVersion(null, "200"), "200");
-  assert.equal(pickNewestDataVersion("2026-05-01T00:00:00.000Z", "2026-05-02T00:00:00.000Z"), "2026-05-02T00:00:00.000Z");
+  assert.equal(
+    pickNewestDataVersion(
+      "2026-05-01T00:00:00.000Z",
+      "2026-05-02T00:00:00.000Z",
+    ),
+    "2026-05-02T00:00:00.000Z",
+  );
 });

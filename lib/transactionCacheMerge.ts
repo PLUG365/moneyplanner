@@ -9,7 +9,9 @@ export function mergeTransactionCacheItems<T extends TransactionCacheItem>(
   changedActiveItems: T[],
   deletedIds: Set<string>,
 ): T[] {
-  const changedById = new Map(changedActiveItems.map((item) => [item.id, item]));
+  const changedById = new Map(
+    changedActiveItems.map((item) => [item.id, item]),
+  );
   const retained = currentItems.filter(
     (item) => !deletedIds.has(item.id) && !changedById.has(item.id),
   );
