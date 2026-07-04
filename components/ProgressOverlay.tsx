@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Animated, Modal, StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "@/hooks/useAppTheme";
@@ -19,6 +19,11 @@ const COIN_COUNT = 3;
 const COIN_BOUNCE_HEIGHT = -12;
 const COIN_BOUNCE_DURATION = 320;
 const COIN_STAGGER = 140;
+// キャッシュ即返し等の短時間ロードではModalを出さない。
+// visible が数msでトグルすると iOS で透明なModalウィンドウが残留し、
+// 以降のタッチを全部吸ってしまう既知の不具合があるため、
+// 一定時間続いたロードだけ表示する。
+const SHOW_DELAY_MS = 250;
 
 /** 重たい処理中に表示する共通オーバーレイ。
  *  コインがコイン袋に向かって順番に跳ねるアニメーションで、
@@ -34,8 +39,20 @@ export default function ProgressOverlay({
   ).current;
   const bagAnim = useRef(new Animated.Value(0)).current;
 
+  // 表示はディレイ後、非表示は即時。非表示時はModal自体をアンマウントする。
+  const [shown, setShown] = useState(false);
+
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      setShown(false);
+      return;
+    }
+    const timer = setTimeout(() => setShown(true), SHOW_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [visible]);
+
+  useEffect(() => {
+    if (!shown) return;
 
     const coinLoops = coinAnims.map((value, index) =>
       Animated.loop(
@@ -78,7 +95,7 @@ export default function ProgressOverlay({
       coinAnims.forEach((value) => value.setValue(0));
       bagAnim.setValue(0);
     };
-  }, [visible, coinAnims, bagAnim]);
+  }, [shown, coinAnims, bagAnim]);
 
   const hasProgress = progress != null && progress.total > 0;
   const ratio = hasProgress
@@ -86,9 +103,13 @@ export default function ProgressOverlay({
     : 0;
   const percent = Math.floor(ratio * 100);
 
+  if (!shown) {
+    return null;
+  }
+
   return (
     <Modal
-      visible={visible}
+      visible
       transparent
       animationType="fade"
       statusBarTranslucent
