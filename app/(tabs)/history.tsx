@@ -77,6 +77,7 @@ import {
 } from "@/lib/transactionAmountValidation";
 import {
     buildBreakdownsByCategory,
+    getSelectionCopyButtonLabel,
     resolveTransactionCopyTarget,
     resolveTransactionMasterSelection,
 } from "@/lib/transactionCopy";
@@ -1326,7 +1327,9 @@ export default function HistoryScreen() {
             disabled={selectedTxIds.length === 0}
             onPress={handleOpenBulkCopy}
           >
-            <Text style={styles.selectionCopyText}>一括コピー</Text>
+            <Text style={styles.selectionCopyText}>
+              {getSelectionCopyButtonLabel(selectedTxIds.length)}
+            </Text>
           </TouchableOpacity>
         </View>
       ) : null}

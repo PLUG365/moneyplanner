@@ -3,9 +3,15 @@ import test from "node:test";
 
 import {
     buildBreakdownsByCategory,
+    getSelectionCopyButtonLabel,
     resolveTransactionCopyTarget,
     resolveTransactionMasterSelection,
 } from "./transactionCopy";
+
+test("getSelectionCopyButtonLabel shows selected count in parentheses", () => {
+  assert.equal(getSelectionCopyButtonLabel(0), "コピー(0)");
+  assert.equal(getSelectionCopyButtonLabel(3), "コピー(3)");
+});
 
 test("buildBreakdownsByCategory groups subscribed breakdowns by category", () => {
   const grouped = buildBreakdownsByCategory([

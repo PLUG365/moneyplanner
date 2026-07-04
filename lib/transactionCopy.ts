@@ -64,6 +64,10 @@ function normalize(value: string): string {
   return value.trim().toLowerCase();
 }
 
+export function getSelectionCopyButtonLabel(selectedCount: number): string {
+  return `コピー(${selectedCount})`;
+}
+
 export function buildBreakdownsByCategory<T extends CopyBreakdown>(
   breakdowns: T[],
 ): Map<string, T[]> {
