@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
     householdCollection,
-    mapTransaction,
+    mapActiveTransactions,
     readHouseholdDataVersionPreferServer,
     Transaction,
     type FirestoreQuery,
@@ -191,9 +191,7 @@ export function usePaginatedTransactions(
             "cache",
           );
           if (cacheSnap && cacheSnap.docs.length > 0) {
-            const cachedItems = cacheSnap.docs.map((doc) =>
-              mapTransaction(doc.id, doc.data()),
-            );
+            const cachedItems = mapActiveTransactions(cacheSnap.docs);
             const page: CachedPage = {
               items: cachedItems,
               // ディスクキャッシュの版は永続化した「最後にサーバー読みした時点の版」を使う（案B）。
@@ -227,7 +225,7 @@ export function usePaginatedTransactions(
           "server",
         );
         const docs = snap?.docs ?? [];
-        const nextItems = docs.map((doc) => mapTransaction(doc.id, doc.data()));
+        const nextItems = mapActiveTransactions(docs);
         const nextHasMore = fetchAll
           ? false
           : docs.length === TRANSACTIONS_PAGE_SIZE;
@@ -275,8 +273,7 @@ export function usePaginatedTransactions(
       );
       setItems((prev) => {
         const seen = new Set(prev.map((tx) => tx.id));
-        const next = snap.docs
-          .map((doc) => mapTransaction(doc.id, doc.data()))
+        const next = mapActiveTransactions(snap.docs)
           .filter((tx) => !seen.has(tx.id));
         return [...prev, ...next];
       });

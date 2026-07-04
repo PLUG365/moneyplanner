@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
     householdCollection,
-    mapTransaction,
+    mapActiveTransactions,
     readHouseholdDataVersionPreferServer,
     Transaction,
     type FirestoreQuery,
@@ -173,9 +173,7 @@ export function useCachedTransactions(
         if (!input?.forceServer) {
           const cacheSnap = await getTransactionSnapshot(query, "cache");
           if (cacheSnap && cacheSnap.docs.length > 0) {
-            const cachedItems = cacheSnap.docs.map((doc) =>
-              mapTransaction(doc.id, doc.data()),
-            );
+            const cachedItems = mapActiveTransactions(cacheSnap.docs);
             // ディスクキャッシュの版は「現在版」ではなく、永続化した
             // 「このスコープを最後にサーバー読みした時点の版」を使う（案B）。
             const cachedVersion = getPersistedScopeVersion(cacheKey);
@@ -202,8 +200,7 @@ export function useCachedTransactions(
         setLoading(true);
         const serverSnap = await getTransactionSnapshot(query, "server");
         const serverItems =
-          serverSnap?.docs.map((doc) => mapTransaction(doc.id, doc.data())) ??
-          [];
+          mapActiveTransactions(serverSnap?.docs ?? []);
         const version = currentVersion ?? null;
         transactionScopeCache.set(cacheKey, {
           items: serverItems,

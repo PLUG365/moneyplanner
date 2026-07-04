@@ -119,6 +119,7 @@ erDiagram
         string storeNameSnapshot
         string memo
         string createdBy
+        boolean deleted "ソフトデリート（true=削除済み、読み側で除外）"
         Timestamp createdAt
         Timestamp updatedAt
     }
@@ -256,6 +257,8 @@ erDiagram
         - breakdownNameSnapshot, storeNameSnapshot
         - memo, createdAt, updatedAt: Timestamp
         - createdBy: string (userId)
+        - deleted?: boolean （ソフトデリート。true=削除済み。読み側は
+          mapActiveTransactions で除外。[docs/decisions/transaction-soft-delete.md](docs/decisions/transaction-soft-delete.md)）
 
     /accounts/{accountId}
         - name, balance, initialBalance, isDefault

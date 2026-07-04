@@ -38,6 +38,10 @@ import {
 import { type DataVersion } from "./readFreshness";
 import { buildStoreOptionsForCategory, findStoreByName } from "./storeOptions";
 import {
+    excludeDeletedTransactionDocs,
+    isDeletedTransactionData,
+} from "./transactionSoftDelete";
+import {
     buildBudgetStatusesFromData,
     buildMonthCategorySummaryFromTransactions,
     buildYearMonthlyTotalsFromTransactions,
@@ -335,8 +339,9 @@ async function restoreStoreMastersFromTransactionSnapshots(
   transactions: FirestoreQueryDocSnapshot[],
   categoryIdByTransactionId?: Map<string, string | null>,
 ): Promise<void> {
+  // ソフトデリート済み取引からお店マスタを復活させない
   const plan = buildStoreMasterRestorePlan(
-    transactions.map((doc) => {
+    excludeDeletedTransactionDocs(transactions).map((doc) => {
       const data = doc.data();
       return {
         transactionId: doc.id,
@@ -487,6 +492,17 @@ export function mapTransaction(id: string, data: DocumentData): Transaction {
     memo: data.memo || "",
     createdAt: toISOString(data.createdAt),
   };
+}
+
+/** ソフトデリート済みを除外して Transaction[] へ変換する。
+ *  取引一覧の読み取り（履歴/検索/集計/CSV/フック）は必ずこれを通し、
+ *  `deleted` 除外の漏れを防ぐ（ADR: transaction-soft-delete）。 */
+export function mapActiveTransactions(
+  docs: FirestoreQueryDocSnapshot[],
+): Transaction[] {
+  return excludeDeletedTransactionDocs(docs).map((docSnap) =>
+    mapTransaction(docSnap.id, docSnap.data()),
+  );
 }
 
 export function mapAccount(id: string, data: DocumentData): Account {
@@ -1075,7 +1091,7 @@ export async function getCategoryDeletionImpact(
     getDoc(doc(collection(hDoc, "budgets"), id)),
   ]);
   return {
-    transactionCount: txSnap.size,
+    transactionCount: excludeDeletedTransactionDocs(txSnap.docs).length,
     breakdownCount: bdSnap.size,
     hasBudget: snapshotExists(budgetSnap),
   };
@@ -1346,6 +1362,11 @@ export async function updateTransaction(
     const currentSnap = await transaction.get(txRef);
     if (!snapshotExists(currentSnap)) return;
     const current = currentSnap.data()!;
+    // 削除済み取引の編集は禁止（残高はすでに戻されており、編集時の差分計算が
+    // 二重適用になって残高が壊れるため）
+    if (isDeletedTransactionData(current)) {
+      throw new Error("この記録は削除済みのため編集できません");
+    }
 
     transaction.update(txRef, {
       date,
@@ -1404,6 +1425,10 @@ export async function updateTransaction(
   });
 }
 
+/** 取引を削除する（ソフトデリート）。
+ *  物理削除ではなく `deleted: true` + `updatedAt` 更新にすることで、
+ *  updatedAt 差分クエリで削除も検知でき、ローカルキャッシュに幽霊データが
+ *  残らない（issue #4 / ADR: transaction-soft-delete）。残高の戻しは従来どおり。 */
 export async function deleteTransaction(id: string): Promise<void> {
   const hDoc = await householdDoc();
   const txRef = doc(collection(hDoc, "transactions"), id);
@@ -1412,8 +1437,13 @@ export async function deleteTransaction(id: string): Promise<void> {
     const currentSnap = await transaction.get(txRef);
     if (!snapshotExists(currentSnap)) return;
     const current = currentSnap.data()!;
+    // 二重削除ガード: すでにソフトデリート済みなら残高を二重に戻さない
+    if (isDeletedTransactionData(current)) return;
 
-    transaction.delete(txRef);
+    transaction.update(txRef, {
+      deleted: true,
+      updatedAt: serverTimestamp(),
+    });
     for (const adjustment of buildBalanceAdjustmentsForDelete({
       accountId: current.accountId || DEFAULT_ACCOUNT_ID,
       type: current.type as TransactionType,
@@ -1512,13 +1542,19 @@ export async function updateTransactionFromPrevious(
   await batch.commit();
 }
 
+/** 取引を削除する（ソフトデリート・オフライン対応版）。
+ *  purposely 読み取りなしのバッチ書込のため二重削除ガードはない。
+ *  呼び出し側UIが削除済み項目を即時に一覧から除くこと（従来と同じ前提）。 */
 export async function deleteTransactionFromPrevious(
   previous: Transaction,
 ): Promise<void> {
   const hDoc = await householdDoc();
   const batch = writeBatch(getFirestore());
 
-  batch.delete(doc(collection(hDoc, "transactions"), previous.id));
+  batch.update(doc(collection(hDoc, "transactions"), previous.id), {
+    deleted: true,
+    updatedAt: serverTimestamp(),
+  });
   for (const adjustment of buildBalanceAdjustmentsForDelete({
     accountId: previous.accountId || DEFAULT_ACCOUNT_ID,
     type: previous.type,
@@ -1630,7 +1666,7 @@ export async function reconcileAccountBalancesFromTransactions(): Promise<{
   ]);
   const patches = buildAccountBalanceReconciliation(
     accountsSnap.docs.map((doc) => mapAccount(doc.id, doc.data())),
-    transactionsSnap.docs.map((doc) => {
+    excludeDeletedTransactionDocs(transactionsSnap.docs).map((doc) => {
       const data = doc.data();
       return {
         accountId: data.accountId ?? DEFAULT_ACCOUNT_ID,
@@ -1684,9 +1720,9 @@ export async function deleteAccountAndMoveToDefault(id: string): Promise<void> {
     query(collection(hDoc, "transactions"), where("accountId", "==", id)),
   );
 
-  // 純額を計算
+  // 純額を計算（ソフトデリート済みは残高を戻し済みのため除外する）
   let net = 0;
-  for (const doc of txSnap.docs) {
+  for (const doc of excludeDeletedTransactionDocs(txSnap.docs)) {
     const data = doc.data();
     net += data.type === "income" ? data.amount : -data.amount;
   }
@@ -1885,8 +1921,7 @@ export async function getTransactionsByMonth(
     ),
   );
 
-  return snap.docs
-    .map((doc) => mapTransaction(doc.id, doc.data()))
+  return mapActiveTransactions(snap.docs)
     .sort((a, b) => {
       const dateCmp = b.date.localeCompare(a.date);
       if (dateCmp !== 0) return dateCmp;
@@ -1902,8 +1937,7 @@ export async function getTransactionsByDate(
     query(collection(hDoc, "transactions"), where("date", "==", date)),
   );
 
-  return snap.docs
-    .map((doc) => mapTransaction(doc.id, doc.data()))
+  return mapActiveTransactions(snap.docs)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
@@ -1920,15 +1954,14 @@ export async function getTransactionsByYear(
     ),
   );
 
-  return snap.docs.map((doc) => mapTransaction(doc.id, doc.data()));
+  return mapActiveTransactions(snap.docs);
 }
 
 export async function getAllTransactions(): Promise<Transaction[]> {
   const hDoc = await householdDoc();
   const snap = await getDocs(collection(hDoc, "transactions"));
 
-  return snap.docs
-    .map((doc) => mapTransaction(doc.id, doc.data()))
+  return mapActiveTransactions(snap.docs)
     .sort((a, b) => {
       const dateCmp = b.date.localeCompare(a.date);
       if (dateCmp !== 0) return dateCmp;
@@ -1955,7 +1988,7 @@ export async function getMonthCategorySummary(
   );
 
   return buildMonthCategorySummaryFromTransactions(
-    snap.docs.map((doc) => mapTransaction(doc.id, doc.data())),
+    mapActiveTransactions(snap.docs),
     year,
     month,
   );
@@ -2041,7 +2074,7 @@ export async function getMonthBudgetStatuses(
   return buildBudgetStatusesFromData({
     year,
     month,
-    transactions: txSnap.docs.map((doc) => mapTransaction(doc.id, doc.data())),
+    transactions: mapActiveTransactions(txSnap.docs),
     budgets: budgetsSnap.docs.map((doc) =>
       mapBudgetDefinition(doc.id, doc.data()),
     ),
@@ -2092,7 +2125,7 @@ export async function getBudgetStatusForDate(
   );
 
   let spentAmount = 0;
-  for (const doc of txSnap.docs) {
+  for (const doc of excludeDeletedTransactionDocs(txSnap.docs)) {
     const data = doc.data();
     if (data.type === "expense") spentAmount += data.amount;
   }
@@ -2130,7 +2163,7 @@ export async function getYearMonthlyTotals(
   );
 
   return buildYearMonthlyTotalsFromTransactions(
-    snap.docs.map((doc) => mapTransaction(doc.id, doc.data())),
+    mapActiveTransactions(snap.docs),
     year,
   );
 }
@@ -2152,7 +2185,7 @@ export async function getDatesWithTransactions(
   );
 
   const dates = new Set<string>();
-  for (const doc of snap.docs) {
+  for (const doc of excludeDeletedTransactionDocs(snap.docs)) {
     dates.add(doc.data().date);
   }
   return Array.from(dates);
