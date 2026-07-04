@@ -62,6 +62,7 @@ import {
 } from "@/lib/historySearch";
 import { hasHistorySearchCriteria } from "@/lib/historySearchCriteria";
 import { buildHistorySearchStoreOptions } from "@/lib/historySearchOptions";
+import { getHistorySearchExpandedAfterClear } from "@/lib/historySearchPanelState";
 import { formatYearMonthLabel, shiftYearMonth } from "@/lib/monthPicker";
 import { waitForPendingWrite } from "@/lib/pendingWrite";
 import { buildRecordCategoryOptions } from "@/lib/recordOptions";
@@ -488,6 +489,7 @@ export default function HistoryScreen() {
     setAppliedHistorySearchFromDate(null);
     setAppliedHistorySearchToDate(null);
     setSearchDatePickerTarget(null);
+    setIsHistorySearchExpanded(getHistorySearchExpandedAfterClear());
   };
 
   const applyHistorySearchConditions = () => {
