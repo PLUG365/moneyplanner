@@ -101,7 +101,6 @@ erDiagram
         string displayName
         Timestamp joinedAt
         Timestamp removedAt
-        boolean rejoinDisabled
     }
 
     transactions {
@@ -231,7 +230,8 @@ erDiagram
         - displayName: string
         - joinedAt: Timestamp
         - removedAt?: Timestamp
-        - rejoinDisabled?: boolean （解除済みメンバーの再参加抑止フラグ）
+        - ※ rejoinDisabled は2026-07-04に廃止（参加が承認制のため、退出/解除済み
+          ユーザーの再参加も承認フローで統制する。過去データに残るフラグは無視される）
 
     /joinRequests/{requestId} （参加承認フローで使用中）
         - uid: string

@@ -37,7 +37,6 @@ import {
   isInviteJoinCooldownActive,
   parseInviteJoinAttemptState,
 } from "./inviteJoinRateLimit";
-import { createStoredMemberProfile } from "./memberProfile";
 
 export interface HouseholdMember {
   uid: string;
@@ -173,76 +172,6 @@ export async function createHousehold(displayName: string): Promise<string> {
   await batch.commit();
 
   return inviteCode;
-}
-
-/**
- * 招待コードで既存の世帯に参加
- */
-export async function joinHousehold(inviteCode: string): Promise<void> {
-  const user = getCurrentUser();
-  if (!user) throw new Error("未ログインです");
-
-  const code = inviteCode.trim().toUpperCase();
-
-  const inviteDoc = await getDoc(doc(getFirestore(), "inviteCodes", code));
-  const inviteData = getSnapshotDataOrNull(inviteDoc);
-  const householdId = inviteData?.householdId;
-
-  if (!householdId) {
-    throw new Error("招待コードが見つかりません");
-  }
-
-  const inviteState = resolveInviteCodeState(inviteData ?? {});
-  if (inviteState === "disabled") {
-    throw new Error(
-      "この招待コードは無効です。最新のコードを確認してください。",
-    );
-  }
-  if (inviteState === "expired") {
-    throw new Error(
-      "この招待コードは有効期限切れです。再発行を依頼してください。",
-    );
-  }
-
-  const householdRef = doc(getFirestore(), "households", householdId);
-  const memberProfile = createStoredMemberProfile(user);
-  const memberRef = doc(collection(householdRef, "members"), user.uid);
-
-  // 参加前に最新の inviteCode を確認（レース条件防止）
-  const householdSnap = await getDoc(householdRef);
-  const currentInviteCode = householdSnap.data()?.inviteCode;
-
-  if (currentInviteCode !== code) {
-    throw new Error("招待コードが無効です。再発行されている可能性があります。");
-  }
-
-  const memberSnap = await getDoc(memberRef);
-  const memberData = memberSnap.data();
-  if (memberData?.rejoinDisabled === true || memberData?.removedAt != null) {
-    throw new Error(
-      "この世帯への再参加は制限されています。世帯管理者に確認してください。",
-    );
-  }
-
-  const batch = writeBatch(getFirestore());
-
-  batch.set(doc(getFirestore(), "users", user.uid), {
-    householdId,
-    displayName: memberProfile.displayName,
-    createdAt: serverTimestamp(),
-  });
-
-  batch.set(
-    memberRef,
-    {
-      displayName: memberProfile.displayName,
-      joinedAt: serverTimestamp(),
-      removedAt: deleteField(),
-    },
-    { merge: true },
-  );
-
-  await batch.commit();
 }
 
 /**
@@ -399,12 +328,9 @@ export async function approveJoinRequest(
     throw new Error("承認対象の参加リクエストが見つかりません");
   }
 
-  const memberSnap = await getDoc(memberRef);
-  const memberData = memberSnap.data();
-  if (memberData?.rejoinDisabled === true || memberData?.removedAt != null) {
-    throw new Error("このユーザーは再参加できない状態です");
-  }
-
+  // 参加は承認制のため、退出/解除済みユーザーの再参加も既存メンバーの承認に
+  // 委ねる（再参加抑止フラグは2026-07-04に廃止。過去データの rejoinDisabled は無視し、
+  // 承認時に removedAt をクリアして再参加させる。build 26 発見事項 #1）。
   const displayName = normalizeJoinDisplayName(
     String(requestData.displayName ?? ""),
   );
@@ -765,11 +691,25 @@ export async function removeHouseholdMember(
     }
   }
 
-  await setDoc(doc(membersRef, userId), 
+  await setDoc(doc(membersRef, userId),
     {
       removedAt: serverTimestamp(),
-      rejoinDisabled: true,
     },
     { merge: true },
   );
+
+  // 自己退出時は自分の users.householdId も即時クリアする。
+  // 残したままだと requestJoinHousehold の「すでにこの世帯に参加しています」
+  // 判定に引っかかり、同じ世帯へ再参加できない（build 26 発見事項 #1）。
+  // 他メンバーを解除した場合は対象者の users を書けないため、従来どおり
+  // 対象者の次回起動時に getHouseholdId() がクリアする。
+  if (isSelf) {
+    await setDoc(
+      doc(getFirestore(), "users", currentUser.uid),
+      {
+        householdId: deleteField(),
+      },
+      { merge: true },
+    );
+  }
 }
