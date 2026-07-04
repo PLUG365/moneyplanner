@@ -25,6 +25,22 @@ test("buildHistorySearchPreviewOptions narrows breakdowns and stores by selected
   assert.deepEqual(options.storeOptions, ["駅前スーパー", "定食屋あおば"]);
 });
 
+test("buildHistorySearchPreviewOptions includes categories for all type", () => {
+  const options = buildHistorySearchPreviewOptions(
+    historySearchPreviewTransactions,
+    "all",
+    "",
+  );
+
+  assert.deepEqual(options.categoryOptions, [
+    "食費",
+    "日用品",
+    "交通",
+    "給与",
+    "臨時収入",
+  ]);
+});
+
 test("buildHistorySearchPreviewOptions does not expose store options for income", () => {
   const options = buildHistorySearchPreviewOptions(
     historySearchPreviewTransactions,

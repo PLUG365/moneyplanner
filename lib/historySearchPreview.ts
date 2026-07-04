@@ -1,4 +1,9 @@
 import type { HistorySearchType } from "./historySearch";
+import {
+    buildHistorySearchBreakdownOptions,
+    buildHistorySearchCategoryOptions,
+    buildHistorySearchStoreOptions,
+} from "./historySearchOptions";
 
 export type HistorySearchPreviewTransaction = {
   id: string;
@@ -95,32 +100,20 @@ export const historySearchPreviewTransactions: HistorySearchPreviewTransaction[]
     },
   ];
 
-function uniqueNonEmpty(values: (string | null | undefined)[]): string[] {
-  return Array.from(
-    new Set(values.map((value) => value?.trim()).filter(Boolean) as string[]),
-  );
-}
-
 export function buildHistorySearchPreviewOptions(
   transactions: HistorySearchPreviewTransaction[],
   type: HistorySearchType,
   categoryName: string,
 ): HistorySearchPreviewOptions {
-  const typedTransactions = transactions.filter((tx) => tx.type === type);
-  const categoryScopedTransactions = typedTransactions.filter(
-    (tx) => !categoryName || tx.categoryName === categoryName,
-  );
-
   return {
-    categoryOptions: uniqueNonEmpty(
-      typedTransactions.map((tx) => tx.categoryName),
-    ),
-    breakdownOptions: uniqueNonEmpty(
-      categoryScopedTransactions.map((tx) => tx.breakdownName),
-    ),
-    storeOptions:
-      type === "expense"
-        ? uniqueNonEmpty(categoryScopedTransactions.map((tx) => tx.storeName))
-        : [],
+    categoryOptions: buildHistorySearchCategoryOptions(transactions, type),
+    breakdownOptions: buildHistorySearchBreakdownOptions(transactions, {
+      type,
+      categoryName,
+    }),
+    storeOptions: buildHistorySearchStoreOptions(transactions, {
+      categoryName,
+      storeQuery: "",
+    }),
   };
 }

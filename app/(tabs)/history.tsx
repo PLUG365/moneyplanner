@@ -61,7 +61,11 @@ import {
     type HistorySearchType,
 } from "@/lib/historySearch";
 import { hasHistorySearchCriteria } from "@/lib/historySearchCriteria";
-import { buildHistorySearchStoreOptions } from "@/lib/historySearchOptions";
+import {
+    buildHistorySearchBreakdownOptions,
+    buildHistorySearchCategoryOptions,
+    buildHistorySearchStoreOptions,
+} from "@/lib/historySearchOptions";
 import { getHistorySearchExpandedAfterClear } from "@/lib/historySearchPanelState";
 import { formatYearMonthLabel, shiftYearMonth } from "@/lib/monthPicker";
 import { waitForPendingWrite } from "@/lib/pendingWrite";
@@ -120,12 +124,6 @@ function displayDate(dateStr: string): string {
 function toLocalDate(dateStr: string): Date {
   const { y, m, d } = parseYMD(dateStr);
   return new Date(y, m - 1, d);
-}
-
-function uniqueNonEmpty(values: (string | null | undefined)[]): string[] {
-  return Array.from(
-    new Set(values.map((value) => value?.trim()).filter(Boolean) as string[]),
-  );
 }
 
 export default function HistoryScreen() {
@@ -344,26 +342,16 @@ export default function HistoryScreen() {
 
   const historySearchCategoryOptions = useMemo(
     () =>
-      uniqueNonEmpty(
-        listTransactions
-          .filter((tx) => tx.type === historySearchType)
-          .map((tx) => tx.categoryName),
-      ),
+      buildHistorySearchCategoryOptions(listTransactions, historySearchType),
     [historySearchType, listTransactions],
   );
 
   const historySearchBreakdownOptions = useMemo(
     () =>
-      uniqueNonEmpty(
-        listTransactions
-          .filter(
-            (tx) =>
-              tx.type === historySearchType &&
-              (!historySearchCategoryName ||
-                tx.categoryName === historySearchCategoryName),
-          )
-          .map((tx) => tx.breakdownName),
-      ),
+      buildHistorySearchBreakdownOptions(listTransactions, {
+        type: historySearchType,
+        categoryName: historySearchCategoryName,
+      }),
     [historySearchCategoryName, historySearchType, listTransactions],
   );
 

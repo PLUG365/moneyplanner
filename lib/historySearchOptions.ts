@@ -1,9 +1,17 @@
+import type { HistorySearchType } from "./historySearch";
+
 export const HISTORY_SEARCH_STORE_OPTION_LIMIT = 40;
 
-type StoreOptionTransaction = {
+type SearchOptionTransaction = {
   type: "income" | "expense";
   categoryName?: string | null;
+  breakdownName?: string | null;
   storeName?: string | null;
+};
+
+type BreakdownOptionCriteria = {
+  type: HistorySearchType;
+  categoryName: string;
 };
 
 type StoreOptionCriteria = {
@@ -16,8 +24,59 @@ function normalize(value: string): string {
   return value.trim().toLocaleLowerCase("ja-JP");
 }
 
+function matchesType(
+  transaction: SearchOptionTransaction,
+  type: HistorySearchType,
+): boolean {
+  return type === "all" || transaction.type === type;
+}
+
+function pushUniqueNonEmpty(
+  options: string[],
+  seen: Set<string>,
+  value?: string | null,
+): void {
+  const trimmed = value?.trim();
+  if (!trimmed || seen.has(trimmed)) return;
+
+  seen.add(trimmed);
+  options.push(trimmed);
+}
+
+export function buildHistorySearchCategoryOptions(
+  transactions: SearchOptionTransaction[],
+  type: HistorySearchType,
+): string[] {
+  const seen = new Set<string>();
+  const options: string[] = [];
+
+  for (const tx of transactions) {
+    if (!matchesType(tx, type)) continue;
+    pushUniqueNonEmpty(options, seen, tx.categoryName);
+  }
+
+  return options;
+}
+
+export function buildHistorySearchBreakdownOptions(
+  transactions: SearchOptionTransaction[],
+  criteria: BreakdownOptionCriteria,
+): string[] {
+  const categoryName = criteria.categoryName.trim();
+  const seen = new Set<string>();
+  const options: string[] = [];
+
+  for (const tx of transactions) {
+    if (!matchesType(tx, criteria.type)) continue;
+    if (categoryName && tx.categoryName !== categoryName) continue;
+    pushUniqueNonEmpty(options, seen, tx.breakdownName);
+  }
+
+  return options;
+}
+
 export function buildHistorySearchStoreOptions(
-  transactions: StoreOptionTransaction[],
+  transactions: SearchOptionTransaction[],
   criteria: StoreOptionCriteria,
 ): string[] {
   const categoryName = criteria.categoryName.trim();

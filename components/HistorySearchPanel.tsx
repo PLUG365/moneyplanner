@@ -15,6 +15,10 @@ import {
     buildHistorySearchConditionSummary,
     type HistorySearchType,
 } from "@/lib/historySearch";
+import {
+    shouldShowHistorySearchCategoryFilter,
+    shouldShowHistorySearchStoreFilter,
+} from "@/lib/historySearchPanelState";
 
 export type HistorySearchDateTarget = "from" | "to";
 
@@ -112,6 +116,8 @@ export default function HistorySearchPanel({
     toDate,
   });
   const hasConditions = summary.count > 0;
+  const showCategoryFilter = shouldShowHistorySearchCategoryFilter(type);
+  const showStoreFilter = shouldShowHistorySearchStoreFilter(type);
 
   // 別のピッカーが開いている状態で切り替えるときは一度閉じてからフレームをまたいで開く
   const pendingTarget = useRef<HistorySearchDateTarget | null>(null);
@@ -242,7 +248,7 @@ export default function HistorySearchPanel({
             </View>
           </ScrollView>
 
-          {type === "all" ? null : (
+          {showCategoryFilter ? (
             <>
               <Text style={[styles.searchLabel, { color: colors.subText }]}>
                 カテゴリ
@@ -358,7 +364,7 @@ export default function HistorySearchPanel({
                 </>
               )}
 
-              {type !== "expense" ? null : (
+              {showStoreFilter ? (
                 <>
                   <Text style={[styles.searchLabel, { color: colors.subText }]}>
                     お店
@@ -423,9 +429,9 @@ export default function HistorySearchPanel({
                     </View>
                   </ScrollView>
                 </>
-              )}
+              ) : null}
             </>
-          )}
+          ) : null}
 
           <Text style={[styles.searchLabel, { color: colors.subText }]}>
             メモ
