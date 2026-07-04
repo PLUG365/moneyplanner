@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildStoreOptionsForCategory, findStoreByName } from "./storeOptions";
+import {
+  buildStoreOptionsForCategory,
+  buildVisibleStorePickerOptions,
+  findStoreByName,
+} from "./storeOptions";
 
 test("buildStoreOptionsForCategory shows all stores and prioritizes stores used with the category", () => {
   const stores = [
@@ -108,4 +112,49 @@ test("findStoreByName matches existing stores by trimmed case-insensitive name",
   ]);
 
   assert.equal(store?.id, "store-1");
+});
+
+test("buildVisibleStorePickerOptions limits visible stores in source order", () => {
+  const stores = Array.from({ length: 45 }, (_, index) => ({
+    id: `store-${index + 1}`,
+    name: `お店${String(index + 1).padStart(2, "0")}`,
+    categoryId: null,
+    lastUsedAt: "2026-06-01T00:00:00.000Z",
+  }));
+
+  const options = buildVisibleStorePickerOptions(stores, "");
+
+  assert.equal(options.length, 40);
+  assert.equal(options[0].id, "store-1");
+  assert.equal(options.at(-1)?.id, "store-40");
+});
+
+test("buildVisibleStorePickerOptions narrows stores by partial search query before limiting", () => {
+  const stores = [
+    {
+      id: "store-1",
+      name: "駅前スーパー",
+      categoryId: null,
+      lastUsedAt: "2026-06-01T00:00:00.000Z",
+    },
+    {
+      id: "store-2",
+      name: "港スーパー",
+      categoryId: null,
+      lastUsedAt: "2026-06-01T00:00:00.000Z",
+    },
+    {
+      id: "store-3",
+      name: "駅ビル薬局",
+      categoryId: null,
+      lastUsedAt: "2026-06-01T00:00:00.000Z",
+    },
+  ];
+
+  assert.deepEqual(
+    buildVisibleStorePickerOptions(stores, " スーパー ").map(
+      (store) => store.id,
+    ),
+    ["store-1", "store-2"],
+  );
 });

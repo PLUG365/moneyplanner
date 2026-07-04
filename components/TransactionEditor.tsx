@@ -27,6 +27,7 @@ import {
     getBreakdownChoicesForCategory,
     getCategoryModalNextStep,
 } from "@/lib/transactionEditorPresentation";
+import { buildVisibleStorePickerOptions } from "@/lib/storeOptions";
 
 type EditorId = string | number;
 
@@ -207,10 +208,7 @@ export default function TransactionEditor({
     breakdownName: selectedBreakdown?.name,
   });
   const filteredStores = useMemo(() => {
-    if (!storeSearchQuery.trim()) return categoryStores;
-    return categoryStores.filter((s) =>
-      s.name.includes(storeSearchQuery.trim()),
-    );
+    return buildVisibleStorePickerOptions(categoryStores, storeSearchQuery);
   }, [categoryStores, storeSearchQuery]);
 
   const exactStoreMatchExists = useMemo(

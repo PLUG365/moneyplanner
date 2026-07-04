@@ -11,6 +11,8 @@ type StoreCategoryUsage = {
   lastUsedAt: string;
 };
 
+export const STORE_PICKER_OPTION_LIMIT = 40;
+
 function normalizeStoreName(name: string): string {
   return name.trim().toLowerCase();
 }
@@ -23,6 +25,26 @@ export function findStoreByName<T extends StoreOption>(
   if (!key) return null;
 
   return stores.find((store) => normalizeStoreName(store.name) === key) ?? null;
+}
+
+export function buildVisibleStorePickerOptions<T extends { name: string }>(
+  stores: T[],
+  searchQuery: string,
+  limit = STORE_PICKER_OPTION_LIMIT,
+): T[] {
+  const query = normalizeStoreName(searchQuery);
+  const options: T[] = [];
+
+  for (const store of stores) {
+    const name = store.name.trim();
+    if (!name) continue;
+    if (query && !normalizeStoreName(name).includes(query)) continue;
+
+    options.push(store);
+    if (options.length >= limit) break;
+  }
+
+  return options;
 }
 
 function pickRecentStore(a: StoreOption, b: StoreOption): StoreOption {
