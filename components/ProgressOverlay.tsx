@@ -98,9 +98,7 @@ export default function ProgressOverlay({
   }, [shown, coinAnims, bagAnim]);
 
   const hasProgress = progress != null && progress.total > 0;
-  const ratio = hasProgress
-    ? Math.min(progress.done / progress.total, 1)
-    : 0;
+  const ratio = hasProgress ? Math.min(progress.done / progress.total, 1) : 0;
   const percent = Math.floor(ratio * 100);
 
   if (!shown) {

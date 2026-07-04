@@ -1,55 +1,55 @@
 import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocFromCache,
-  getDocFromServer,
-  getDocs,
-  getFirestore,
-  increment,
-  limit,
-  orderBy,
-  query,
-  runTransaction,
-  serverTimestamp,
-  setDoc,
-  Timestamp,
-  updateDoc,
-  where,
-  writeBatch,
-  type DocumentData,
+    addDoc,
+    collection,
+    deleteDoc,
+    doc,
+    getDoc,
+    getDocFromCache,
+    getDocFromServer,
+    getDocs,
+    getFirestore,
+    increment,
+    limit,
+    orderBy,
+    query,
+    runTransaction,
+    serverTimestamp,
+    setDoc,
+    Timestamp,
+    updateDoc,
+    where,
+    writeBatch,
+    type DocumentData,
 } from "@react-native-firebase/firestore";
 import { buildAccountBalanceReconciliation } from "./accountBalanceReconciliation";
 import { getHouseholdDeletionCollectionNames } from "./accountDeletion";
 import { getCurrentUser } from "./auth";
 import {
-  buildCategoryDisplayOrderPatch,
-  sortCategoriesForDisplay,
+    buildCategoryDisplayOrderPatch,
+    sortCategoriesForDisplay,
 } from "./categoryOrdering";
 import { getSnapshotDataOrNull, snapshotExists } from "./firestoreSnapshot";
 import { getHouseholdId } from "./household";
 import {
-  buildBudgetMasterRestorePlan,
-  buildStoreMasterRestorePlan,
-  buildTransactionMasterRelinkPatch,
+    buildBudgetMasterRestorePlan,
+    buildStoreMasterRestorePlan,
+    buildTransactionMasterRelinkPatch,
 } from "./masterRelink";
 import { type DataVersion } from "./readFreshness";
 import { buildStoreOptionsForCategory, findStoreByName } from "./storeOptions";
 import {
-  buildBudgetStatusesFromData,
-  buildMonthCategorySummaryFromTransactions,
-  buildYearMonthlyTotalsFromTransactions,
+    buildBudgetStatusesFromData,
+    buildMonthCategorySummaryFromTransactions,
+    buildYearMonthlyTotalsFromTransactions,
 } from "./summaryAggregation";
 import {
-  buildBalanceAdjustmentsForCreate,
-  buildBalanceAdjustmentsForDelete,
-  buildBalanceAdjustmentsForUpdate,
+    buildBalanceAdjustmentsForCreate,
+    buildBalanceAdjustmentsForDelete,
+    buildBalanceAdjustmentsForUpdate,
 } from "./transactionBalance";
 import {
-  buildTransactionWriteMetadata,
-  type TransactionWriteMetadataInput,
+    buildTransactionWriteMetadata,
+    type TransactionWriteMetadataInput,
 } from "./transactionWriteMetadata";
 import { fromYearMonthDate, toYearMonthDate } from "./yearMonthDateRange";
 
