@@ -37,17 +37,32 @@ export type CsvImportPurchaseEnvFlags = {
   envUnlocked: boolean;
 };
 
+// EXPO_PUBLIC_* は「リテラルな process.env.EXPO_PUBLIC_X 式」だけがビルド時に
+// インライン置換される。オブジェクト経由の間接参照（env.EXPO_PUBLIC_X）は
+// 本番バンドルで undefined になりゲートが無効化される（build 26 発見事項 #7）。
+// devではMetroが process.env に実値を注入するため間接参照でも動いてしまい、
+// dev-clientではこの不具合を検出できない点に注意。必ずこの形で読むこと。
+const CSV_IMPORT_IAP_ENABLED_ENV =
+  process.env.EXPO_PUBLIC_CSV_IMPORT_IAP_ENABLED;
+const CSV_IMPORT_UNLOCKED_ENV = process.env.EXPO_PUBLIC_CSV_IMPORT_UNLOCKED;
+
 export function getCsvImportPurchaseEnvFlags(
-  env: CsvImportPurchaseEnv = process.env as CsvImportPurchaseEnv,
+  env?: CsvImportPurchaseEnv,
 ): CsvImportPurchaseEnvFlags {
+  const enabledRaw = env
+    ? env.EXPO_PUBLIC_CSV_IMPORT_IAP_ENABLED
+    : CSV_IMPORT_IAP_ENABLED_ENV;
+  const unlockedRaw = env
+    ? env.EXPO_PUBLIC_CSV_IMPORT_UNLOCKED
+    : CSV_IMPORT_UNLOCKED_ENV;
   return {
-    purchaseRequired: env.EXPO_PUBLIC_CSV_IMPORT_IAP_ENABLED === "1",
-    envUnlocked: env.EXPO_PUBLIC_CSV_IMPORT_UNLOCKED === "1",
+    purchaseRequired: enabledRaw === "1",
+    envUnlocked: unlockedRaw === "1",
   };
 }
 
 export function getCsvImportAccessFromEnv(
-  env: CsvImportPurchaseEnv = process.env as CsvImportPurchaseEnv,
+  env?: CsvImportPurchaseEnv,
 ): CsvImportAccess {
   const flags = getCsvImportPurchaseEnvFlags(env);
   return buildCsvImportAccess({
