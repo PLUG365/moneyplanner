@@ -45,5 +45,8 @@ app-example
 # local Claude worktrees
 .claude/worktrees/
 
+# Codex固有指示（個人運用のためリポジトリ共有しない）
+AGENTS.md
+
 # 参考資料
 参考資料
