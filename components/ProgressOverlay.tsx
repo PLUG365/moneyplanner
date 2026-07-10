@@ -250,5 +250,6 @@ const styles = StyleSheet.create({
   progressText: {
     fontSize: 12,
     marginTop: 8,
+    fontVariant: ["tabular-nums"],
   },
 });

@@ -332,5 +332,10 @@ const styles = StyleSheet.create({
   txMain: { flex: 1, minWidth: 0 },
   txCategory: { fontSize: 15, fontWeight: "700" },
   txMeta: { fontSize: 12, marginTop: 2 },
-  txAmount: { fontSize: 16, fontWeight: "700", marginLeft: 10 },
+  txAmount: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginLeft: 10,
+    fontVariant: ["tabular-nums"],
+  },
 });

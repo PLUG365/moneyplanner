@@ -32,6 +32,7 @@
 
 ## AI指示ファイルの同期
 
+- [CLAUDE.md](CLAUDE.md) と [.github/copilot-instructions.md](.github/copilot-instructions.md) は同格の正典とする。両AIに共通する規則は、同一タスク内で両ファイルへ同じ内容で同期する。
 - 両AIに共通する内容（技術スタック、DB規則、Git規則、ファイル構成、検証方針など）を変更するときは [.github/copilot-instructions.md](.github/copilot-instructions.md) も同時に更新する。
 - Claude Code固有の内容（preview禁止、Claude向け運用制約など）はこのファイルだけに置く。
 

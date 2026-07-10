@@ -138,6 +138,7 @@ erDiagram
         string categoryId FK
         string name
         boolean isDefault
+        number displayOrder
     }
 
     accounts {
@@ -248,7 +249,7 @@ erDiagram
         - updatedAt: Timestamp
 
     /breakdowns/{breakdownId}
-        - categoryId, name, isDefault
+        - categoryId, name, isDefault, displayOrder
         - updatedAt: Timestamp
 
     /transactions/{transactionId}

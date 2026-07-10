@@ -204,7 +204,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 14,
   },
-  previewText: { fontSize: 30, fontWeight: "700", textAlign: "right" },
+  previewText: {
+    fontSize: 30,
+    fontWeight: "700",
+    textAlign: "right",
+    fontVariant: ["tabular-nums"],
+  },
   evaluateButton: {
     marginHorizontal: 12,
     marginTop: 2,
@@ -224,5 +229,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  keyText: { fontSize: 22, fontWeight: "700" },
+  keyText: {
+    fontSize: 22,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
 });

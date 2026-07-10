@@ -860,7 +860,11 @@ const styles = StyleSheet.create({
   summaryRow: { flexDirection: "row", alignItems: "center" },
   summaryItem: { flex: 1, alignItems: "center" },
   summaryLabel: { fontSize: 12, marginBottom: 4 },
-  summaryValue: { fontSize: 16, fontWeight: "700" },
+  summaryValue: {
+    fontSize: 16,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
   summaryDivider: { width: 1, height: 40, backgroundColor: "#E0E0E0" },
   tableCard: {
     borderRadius: 12,
@@ -883,11 +887,19 @@ const styles = StyleSheet.create({
   },
   categoryDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
   categoryName: { flex: 1, fontSize: 14 },
-  categoryAmount: { fontSize: 14, fontWeight: "600" },
+  categoryAmount: {
+    fontSize: 14,
+    fontWeight: "600",
+    fontVariant: ["tabular-nums"],
+  },
   rowChevron: { fontSize: 18, fontWeight: "700", marginLeft: 8 },
   totalRow: { backgroundColor: "rgba(0,0,0,0.03)" },
   totalLabel: { flex: 1, fontSize: 13, fontWeight: "600" },
-  totalAmount: { fontSize: 15, fontWeight: "700" },
+  totalAmount: {
+    fontSize: 15,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
   tableHeaderRow: {
     flexDirection: "row",
     paddingHorizontal: 12,
@@ -903,7 +915,12 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   yearMonthLabel: { flex: 1, fontSize: 14 },
-  yearCell: { flex: 2, fontSize: 13, textAlign: "right" },
+  yearCell: {
+    flex: 2,
+    fontSize: 13,
+    textAlign: "right",
+    fontVariant: ["tabular-nums"],
+  },
   budgetRow: {
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -935,7 +952,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   progressFill: { height: "100%", borderRadius: 999 },
-  budgetDetailText: { fontSize: 12, fontWeight: "600", marginBottom: 2 },
+  budgetDetailText: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginBottom: 2,
+    fontVariant: ["tabular-nums"],
+  },
   inlineDatePickerWrap: {
     marginBottom: 8,
     borderWidth: 1,

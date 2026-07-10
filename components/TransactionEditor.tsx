@@ -974,7 +974,11 @@ const styles = StyleSheet.create({
   amountRow: { flexDirection: "row", alignItems: "center" },
   yen: { fontSize: 28, fontWeight: "700", marginRight: 4 },
   amountInputButton: { flex: 1, minHeight: 44, justifyContent: "center" },
-  amountInputText: { fontSize: 36, fontWeight: "700" },
+  amountInputText: {
+    fontSize: 36,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
   dateText: { fontSize: 18, fontWeight: "500" },
   selectorButton: {
     borderWidth: 1.5,
@@ -1072,7 +1076,11 @@ const styles = StyleSheet.create({
   },
   fullCategoryDot: { width: 10, height: 10, borderRadius: 5, marginRight: 10 },
   fullCategoryName: { flex: 1, fontSize: 16, fontWeight: "600" },
-  fullCategorySelected: { fontSize: 13, fontWeight: "700" },
+  fullCategorySelected: {
+    fontSize: 13,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
   modalBackRow: {
     borderWidth: 1,
     borderRadius: 12,

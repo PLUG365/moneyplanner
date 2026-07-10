@@ -22,6 +22,7 @@ import TransactionEditor from "@/components/TransactionEditor";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useCachedStoreOptions } from "@/hooks/useCachedStoreOptions";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
+import { sortBreakdownsForDisplay } from "@/lib/breakdownOrdering";
 import {
     Account,
     addTransaction,
@@ -127,11 +128,7 @@ export default function RecordScreen() {
     [categorySubscription.data],
   );
   const breakdowns = useMemo(
-    () =>
-      [...breakdownSubscription.data].sort((a, b) => {
-        if (a.isDefault !== b.isDefault) return b.isDefault ? 1 : -1;
-        return a.name.localeCompare(b.name);
-      }),
+    () => sortBreakdownsForDisplay(breakdownSubscription.data),
     [breakdownSubscription.data],
   );
   const selectedAccount = useMemo(

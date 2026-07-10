@@ -31,6 +31,7 @@
 
 ## AI指示ファイルの同期
 
+- [CLAUDE.md](../CLAUDE.md) と [.github/copilot-instructions.md](copilot-instructions.md) は同格の正典とする。両AIに共通する規則は、同一タスク内で両ファイルへ同じ内容で同期する。
 - 両AIに共通する内容（技術スタック、DB規則、Git規則、ファイル構成、検証方針など）を変更するときは [CLAUDE.md](../CLAUDE.md) も同時に更新する。
 - Copilot CLI / VS Code エージェントモード固有の運用メモはこのファイルではなく [docs/copilot-cli-workflows.md](../docs/copilot-cli-workflows.md) に置く。
 

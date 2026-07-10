@@ -25,6 +25,10 @@ import { buildAccountBalanceReconciliation } from "./accountBalanceReconciliatio
 import { getHouseholdDeletionCollectionNames } from "./accountDeletion";
 import { getCurrentUser } from "./auth";
 import {
+  buildBreakdownDisplayOrderPatch,
+  sortBreakdownsForDisplay,
+} from "./breakdownOrdering";
+import {
     buildCategoryDisplayOrderPatch,
     sortCategoriesForDisplay,
 } from "./categoryOrdering";
@@ -102,6 +106,7 @@ export interface Breakdown {
   categoryId: string;
   name: string;
   isDefault: boolean;
+  displayOrder: number | null;
 }
 
 export interface Account {
@@ -471,6 +476,8 @@ export function mapBreakdown(id: string, data: DocumentData): Breakdown {
     categoryId: data.categoryId,
     name: data.name,
     isDefault: !!data.isDefault,
+    displayOrder:
+      typeof data.displayOrder === "number" ? data.displayOrder : null,
   };
 }
 
@@ -727,12 +734,13 @@ export async function initFirestore(): Promise<void> {
       updatedAt: serverTimestamp(),
     });
 
-    for (const breakdownName of cat.breakdowns) {
+    for (const [displayOrder, breakdownName] of cat.breakdowns.entries()) {
       const bdRef = doc(collection(hDoc, "breakdowns"));
       batch.set(bdRef, {
         categoryId: catRef.id,
         name: breakdownName,
         isDefault: true,
+        displayOrder,
         updatedAt: serverTimestamp(),
       });
     }
@@ -900,19 +908,21 @@ export async function resetCategoryAndBreakdownsToDefault(): Promise<void> {
         updatedAt: serverTimestamp(),
       }),
     );
-    for (const breakdownName of cat.breakdowns) {
+    for (const [displayOrder, breakdownName] of cat.breakdowns.entries()) {
       const bdRef = doc(collection(hDoc, "breakdowns"));
       relinkBreakdowns.push({
         id: bdRef.id,
         categoryId: catRef.id,
         name: breakdownName,
         isDefault: true,
+        displayOrder,
       });
       createOps.push((batch) =>
         batch.set(bdRef, {
           categoryId: catRef.id,
           name: breakdownName,
           isDefault: true,
+          displayOrder,
           updatedAt: serverTimestamp(),
         }),
       );
@@ -1130,18 +1140,17 @@ export async function getBreakdownsByCategory(
       where("categoryId", "==", categoryId),
     ),
   );
-  return snap.docs
-    .map((doc) => mapBreakdown(doc.id, doc.data()))
-    .sort((a, b) => {
-      if (a.isDefault !== b.isDefault) return b.isDefault ? 1 : -1;
-      return a.name.localeCompare(b.name);
-    });
+  return sortBreakdownsForDisplay(
+    snap.docs.map((doc) => mapBreakdown(doc.id, doc.data())),
+  );
 }
 
 export async function getAllBreakdowns(): Promise<Breakdown[]> {
   const hDoc = await householdDoc();
   const snap = await getDocs(collection(hDoc, "breakdowns"));
-  return snap.docs.map((doc) => mapBreakdown(doc.id, doc.data()));
+  return sortBreakdownsForDisplay(
+    snap.docs.map((doc) => mapBreakdown(doc.id, doc.data())),
+  );
 }
 
 export async function addBreakdown(
@@ -1149,13 +1158,39 @@ export async function addBreakdown(
   name: string,
 ): Promise<string> {
   const hDoc = await householdDoc();
+  const categoryBreakdownsSnap = await getDocs(
+    query(
+      collection(hDoc, "breakdowns"),
+      where("categoryId", "==", categoryId),
+    ),
+  );
+  const displayOrder = categoryBreakdownsSnap.docs.reduce((maxOrder, doc) => {
+    const value = doc.data().displayOrder;
+    return typeof value === "number" ? Math.max(maxOrder, value + 1) : maxOrder;
+  }, categoryBreakdownsSnap.size);
   const ref = await addDoc(collection(hDoc, "breakdowns"), {
     categoryId,
     name,
     isDefault: false,
+    displayOrder,
     updatedAt: serverTimestamp(),
   });
   return ref.id;
+}
+
+export async function updateBreakdownDisplayOrders(
+  breakdowns: Breakdown[],
+): Promise<void> {
+  const hDoc = await householdDoc();
+  const patch = buildBreakdownDisplayOrderPatch(breakdowns);
+  const ops: BatchOp[] = patch.map(
+    (item) => (batch) =>
+      batch.update(doc(collection(hDoc, "breakdowns"), item.id), {
+        displayOrder: item.displayOrder,
+        updatedAt: serverTimestamp(),
+      }),
+  );
+  await commitBatchOps(ops);
 }
 
 export async function updateBreakdown(id: string, name: string): Promise<void> {

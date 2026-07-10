@@ -42,7 +42,6 @@ import {
     reauthenticateCurrentUserWithApple,
     signOut,
 } from "@/lib/auth";
-import { } from "@/lib/categoryOrdering";
 import { exportCSV } from "@/lib/csvExport";
 import { formatImportErrors, prepareCsvImport } from "@/lib/csvImport";
 import {
@@ -73,6 +72,7 @@ import {
     updateAccountBalance,
     updateAccountName,
     updateBreakdown,
+    updateBreakdownDisplayOrders,
     updateCategory,
     updateCategoryDisplayOrders,
 } from "@/lib/firestore";
@@ -397,6 +397,46 @@ export default function SettingsScreen() {
         if (buttonIndex === positionOptions.length) return;
         if (buttonIndex === currentIndex) return;
         void handleMoveCategoryToIndex(categoryId, buttonIndex);
+      },
+    );
+  };
+
+  const handleMoveBreakdownToIndex = async (
+    breakdownId: string,
+    toIndex: number,
+  ) => {
+    if (!guardSettingsWrite()) return;
+
+    const sorted = [...breakdowns];
+    const fromIndex = sorted.findIndex(
+      (breakdown) => breakdown.id === breakdownId,
+    );
+    if (fromIndex < 0 || fromIndex === toIndex) return;
+
+    const [moved] = sorted.splice(fromIndex, 1);
+    sorted.splice(toIndex, 0, moved);
+
+    setBreakdowns(sorted);
+    await updateBreakdownDisplayOrders(sorted);
+    await reloadBreakdowns(selectedCategoryId);
+  };
+
+  const handleOpenBreakdownOrderPicker = (
+    breakdownId: string,
+    currentIndex: number,
+  ) => {
+    if (isSettingsWriteDisabled) return;
+    const positionOptions = breakdowns.map((_, index) => `${index + 1}番目`);
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        options: [...positionOptions, "キャンセル"],
+        cancelButtonIndex: positionOptions.length,
+        title: "並び順を選択",
+      },
+      (buttonIndex) => {
+        if (buttonIndex === positionOptions.length) return;
+        if (buttonIndex === currentIndex) return;
+        void handleMoveBreakdownToIndex(breakdownId, buttonIndex);
       },
     );
   };
@@ -2178,7 +2218,7 @@ export default function SettingsScreen() {
                   </Text>
                   {selectedCategory ? (
                     breakdowns.length > 0 ? (
-                      breakdowns.map((item) => (
+                      breakdowns.map((item, breakdownIndex) => (
                         <View
                           key={item.id}
                           style={[
@@ -2186,6 +2226,29 @@ export default function SettingsScreen() {
                             { borderColor: colors.border },
                           ]}
                         >
+                          <TouchableOpacity
+                            style={[
+                              styles.orderBadge,
+                              { borderColor: colors.border },
+                              isSettingsWriteDisabled && { opacity: 0.35 },
+                            ]}
+                            disabled={isSettingsWriteDisabled}
+                            onPress={() =>
+                              handleOpenBreakdownOrderPicker(
+                                item.id,
+                                breakdownIndex,
+                              )
+                            }
+                          >
+                            <Text
+                              style={[
+                                styles.orderBadgeText,
+                                { color: colors.tint },
+                              ]}
+                            >
+                              {breakdownIndex + 1}
+                            </Text>
+                          </TouchableOpacity>
                           <Text
                             style={[styles.itemName, { color: colors.text }]}
                           >
@@ -2970,7 +3033,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   accountInfoWrap: { flex: 1 },
-  accountBalanceText: { fontSize: 12, marginTop: 2 },
+  accountBalanceText: {
+    fontSize: 12,
+    marginTop: 2,
+    fontVariant: ["tabular-nums"],
+  },
   orderBadge: {
     width: 30,
     height: 30,
@@ -2980,7 +3047,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 8,
   },
-  orderBadgeText: { fontSize: 14, fontWeight: "700" },
+  orderBadgeText: {
+    fontSize: 14,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
   categoryDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
   itemName: { flex: 1, fontSize: 15 },
   itemAction: { fontSize: 13, fontWeight: "600", marginRight: 10 },
@@ -3002,6 +3073,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
     minWidth: 48,
     textAlign: "right",
+    fontVariant: ["tabular-nums"],
   },
   textInput: {
     borderWidth: 1,
@@ -3014,7 +3086,7 @@ const styles = StyleSheet.create({
     minHeight: 43,
     justifyContent: "center",
   },
-  numericInputButtonText: { fontSize: 15 },
+  numericInputButtonText: { fontSize: 15, fontVariant: ["tabular-nums"] },
   inlineClearButton: {
     alignSelf: "flex-start",
     borderWidth: 1,

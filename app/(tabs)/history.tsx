@@ -34,6 +34,7 @@ import { useCachedStoreOptions } from "@/hooks/useCachedStoreOptions";
 import { useCachedTransactions } from "@/hooks/useCachedTransactions";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
 import { usePaginatedTransactions } from "@/hooks/usePaginatedTransactions";
+import { sortBreakdownsForDisplay } from "@/lib/breakdownOrdering";
 import {
     Account,
     addTransaction,
@@ -309,11 +310,7 @@ export default function HistoryScreen() {
     [categorySubscription.data],
   );
   const breakdownOptions = useMemo(
-    () =>
-      [...breakdownSubscription.data].sort((a, b) => {
-        if (a.isDefault !== b.isDefault) return b.isDefault ? 1 : -1;
-        return a.name.localeCompare(b.name);
-      }),
+    () => sortBreakdownsForDisplay(breakdownSubscription.data),
     [breakdownSubscription.data],
   );
   const breakdownsByCategory = useMemo(
@@ -1684,7 +1681,11 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   txMetaText: { fontSize: 12, flexShrink: 1 },
-  txAmount: { fontSize: 16, fontWeight: "700" },
+  txAmount: {
+    fontSize: 16,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+  },
   actionButtons: {
     flexDirection: "row",
     alignItems: "center",
@@ -1809,7 +1810,11 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   uncopiedTitle: { fontSize: 13, fontWeight: "700" },
-  uncopiedMeta: { fontSize: 12, marginTop: 2 },
+  uncopiedMeta: {
+    fontSize: 12,
+    marginTop: 2,
+    fontVariant: ["tabular-nums"],
+  },
   modalOverlay: {
     flex: 1,
     justifyContent: "flex-end",
