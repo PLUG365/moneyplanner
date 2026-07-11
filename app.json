@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "moneyplanner",
+    "name": "mina - みんなの家計簿",
     "slug": "moneyplanner",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -16,13 +16,14 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleDevelopmentRegion": "ja",
-        "CFBundleLocalizations": ["ja"]
+        "CFBundleLocalizations": ["ja"],
+        "FIREBASE_ANALYTICS_COLLECTION_DEACTIVATED": true
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#F8F4F2"
       },
       "edgeToEdgeEnabled": true
     },
@@ -39,7 +40,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#F8F4F2"
         }
       ],
       "@react-native-firebase/app",

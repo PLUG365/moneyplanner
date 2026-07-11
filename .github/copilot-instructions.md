@@ -29,6 +29,13 @@
 - 仕様差分が出たら [PLAN.md](../PLAN.md)、[ARCHITECTURE.md](../ARCHITECTURE.md)、[docs/ai-development.md](../docs/ai-development.md)、必要に応じて [docs/decisions/](../docs/decisions/) を更新する。
 - 重要な設計判断、方針転換、採用/不採用理由はADRとして [docs/decisions/](../docs/decisions/) に残す。
 
+## Vaultへの進捗記録
+
+- ユーザーへ作業進捗を報告するタスクでは、主要な決定・実施内容・ブロッカーを作業区切りごとにVaultへ簡潔に記録する。
+- 記録先は `C:\Users\rnmgy\iCloudDrive\iCloud~md~obsidian\MyVault\00_Inbox\moneyplanner リリース・ブランド進捗.md` を基本とし、重要な決定は同日の `10_Daily\YYYY-MM-DD.md` にも追記する。
+- Vaultへ書き込む前にVault側の `AGENTS.md` と `90_Meta\AGENTS.md` を読み、既存ノートの大規模書き換えを避け、追記・新規作成で競合を避ける。
+- 秘密情報、認証情報、個人情報はVaultへ記録しない。
+
 ## AI指示ファイルの同期
 
 - [CLAUDE.md](../CLAUDE.md) と [.github/copilot-instructions.md](copilot-instructions.md) は同格の正典とする。両AIに共通する規則は、同一タスク内で両ファイルへ同じ内容で同期する。
