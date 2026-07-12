@@ -97,10 +97,31 @@ App Store Connectの最終入力と公開プライバシーポリシーの確定
 
 **2026-07-11時点の決定: 選択肢2（Analytics収集の無効化）で進める。** [app.json](../app.json) の `ios.infoPlist` に `FIREBASE_ANALYTICS_COLLECTION_DEACTIVATED: true` を追加済み。このキーはFirebase公式のAnalytics収集の恒久停止フラグで、`GOOGLE_ANALYTICS_IDFV_COLLECTION_ENABLED`等の個別キーより優先される。ビルド時設定のため、次回EAS production buildから反映される。
 
+## build 33 archive inspection で確認した事実（2026-07-12）
+
+EAS production build 33（build ID `9d6e206e-18df-424d-a8bd-131603c99842`、コミット `1ba081a`）のIPAをread-onlyで検査した。これは実行時通信を検証したものではない。
+
+- `Info.plist` に **`FIREBASE_ANALYTICS_COLLECTION_DEACTIVATED = true` が反映されている**ことを確認した。build 31で不在だった本キーが、[app.json](../app.json) の設定どおりproduction archiveへ焼き込まれている。
+- `FIREBASE_ANALYTICS_COLLECTION_ENABLED`、`GOOGLE_ANALYTICS_IDFV_COLLECTION_ENABLED` は存在しない（DEACTIVATEDが単独で有効な状態）。
+- `CFBundleDisplayName` は `NANBO - みんなの家計簿`、`CFBundleVersion` は `33`、`CFBundleShortVersionString` は `1.0.0`、`CFBundleDevelopmentRegion` は `ja`、`CFBundleLocalizations` は `[ja]`。Payloadは `NANBO.app`（build 31の `mina.app` から変更）。
+- メイン実行ファイルの文字列検索: `FIRAnalytics` 6件・`FirebaseAnalytics` 1件（interop由来の想定内の残存。監査方針どおりシンボル消失は再確認の基準にしない）。収集エンジン特有の `GoogleAppMeasurement`/`APMMeasurement`/`FIRAEventLogger`/`FIRAEvent`/`GoogleSignals` はいずれも0件。広告系 `ASIdentifierManager`/`GADApplicationIdentifier` も0件。
+- Privacy Manifestバンドル構成はbuild 31と同一系統（FirebaseAuth/Firestore/Core系のみ）で、`FirebaseAnalytics`/`GoogleAppMeasurement` 名のPrivacy Manifestバンドルは存在しない。
+
+以上により「次回buildのproduction archive再確認」は完了。残る実行時確認はTestFlight実機でのDebugView/リアルタイムレポート確認のみ。
+
+## Google Analytics実行時データの確認（2026-07-12、人間確認）
+
+Firebase Console / Google Analyticsのレポート（プロパティ `moneyplanner-a070b`、期間 2026-06-01〜2026-07-12）をユーザーが確認した。
+
+- アクティブユーザー（30日/7日/1日）はすべて0、アプリのバージョン別アクティブユーザーも「データがありません」、過去30分のアクティブユーザーも0。
+- この期間には、build 30/31のTestFlight実機確認(2026-07-11）とdev-clientでの継続的なテスト利用が含まれる。収集エンジンが動作していれば何らかのイベントが記録されているはずの期間に、記録が一切ない。
+- したがって、「GoogleAppMeasurement（収集エンジン）はリンクされておらず、interopの参照だけが残っている」というbuild 31追加確認の仮説が、実行時データでも裏付けられた。Analytics収集は導入当初から一度も発生していなかったと判断する。
+- この結果により、`FIREBASE_ANALYTICS_COLLECTION_DEACTIVATED` は「エンジンが実在しない場合は無害」のケースに該当し、保険として維持する。プライバシー栄養表示にAnalytics由来のデータ型（`Product Interaction`、`Coarse Location`、`Other Diagnostic Data`のAnalytics用途）を含めない判断が確定した。
+
 未完了（人間レビュー対象）:
 
-- 次回buildの production archiveをinspectし、`Info.plist`に`FIREBASE_ANALYTICS_COLLECTION_DEACTIVATED`が反映されていることを確認する。ただしこのキーは実行時の収集停止フラグであり、リンク時に依存する`FIRAnalytics`関連シンボルやFirebaseAuth/Firestoreのinterop依存自体は次回buildでも残る。シンボルの消失を再確認の基準にしない。
-- 収集が実際に止まったかは静的解析では確定できないため、Firebase Console（Analytics DebugViewやリアルタイムレポート）で新build起動後にイベントが記録されないことをTestFlight実機で確認する。
+- ~~次回buildの production archiveをinspectし、`Info.plist`に`FIREBASE_ANALYTICS_COLLECTION_DEACTIVATED`が反映されていることを確認する。~~ → 2026-07-12、build 33で確認完了（上記）。
+- ~~収集が実際に止まったかは静的解析では確定できないため、Firebase Console（Analytics DebugViewやリアルタイムレポート）で新build起動後にイベントが記録されないことをTestFlight実機で確認する。~~ → 2026-07-12、上記のGoogle Analyticsレポート確認（テスト利用を含む6週間でイベント0）により、そもそも収集が一度も発生していなかったことを確認済み。build 33実機確認時にリアルタイムレポートを一瞥すれば十分で、独立のブロッカーとしては解消。
 - 上表のデータ型候補のうち、`Product Interaction`と`Coarse Location`はGoogle Analytics（GoogleAppMeasurement）由来のため、上記の無効化確認結果を踏まえて確定する。
 - `Other Diagnostic Data`はFirebaseAuth/FirebaseFirestoreのPrivacy Manifestに由来し、Analytics無効化の影響を受けず今回のbuildでも引き続き宣言されるため、Analyticsの判断とは切り離して別途確定する。
 - プライバシーポリシーの記載を、上記の確定結果に合わせて更新する。
