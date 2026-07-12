@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(gh run *)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\rnmgy\\iCloudDrive\\iCloud~md~obsidian\\MyVault\\00_Inbox"
     ]
   }
 }
