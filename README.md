@@ -75,7 +75,7 @@ npx expo start --tunnel
 | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)                               | OSSライセンス表記とproduction依存ライセンス一覧への入口                           |
 | [docs/third-party-licenses.csv](docs/third-party-licenses.csv)                 | production依存の生成済みライセンス一覧                                            |
 | [docs/privacy-policy.md](docs/privacy-policy.md)                               | App Store提出用プライバシーポリシー本文                                           |
-| [site/](site/)                                                                   | GitHub Pagesで公開する紹介、プライバシー、サポートサイトのソース                  |
+| [site/](site/)                                                                 | GitHub Pagesで公開する紹介、プライバシー、サポートサイトのソース                  |
 | [docs/privacy-and-monetization.md](docs/privacy-and-monetization.md)           | 課金、プライバシー、問い合わせ、本番データ閲覧制限の方針                          |
 | [docs/app-store-submission-draft.md](docs/app-store-submission-draft.md)       | App Store提出メタデータ（栄養表示・出典・課金/返金説明など）のドラフト            |
 | [docs/firestore-read-and-index-plan.md](docs/firestore-read-and-index-plan.md) | Firestore読み取り回数の見積もり、必要インデックス、課金アラートランブック         |
@@ -102,8 +102,8 @@ npx expo start --tunnel
 
 - ✅ Phase 1 — コア機能（完了）
 - ✅ Phase 2 — 予算/アラート（完了。ライフプラン機能は廃止 → [docs/decisions/plan-feature-retirement.md](docs/decisions/plan-feature-retirement.md)）
-- 🚧 Phase 3 — Cloud Firestore + Apple Sign-Inによる家族共有（実装および既存TestFlight検証は完了。現行 `NANBO - みんなの家計簿` の次回TestFlight確認は未完了。確認項目は [docs/testflight-history.md](docs/testflight-history.md) 参照）
-- 🔲 Phase 4 — App Store配布
+- ✅ Phase 3 — Cloud Firestore + Apple Sign-Inによる家族共有（完了。現行 `NANBO - みんなの家計簿` のTestFlight実機確認はbuild 33で完了 → [docs/testflight-history.md](docs/testflight-history.md)）
+- 🚧 Phase 4 — App Store配布（2026-07-14、バージョン1.0〈build 34〉を審査提出済み。審査通過後に手動リリース予定）
 
 ## ライセンス
 
