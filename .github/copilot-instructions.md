@@ -9,8 +9,11 @@
 - Cloud Firestoreを正とする。`lib/database.ts`、`expo-sqlite`、SQLite APIを新規追加しない。
 - 世帯（household）単位のデータ分離、Apple Sign-In + Firebase Auth、Firestore Security Rulesを壊さない。
 - `git push` はユーザーが明示的に指示したときだけ行う。
+- `npx eas build`、`npx eas build:inspect`、EAS submitは、この会話でユーザーから明示的に指示された後にのみ実行する。`continue`、リリース準備、pre-buildゲートの通過、テスト完了から実行を推測してはならない。ローカルの非EAS静的チェックは実行してよい。
+- 予期しない警告またはテスト上の所見は先に報告し、アクティブなセキュリティインシデントを除き、ユーザーの明示的な指示なしにスコープを拡大したり、依存関係変更や外部呼び出しを行ったりしない。
 - 本番データ、秘密情報、認証情報、個人情報をAI/外部ツールへ渡さない。
 - Security Rules、Auth/App Check、世帯参加/解除、データ削除、課金、暗号化、プライバシーに触る変更は人間レビュー必須として扱う。
+- 一つのまとまったタスクの開始時は必須の正典ガイダンスを一度読み、要約を保持して以後の判断に使う。同一タスク中は長文指示・監査文書・ツールログを通読し直さず、具体的な判断・ファイル・検証で必要な箇所だけを参照する。新しいユーザー依頼だけでは全体再読を要さず、タスクが実質的に変化した、ガイダンス更新の可能性がある、または要約が不足した場合だけ更新する。この運用は必須の初回読了および安全性・プライバシー確認を免除しない。
 
 ## 実装方針
 
@@ -28,13 +31,6 @@
 - 実機確認が必要な変更は、最終回答でTestFlight/dev-client確認項目を明記する。
 - 仕様差分が出たら [PLAN.md](../PLAN.md)、[ARCHITECTURE.md](../ARCHITECTURE.md)、[docs/ai-development.md](../docs/ai-development.md)、必要に応じて [docs/decisions/](../docs/decisions/) を更新する。
 - 重要な設計判断、方針転換、採用/不採用理由はADRとして [docs/decisions/](../docs/decisions/) に残す。
-
-## Vaultへの進捗記録
-
-- ユーザーへ作業進捗を報告するタスクでは、主要な決定・実施内容・ブロッカーを作業区切りごとにVaultへ簡潔に記録する。
-- 記録先は `C:\Users\rnmgy\iCloudDrive\iCloud~md~obsidian\MyVault\00_Inbox\moneyplanner リリース・ブランド進捗.md` を基本とし、重要な決定は同日の `10_Daily\YYYY-MM-DD.md` にも追記する。
-- Vaultへ書き込む前にVault側の `AGENTS.md` と `90_Meta\AGENTS.md` を読み、既存ノートの大規模書き換えを避け、追記・新規作成で競合を避ける。
-- 秘密情報、認証情報、個人情報はVaultへ記録しない。
 
 ## AI指示ファイルの同期
 

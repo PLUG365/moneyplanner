@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="tako" cx="0.38" cy="0.32" r="0.85">
+      <stop offset="0" stop-color="#F0C05E"></stop>
+      <stop offset="0.65" stop-color="#D99A3C"></stop>
+      <stop offset="1" stop-color="#B87424"></stop>
+    </radialGradient>
+    <filter id="coinShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#1F1808" flood-opacity="0.35"></feDropShadow>
+    </filter>
+    <clipPath id="ball">
+      <circle cx="256" cy="256" r="192"></circle>
+    </clipPath>
+  </defs>
+
+
+  <rect width="512" height="512" fill="#E7B84C"></rect>
+  <polygon points="512,0 512,512 0,512" fill="#3D3018"></polygon>
+
+
+  <circle cx="256" cy="256" r="192" fill="url(#tako)" filter="url(#coinShadow)"></circle>
+
+  <g clip-path="url(#ball)">
+
+    <path d="M64 60 Q120 20 256 20 Q392 20 448 60 L448 118 Q430 152 412 120 Q396 92 382 132 Q370 166 354 128 Q340 94 326 138 Q314 174 298 132 Q284 94 270 140 Q258 178 242 134 Q228 96 214 138 Q202 172 186 130 Q172 92 158 134 Q146 168 130 126 Q116 92 100 128 Q86 158 64 118 Z" fill="#5A2E10" opacity="0.92"></path>
+
+
+    <g fill="#4E7C2E">
+      <rect x="140" y="104" width="24" height="9" rx="4.5" transform="rotate(-24 152 108)"></rect>
+      <rect x="236" y="92" width="26" height="9" rx="4.5" transform="rotate(16 249 96)"></rect>
+      <rect x="330" y="108" width="24" height="9" rx="4.5" transform="rotate(-32 342 112)"></rect>
+      <rect x="190" y="140" width="24" height="9" rx="4.5" transform="rotate(34 202 144)"></rect>
+      <rect x="292" y="136" width="24" height="9" rx="4.5" transform="rotate(-14 304 140)"></rect>
+      <rect x="382" y="120" width="22" height="9" rx="4.5" transform="rotate(24 393 124)"></rect>
+    </g>
+  </g>
+
+
+  <text x="256" y="352" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-weight="900" font-size="200" fill="#3B2408" stroke="#FCF3DA" stroke-width="10" paint-order="stroke" stroke-linejoin="round">¥</text>
+</svg>

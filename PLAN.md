@@ -21,7 +21,7 @@
 - 予算アラート: カテゴリ別の共通予算、進捗表示、注意/超過トースト通知
 - CSV出力: BOM付きUTF-8（Excel対応）、任意タイミングで書き出し
 - CSV取り込み: エクスポート形式のCSVを設定タブから一括取り込み（詳細は「CSV入出力仕様」）
-- 家族共有: 世帯単位、Cloud Firestore + Apple Sign-In（Phase 3実装済み、TestFlight検証中）
+- 家族共有: 世帯単位、Cloud Firestore + Apple Sign-In（Phase 3実装および既存機能検証は完了。現行NANBOの次回TestFlight確認は未完了）
 - 招待QRコード: 招待コードを設定タブ・世帯作成画面でQR表示し、参加画面でカメラ読み取りできる（2026-07-03実装。生成は純JS `lib/inviteQr.ts`、読み取りは expo-camera を遅延ロード）
 
 ### 画面構成（タブ4つ）
@@ -66,18 +66,20 @@
 
 > 予算アラートUI方針の詳細は実装コミット履歴と `app/(tabs)/summary.tsx` を参照。ライフプラン機能（旧 Phase 2-2）は廃止済み → [docs/decisions/plan-feature-retirement.md](docs/decisions/plan-feature-retirement.md)
 
-### 🚧 Phase 3 — 家族共有（Firebase移行・TestFlight検証中）
+### 🚧 Phase 3 — 家族共有（Firebase移行・既存機能検証完了、現行NANBO TestFlight確認待ち）
 
 #### 方針転換の経緯・採用技術
 
 iCloud Drive + SQLite を断念して Cloud Firestore + Apple Sign-In へ移行した判断理由、旧調査メモ、採用技術は [docs/decisions/firestore-migration.md](docs/decisions/firestore-migration.md) を参照する。
 
-> 現在はSQLite置換実装とEAS production buildの作成実績は完了済み。known-issues.md の課題対応も完了し、dev-clientで実機確認済み。TestFlight build 24 で招待コード参加承認フローの修正を確認済み（申請キャンセル動作など一部項目は未確認）。検証履歴と残り確認項目は [docs/testflight-history.md](docs/testflight-history.md) を参照。
+> SQLite置換実装、known-issues.mdの課題対応、既存の世帯共有・招待機能の検証は完了済み。build 24〜31の既存検証は完了しているが、build 31は旧ブランド `mina - みんなの家計簿` の履歴である。現行 `NANBO - みんなの家計簿` のproduction build作成およびTestFlight確認は未実施。検証履歴と次回確認項目は [docs/testflight-history.md](docs/testflight-history.md) を参照。
 
-#### 直近の完了と次アクション（2026-05-10）
+#### 現在のリリース状況（2026-07-12）
 
-- [x] `docs/known-issues.md` のA〜H項目をすべて対応完了
-- [x] 上記対応をdev-client実機で確認し、重大な操作不具合なし
+- [x] 既存の世帯共有・招待機能の確認を完了
+- [x] build 31の旧ブランド `mina - みんなの家計簿` としての確認を完了
+- [ ] 現行 `NANBO - みんなの家計簿` のproduction buildを作成
+- [ ] 次回NANBO TestFlightで現行ブランド、世帯共有継続、Analytics収集無効化のリリースゲートを確認
 
 #### Firestore データモデル
 

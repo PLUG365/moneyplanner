@@ -2,7 +2,16 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { signInWithApple } from "@/lib/auth";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useState } from "react";
-import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+
+const appIcon = require("@/assets/images/icon.png");
 
 export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
@@ -23,15 +32,25 @@ export default function AuthScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.appName, { color: colors.tint }]}>moneyplanner</Text>
-      <Text style={[styles.subtitle, { color: colors.subText }]}>
-        世帯の家計簿を家族で共有
-      </Text>
+      <View style={styles.brandArea}>
+        <View style={styles.brandBlock}>
+          <Image
+            source={appIcon}
+            style={styles.appIcon}
+            accessibilityLabel="NANBO"
+          />
+          <Text style={[styles.appName, { color: colors.text }]}>NANBO</Text>
+          <Text style={[styles.subtitle, { color: colors.subText }]}>みんなの家計簿</Text>
+        </View>
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+      </View>
 
-      <View style={styles.buttonContainer}>
-        {loading ? (
-          <ActivityIndicator size="large" color={colors.tint} />
-        ) : (
+      <View style={styles.actionArea}>
+        <View
+          style={styles.appleButtonContainer}
+          pointerEvents={loading ? "none" : "auto"}
+          accessibilityState={{ busy: loading, disabled: loading }}
+        >
           <AppleAuthentication.AppleAuthenticationButton
             buttonType={
               AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
@@ -44,8 +63,14 @@ export default function AuthScreen() {
             cornerRadius={12}
             style={styles.appleButton}
             onPress={handleSignIn}
+            accessibilityState={{ busy: loading, disabled: loading }}
           />
-        )}
+          {loading && (
+            <View style={styles.loadingOverlay} pointerEvents="none">
+              <ActivityIndicator size="small" color={colors.tint} />
+            </View>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -54,21 +79,49 @@ export default function AuthScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingHorizontal: 32,
+    paddingTop: 48,
+    paddingBottom: 40,
+  },
+  brandArea: {
+    flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 32,
+  },
+  brandBlock: {
+    alignItems: "center",
+  },
+  appIcon: {
+    width: 104,
+    height: 104,
+    borderRadius: 24,
+    marginBottom: 24,
   },
   appName: {
-    fontSize: 32,
+    fontSize: 30,
     fontWeight: "700",
-    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 16,
-    marginBottom: 48,
+    fontSize: 15,
+    marginTop: 8,
   },
-  buttonContainer: {
+  divider: {
+    width: 96,
+    height: StyleSheet.hairlineWidth,
+    marginTop: 40,
+  },
+  actionArea: {
     height: 56,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  appleButtonContainer: {
+    width: 280,
+    height: 52,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
     justifyContent: "center",
   },
   appleButton: {

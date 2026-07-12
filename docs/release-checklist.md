@@ -86,9 +86,11 @@ npx eas submit --platform ios --profile production --id <EAS_BUILD_ID> --non-int
 App Storeへの提出に必要なメタデータ・スクリーンショット・課金/返金説明・プライバシー栄養表示の本文は [docs/app-store-submission-draft.md](app-store-submission-draft.md) を正とする。本セクションは「実施タスク」のみを管理する。
 
 - [x] Apple Developer Program 登録（TestFlight配布実績あり＝登録済み。有料IAP提供には別途 App Store Connect の有料App契約〈Paid Applications Agreement〉締結が必要）
-- [x] アプリアイコン・スプラッシュスクリーン（build 31のTestFlightで2026-07-11に確認完了）
-- [x] App Storeの言語表示を日本語にする（`app.json` の `infoPlist` に `CFBundleDevelopmentRegion: ja` / `CFBundleLocalizations: [ja]` を設定済み〈2026-07-03〉。未設定だとバイナリの宣言が英語扱いになり、ストアの言語欄が「EN」と表示される）
-- [x] EAS production build を作成（build 31を2026-07-11にTestFlightで実機確認完了。手順は本書「TestFlightビルド発行手順」参照）
+- [ ] GitHub Pagesの紹介・プライバシー・サポートサイトを公開し、各URLを確認する
+- [ ] 現行 `NANBO - みんなの家計簿` のアプリアイコン・スプラッシュスクリーンを確認する（build 31は旧ブランド `mina - みんなの家計簿` の履歴であり、現行リリースの確認には使えない）
+- [x] 日本語ローカライズのバイナリ設定を行う（`app.json` の `infoPlist` に `CFBundleDevelopmentRegion: ja` / `CFBundleLocalizations: [ja]` を設定済み〈2026-07-03〉）
+- [ ] App Store Connectの言語表示が日本語であることを確認する（次回NANBO build後。バイナリの設定だけではストア上の表示確認を完了としない）
+- [ ] 現行 `NANBO - みんなの家計簿` のEAS production buildを作成する（build 31は旧ブランドのbuild/履歴であり、現行NANBO buildは未作成。手順は本書「TestFlightビルド発行手順」参照）
 - [ ] TestFlight → App Store審査申請（本書の「App Store配布前の運用・品質ゲート」を満たした状態で実行）
 
 ## App Store配布前の運用・品質ゲート
