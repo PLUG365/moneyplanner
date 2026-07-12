@@ -104,3 +104,7 @@ npx expo start --tunnel
 - ✅ Phase 2 — 予算/アラート（完了。ライフプラン機能は廃止 → [docs/decisions/plan-feature-retirement.md](docs/decisions/plan-feature-retirement.md)）
 - 🚧 Phase 3 — Cloud Firestore + Apple Sign-Inによる家族共有（実装および既存TestFlight検証は完了。現行 `NANBO - みんなの家計簿` の次回TestFlight確認は未完了。確認項目は [docs/testflight-history.md](docs/testflight-history.md) 参照）
 - 🔲 Phase 4 — App Store配布
+
+## ライセンス
+
+本リポジトリのソースコードは、透明性の確保と問い合わせ対応（GitHub Issues）のために公開していますが、オープンソースライセンスは付与していません。著作権はすべて留保します（All rights reserved）。ソースコードおよびアセットの再利用・再配布・改変しての公開は許可していません。サードパーティ製ライブラリのライセンスは [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
