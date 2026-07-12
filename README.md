@@ -4,106 +4,26 @@
 
 ## 機能
 
-- **収支記録** — 日付・カテゴリ・金額・メモを手入力
-- **履歴** — リスト表示 / カレンダービュー、長押し複数選択と一括コピー（日付指定）
-- **履歴検索** — 収入/支出トグル、カテゴリ/内訳/お店、メモ部分一致、日付範囲。集計タブからのドリルダウンにも対応
-- **集計** — 月次・年次・カテゴリ別
-- **予算アラート** — カテゴリ別の共通予算、進捗表示、注意/超過トースト通知（手動クローズ可）
-- **口座管理** — 現金/口座ごとの残高管理、取引ごとの出し入れ先の保持
-- **世帯共有** — Apple Sign-In + Firebase Auth、招待コード参加（QRコード表示・読み取り対応）、Firestoreリアルタイム同期
-- **CSV出力** — BOM付きUTF-8（Excel対応）
-- **CSV取り込み** — エクスポート形式のCSVを設定タブから一括取り込み（UTF-8 / UTF-16LE / Shift_JIS対応、事前検証つき）
-- **カテゴリ管理** — デフォルトカテゴリ + カスタム追加、内訳管理
-- **テーマ切替** — アプリ全体のカラーテーマを設定タブで変更
-- **世帯管理** — メンバー解除、招待コード再発行、認証解除と全データ削除
+- **収支記録** - 日付・カテゴリ・金額・メモを手入力
+- **履歴** - リスト表示 / カレンダービュー、長押し複数選択と一括コピー（日付指定）
+- **履歴検索** - 収入/支出トグル、カテゴリ/内訳/お店、メモ部分一致、日付範囲。集計タブからのドリルダウンにも対応
+- **集計** - 月次・年次・カテゴリ別
+- **予算アラート** - カテゴリ別の共通予算、進捗表示、注意/超過トースト通知（手動クローズ可）
+- **口座管理** - 現金/口座ごとの残高管理、取引ごとの出し入れ先の保持
+- **世帯共有** - Apple Sign-In + Firebase Auth、招待コード参加（QRコード表示・読み取り対応）、Firestoreリアルタイム同期
+- **CSV出力** - BOM付きUTF-8（Excel対応）
+- **CSV取り込み** - エクスポート形式のCSVを設定タブから一括取り込み（UTF-8 / UTF-16LE / Shift_JIS対応、事前検証つき）
+- **カテゴリ管理** - デフォルトカテゴリ + カスタム追加、内訳管理
+- **テーマ切替** - アプリ全体のカラーテーマを設定タブで変更
+- **世帯管理** - メンバー解除、招待コード再発行、認証解除と全データ削除
 
-## 開発環境のセットアップ
+## リリース・サポート
 
-### ローカル（PC）
+- [紹介サイト](https://nanbo.app/)
+- [プライバシーポリシー](https://nanbo.app/privacy/)
+- [サポート](https://nanbo.app/support/)
 
-JavaScriptの開発サーバーはローカルPCで起動できます。ただし、React Native Firebase はネイティブモジュールを使うため、実機で動かすアプリ本体は TestFlight または expo-dev-client ビルドが必要です。Expo Go では認証・Firestore・App Checkの実動作確認はできません。
-
-```bash
-git clone https://github.com/minoru365/moneyplanner.git
-cd moneyplanner
-npm install
-npx expo start
-```
-
-`npx expo start` は dev-client にJavaScriptを配信するためのコマンドです。TestFlightのproductionビルドは、この開発サーバーではなくビルド済みアプリ単体で確認します。
-
-Firebase iOS設定ファイル `GoogleService-Info.plist` はGit管理外です。ローカルでネイティブビルドを作る場合はリポジトリ直下に配置し、EAS production buildでは file secret `GOOGLE_SERVICE_INFO_PLIST` から注入します。
-
-TestFlight/dev-client の検証履歴と次の検証対象は [docs/testflight-history.md](docs/testflight-history.md) を参照してください。
-
-### GitHub Codespaces（ブラウザ上で開発）
-
-PCがなくてもブラウザだけで開発できる環境です。Node.jsなどの環境構築は不要で、起動するだけで使えます。
-
-ただし、React Native Firebase の実動作確認はネイティブビルドが必要なため、Codespaces上のWebプレビューでは認証・Firestore・App Checkの検証は行いません。
-
-### 起動手順
-
-1. [Code] ボタン → [Codespaces] タブ → [Create codespace on master]
-2. ブラウザ上でVS Codeが開き、`npm install` が自動実行される
-
-### 動作確認
-
-```bash
-npx expo start --tunnel
-```
-
-表示されたQRコードをdev-clientビルド済みのiPhoneで開く
-
-> `--tunnel` はdev-clientへJavaScriptを配信するための確認用です。Codespaces上のWebプレビューやExpo Goでは、Firebase/Auth/App Checkの本番相当確認は行いません。
-
-## ドキュメント構成
-
-プロジェクト文書の入口はこのセクションに集約します。文書を追加・分割・統合・名称変更した場合は、この表もあわせて更新してください。
-
-| 文書                                                                           | 役割                                                                              |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| [PLAN.md](PLAN.md)                                                             | 現在の進捗、未完了タスク、次に実施する作業の管理                                  |
-| [ARCHITECTURE.md](ARCHITECTURE.md)                                             | アプリ構成、Firestoreデータモデル、認証/認可、同期方針、主要な技術判断            |
-| [README.md](README.md)                                                         | プロジェクト概要、セットアップ、基本的な利用/開発手順、ドキュメント構成の目次     |
-| [CLAUDE.md](CLAUDE.md)                                                         | Claude Code向けの作業ルール、開発サーバー制約、リポジトリ固有の注意点             |
-| [.github/copilot-instructions.md](.github/copilot-instructions.md)             | GitHub Copilot向けの作業ルール、Copilot CLI / VS Codeエージェントモードの使い分け |
-| [docs/decisions/](docs/decisions/)                                             | 重要な設計判断・方針転換・採用/不採用理由の記録                                   |
-| [docs/release-checklist.md](docs/release-checklist.md)                         | TestFlight、App Check enforcement、App Store申請、有料化開始前の確認項目          |
-| [docs/testflight-history.md](docs/testflight-history.md)                       | TestFlight/dev-clientで実施した実機確認の履歴                                     |
-| [docs/known-issues.md](docs/known-issues.md)                                   | 機能実装後レビューで洗い出した懸念事項（UX整合性・データ整合・誤操作など）        |
-| [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)                               | OSSライセンス表記とproduction依存ライセンス一覧への入口                           |
-| [docs/third-party-licenses.csv](docs/third-party-licenses.csv)                 | production依存の生成済みライセンス一覧                                            |
-| [docs/privacy-policy.md](docs/privacy-policy.md)                               | App Store提出用プライバシーポリシー本文                                           |
-| [site/](site/)                                                                 | GitHub Pagesで公開する紹介、プライバシー、サポートサイトのソース                  |
-| [docs/privacy-and-monetization.md](docs/privacy-and-monetization.md)           | 課金、プライバシー、問い合わせ、本番データ閲覧制限の方針                          |
-| [docs/app-store-submission-draft.md](docs/app-store-submission-draft.md)       | App Store提出メタデータ（栄養表示・出典・課金/返金説明など）のドラフト            |
-| [docs/firestore-read-and-index-plan.md](docs/firestore-read-and-index-plan.md) | Firestore読み取り回数の見積もり、必要インデックス、課金アラートランブック         |
-| [docs/read-caching-plan.md](docs/read-caching-plan.md)                         | 集計・履歴の取引読み取りキャッシュ方針（実装済み）                                |
-| [docs/operations-release-gate.md](docs/operations-release-gate.md)             | リリース前後の運用・監視・障害対応ルール                                          |
-| [docs/operations-data-access-policy.md](docs/operations-data-access-policy.md) | 開発者によるユーザーデータ閲覧制限、サポート対応時のログ取扱方針                  |
-| [docs/dependency-audit-2026-05-10.md](docs/dependency-audit-2026-05-10.md)     | 依存ライブラリ監査結果と更新履歴                                                  |
-| [docs/ai-development.md](docs/ai-development.md)                               | AI活用、外部ツール、レビュー、知見退避ルール                                      |
-| [docs/copilot-cli-workflows.md](docs/copilot-cli-workflows.md)                 | Copilot CLI / VS Codeエージェントの運用メモ（copilot-instructionsの補助資料）     |
-
-## 技術スタック
-
-- Expo SDK 54 / React Native 0.81.5
-- expo-router v6
-- Cloud Firestore（世帯単位のリアルタイム同期）
-- Apple Sign-In + Firebase Auth
-- React Native Firebase（App / Auth / Firestore / App Check）+ expo-dev-client
-- expo-file-system/legacy + expo-sharing（CSV出力）
-- expo-iap（CSVインポート解放の非消耗型IAP）
-- expo-camera + qrcode-generator（招待コードのQR読み取り・生成）
-- TypeScript
-
-## 開発フェーズ
-
-- ✅ Phase 1 — コア機能（完了）
-- ✅ Phase 2 — 予算/アラート（完了。ライフプラン機能は廃止 → [docs/decisions/plan-feature-retirement.md](docs/decisions/plan-feature-retirement.md)）
-- ✅ Phase 3 — Cloud Firestore + Apple Sign-Inによる家族共有（完了。現行 `NANBO - みんなの家計簿` のTestFlight実機確認はbuild 33で完了 → [docs/testflight-history.md](docs/testflight-history.md)）
-- 🚧 Phase 4 — App Store配布（2026-07-14、バージョン1.0〈build 34〉を審査提出済み。審査通過後に手動リリース予定）
+開発環境、設計、運用文書は [開発者向けドキュメント](docs/development.md) を参照してください。
 
 ## ライセンス
 

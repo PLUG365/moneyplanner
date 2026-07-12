@@ -14,4 +14,4 @@
 - [お店候補は取引スナップショットから生成](store-candidates-from-transactions.md)
 - [CSVインポートIAPは初期リリースでFamily Sharingを無効化](csv-import-iap-family-sharing.md)
 
-新しい重要判断を追加した場合は、この一覧と [README.md](../../README.md#ドキュメント構成) の更新要否も確認します。
+新しい重要判断を追加した場合は、この一覧と [開発者向けドキュメント](../development.md) の更新要否も確認します。

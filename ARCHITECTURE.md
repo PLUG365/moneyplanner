@@ -394,9 +394,12 @@ moneyplanner/
 ├── firebase.json            # Firestore Emulator設定
 ├── app.config.js            # EAS secret から GoogleService-Info.plist 注入
 ├── eas.json                 # EAS Build プロファイル（development/preview/production）
+├── README.md                # 利用者・リリース向けの概要、公開情報、ライセンス
 ├── PLAN.md                  # 進捗とタスク
-├── README.md                # プロジェクト概要・ドキュメント目次
-└── ARCHITECTURE.md          # このファイル
+├── ARCHITECTURE.md          # このファイル
+└── docs/
+    ├── development.md       # 開発文書の入口、技術スタック、提供状況
+    └── development-setup.md # ローカルPCとCodespacesのセットアップ
 ```
 
 主要モジュールの責務:
