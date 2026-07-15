@@ -2,16 +2,22 @@ import { InviteQrCode } from "@/components/InviteQrCode";
 import { type InviteQrScannerProps } from "@/components/InviteQrScanner";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import {
+    deleteCurrentUserAccountWithReauthRetry,
+    reauthenticateAndRevokeAppleToken,
+    signOut,
+} from "@/lib/auth";
+import {
     cancelJoinRequest,
     clearPendingHouseholdId,
     completeJoinAfterApproval,
     createHousehold,
+    deleteCurrentUserProfileWithoutHousehold,
     getPendingHouseholdId,
     requestJoinHousehold,
     watchJoinRequestApproval,
 } from "@/lib/household";
 import { validateJoinDisplayName } from "@/lib/householdJoinRequestValidation";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import {
     useCallback,
     useEffect,
@@ -237,6 +243,49 @@ export default function HouseholdScreen() {
     router.replace("/(tabs)");
   };
 
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      // 遷移は _layout の認証状態監視に任せる（user が null になると /auth へ）
+    } catch {
+      Alert.alert("エラー", "ログアウトに失敗しました");
+    }
+  };
+
+  const executeDeleteAccount = async () => {
+    setLoading(true);
+    try {
+      await reauthenticateAndRevokeAppleToken();
+      await deleteCurrentUserProfileWithoutHousehold();
+      await deleteCurrentUserAccountWithReauthRetry();
+      router.replace("/auth" as Href);
+    } catch (error: unknown) {
+      Alert.alert(
+        "エラー",
+        error instanceof Error ? error.message : "アカウント削除に失敗しました",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // App Store Guideline 5.1.1(v): 世帯未参加（サインイン直後）でも
+  // アカウント削除に到達できる必要がある（build 34 却下対応）。
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "アカウントを削除",
+      "アカウント（Apple IDとの連携を含む）を削除します。この操作は取り消せません。続行するにはApple IDでの再認証が必要です。",
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "削除する",
+          style: "destructive",
+          onPress: () => void executeDeleteAccount(),
+        },
+      ],
+    );
+  };
+
   const handleOpenScanner = () => {
     try {
       // expo-camera未同梱の旧ビルドでモジュール解決クラッシュしないよう、
@@ -459,6 +508,18 @@ export default function HouseholdScreen() {
               招待コードで参加
             </Text>
           </Pressable>
+          <View style={styles.accountLinksRow}>
+            <Pressable onPress={handleSignOut} style={styles.linkButton}>
+              <Text style={[styles.linkText, { color: colors.subText }]}>
+                ログアウト
+              </Text>
+            </Pressable>
+            <Pressable onPress={handleDeleteAccount} style={styles.linkButton}>
+              <Text style={[styles.linkText, styles.dangerLinkText]}>
+                アカウントを削除
+              </Text>
+            </Pressable>
+          </View>
         </>
       )}
     </View>
@@ -568,5 +629,14 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 15,
+  },
+  accountLinksRow: {
+    flexDirection: "row",
+    gap: 24,
+    marginTop: 16,
+  },
+  dangerLinkText: {
+    // 全テーマ（明/暗の背景）でアクセント視認基準 3.5:1 を満たす赤
+    color: "#D9534F",
   },
 });

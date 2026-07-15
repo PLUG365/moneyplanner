@@ -1,5 +1,6 @@
 import {
     collection,
+    deleteDoc,
     deleteField,
     doc,
     getDoc,
@@ -496,6 +497,33 @@ export async function clearPendingHouseholdId(): Promise<void> {
     },
     { merge: true },
   );
+}
+
+/**
+ * 世帯未参加ユーザー自身の users/{uid} プロフィールを削除する。
+ * 世帯設定画面からのアカウント削除（App Store Guideline 5.1.1(v) 対応）の
+ * 前処理として使う。世帯参加中のユーザーには使わない（世帯データが
+ * 孤児化するため、設定画面の全データ削除フローを使う）。
+ */
+export async function deleteCurrentUserProfileWithoutHousehold(): Promise<void> {
+  const user = getCurrentUser();
+  if (!user) throw new Error("未ログインです");
+
+  if (await getHouseholdId()) {
+    throw new Error(
+      "世帯参加中はこの画面からアカウント削除できません。設定画面の「アカウントを削除」を使ってください。",
+    );
+  }
+
+  // 承認待ちの参加リクエストが残っていれば先に取り下げる。
+  // 失敗しても続行する（users 削除で pendingHouseholdId 自体は消え、
+  // 相手世帯に残ったリクエストは世帯側で却下できる）。
+  const pendingHouseholdId = await getPendingHouseholdId();
+  if (pendingHouseholdId) {
+    await cancelJoinRequest(pendingHouseholdId).catch(() => undefined);
+  }
+
+  await deleteDoc(doc(getFirestore(), "users", user.uid));
 }
 
 export async function rejectJoinRequest(

@@ -331,6 +331,12 @@ TestFlight/dev-clientでの確認項目、App Check enforcement前確認、App S
 
 App Store配布前の確認項目は [docs/release-checklist.md](docs/release-checklist.md#phase-4-app-store配布) を参照する。
 
+#### App Store審査状況
+
+- [x] 2026-07-14: build 34をバージョン1.0として審査提出
+- [x] 2026-07-15: Guideline 5.1.1(v)（アカウント削除）で却下。対応を実装（世帯未参加でも世帯設定画面からアカウント削除可能に、設定画面の文言を「アカウントを削除（全データ削除）」へ変更＋アカウントセクション既定展開、Apple Sign-Inトークン失効を追加。判断の詳細は [docs/decisions/account-deletion-store-compliance.md](docs/decisions/account-deletion-store-compliance.md)）
+- [ ] build 35で再提出し、App Reviewへの返信に実機の削除フロー画面録画を添付する（残タスクは [docs/release-checklist.md](docs/release-checklist.md) を参照）
+
 #### AI活用・開発運用の改善
 
 AI活用、外部ツール、レビュー、知見退避ルールの詳細は [docs/ai-development.md](docs/ai-development.md) を正とする。

@@ -37,9 +37,9 @@ import {
     isAccountDeletionConfirmationValid,
 } from "@/lib/accountDeletion";
 import {
-    deleteCurrentUserAccount,
+    deleteCurrentUserAccountWithReauthRetry,
     getCurrentUser,
-    reauthenticateCurrentUserWithApple,
+    reauthenticateAndRevokeAppleToken,
     signOut,
 } from "@/lib/auth";
 import { exportCSV } from "@/lib/csvExport";
@@ -207,7 +207,9 @@ export default function SettingsScreen() {
   // 誤操作防止のため、破壊的操作を含むセクションはデフォルトで閉じる。
   const [householdSectionExpanded, setHouseholdSectionExpanded] =
     useState(false);
-  const [accountSectionExpanded, setAccountSectionExpanded] = useState(false);
+  // App Store Guideline 5.1.1(v): アカウント削除導線は探さず見つかる必要が
+  // あるため、既定で展開しておく（build 34 却下対応）。
+  const [accountSectionExpanded, setAccountSectionExpanded] = useState(true);
   const [budgetInputs, setBudgetInputs] = useState<Record<string, string>>({});
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
@@ -1154,7 +1156,7 @@ export default function SettingsScreen() {
 
     setDeletingAccount(true);
     try {
-      await reauthenticateCurrentUserWithApple();
+      await reauthenticateAndRevokeAppleToken();
       // 削除は完全性が必須のため、900ms打ち切りの waitForPendingWrite は使わず
       // サーバー反映まで待つ（build 26 で Auth 先行削除により Firestore 側の
       // 削除が認証失効で失われる競合が発生した）。オフライン時は
@@ -1162,29 +1164,14 @@ export default function SettingsScreen() {
       await deleteHouseholdDataAndCurrentUserProfile((done, total) =>
         setAccountDeletionProgress({ done, total }),
       );
-      try {
-        await deleteCurrentUserAccount();
-      } catch (deleteError) {
-        // 大量データの削除に時間がかかると、削除前の再認証が失効して
-        // auth/requires-recent-login になることがある（Firestore は消えたのに
-        // Auth だけ残る）。その場合は再認証してもう一度だけ試す。
-        if (
-          (deleteError as { code?: string })?.code ===
-          "auth/requires-recent-login"
-        ) {
-          await reauthenticateCurrentUserWithApple();
-          await deleteCurrentUserAccount();
-        } else {
-          throw deleteError;
-        }
-      }
+      await deleteCurrentUserAccountWithReauthRetry();
       router.replace("/auth" as Href);
     } catch (error) {
       Alert.alert(
         "エラー",
         error instanceof Error
           ? error.message
-          : "認証解除と全データ削除に失敗しました",
+          : "アカウント削除に失敗しました",
       );
     } finally {
       setAccountDeletionProgress(null);
@@ -1209,8 +1196,8 @@ export default function SettingsScreen() {
         : "この操作は世帯データを完全に削除します。";
 
     Alert.alert(
-      "認証解除と全データ削除",
-      `${memberWarning}\n\n世帯の共有データをすべて削除し、現在のアカウントを削除します。削除前に必要なデータはCSVで書き出してください。`,
+      "アカウントを削除",
+      `${memberWarning}\n\n世帯の共有データをすべて削除し、現在のアカウント（Apple IDとの連携を含む）を削除します。削除前に必要なデータはCSVで書き出してください。`,
       [
         { text: "キャンセル", style: "cancel" },
         {
@@ -1886,7 +1873,7 @@ export default function SettingsScreen() {
               disabled={isSettingsWriteDisabled || deletingAccount}
             >
               <Text style={styles.actionButtonText}>
-                {deletingAccount ? "削除中..." : "認証解除と全データ削除"}
+                {deletingAccount ? "削除中..." : "アカウントを削除（全データ削除）"}
               </Text>
             </TouchableOpacity>
           </View>

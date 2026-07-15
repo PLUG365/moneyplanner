@@ -4,7 +4,7 @@ moneyplannerの開発、設計、運用に関する文書の入口です。
 
 ## 現在の提供状況
 
-バージョン1.0（build 34）はApp Store審査へ提出済みです。審査通過後に手動でリリースします。詳細な確認履歴は [TestFlight履歴](testflight-history.md)、リリース判断は [release checklist](release-checklist.md) を参照してください。
+バージョン1.0（build 34）はApp Store審査で却下されました（Guideline 5.1.1(v)〈アカウント削除〉、2026-07-15受領）。アカウント削除導線を改善したbuild 35で再提出予定です。詳細な確認履歴は [TestFlight履歴](testflight-history.md)、リリース判断は [release checklist](release-checklist.md) を参照してください。
 
 ## 技術スタック
 
