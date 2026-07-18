@@ -53,3 +53,10 @@ AGENTS.md
 
 # 一時ファイル・調査用スクラッチ
 .tmp/
+
+# ローカル生成物・検証用一時ファイル
+artifacts/
+.codex-tmp/
+
+# superpowersのドキュメント
+docs/superpowers/
