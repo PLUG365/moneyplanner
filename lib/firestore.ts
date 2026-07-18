@@ -12,7 +12,6 @@ import {
     limit,
     orderBy,
     query,
-    runTransaction,
     serverTimestamp,
     setDoc,
     Timestamp,
@@ -41,10 +40,7 @@ import {
 } from "./masterRelink";
 import { type DataVersion } from "./readFreshness";
 import { buildStoreOptionsForCategory, findStoreByName } from "./storeOptions";
-import {
-    excludeDeletedTransactionDocs,
-    isDeletedTransactionData,
-} from "./transactionSoftDelete";
+import { excludeDeletedTransactionDocs } from "./transactionSoftDelete";
 import {
     buildBudgetStatusesFromData,
     buildMonthCategorySummaryFromTransactions,
@@ -82,7 +78,6 @@ type FirestoreDocSnapshot = Awaited<
   ReturnType<typeof getDoc<DocumentData, DocumentData>>
 >;
 type FirestoreWriteBatch = ReturnType<typeof writeBatch>;
-type FirestoreTransaction = Parameters<Parameters<typeof runTransaction>[1]>[0];
 
 // ── 定数 ──────────────────────────────────────────────
 export const DEFAULT_ACCOUNT_ID = "default";
@@ -245,13 +240,6 @@ function bumpDataVersionInBatch(
   hDoc: FirestoreDocRef,
 ): void {
   batch.set(dataVersionDoc(hDoc), dataVersionPayload(), { merge: true });
-}
-
-function bumpDataVersionInTransaction(
-  transaction: FirestoreTransaction,
-  hDoc: FirestoreDocRef,
-): void {
-  transaction.set(dataVersionDoc(hDoc), dataVersionPayload(), { merge: true });
 }
 
 function dataVersionFromSnapshot(snap: FirestoreDocSnapshot): DataVersion {
@@ -1373,129 +1361,6 @@ export async function importTransactions(
   return rows.length;
 }
 
-export async function updateTransaction(
-  id: string,
-  date: string,
-  amount: number,
-  type: TransactionType,
-  categoryId: string,
-  accountId: string,
-  memo: string,
-  breakdownId?: string | null,
-  storeId?: string | null,
-): Promise<void> {
-  const hDoc = await householdDoc();
-  const txRef = doc(collection(hDoc, "transactions"), id);
-
-  const [snapshot, accountName, storeName] = await Promise.all([
-    resolveTransactionSnapshot(hDoc, categoryId, breakdownId),
-    resolveAccountName(hDoc, accountId),
-    resolveStoreName(hDoc, storeId),
-  ]);
-
-  await runTransaction(getFirestore(), async (transaction) => {
-    const currentSnap = await transaction.get(txRef);
-    if (!snapshotExists(currentSnap)) return;
-    const current = currentSnap.data()!;
-    // 削除済み取引の編集は禁止（残高はすでに戻されており、編集時の差分計算が
-    // 二重適用になって残高が壊れるため）
-    if (isDeletedTransactionData(current)) {
-      throw new Error("この記録は削除済みのため編集できません");
-    }
-
-    transaction.update(txRef, {
-      date,
-      amount,
-      type,
-      accountId,
-      categoryId,
-      breakdownId: breakdownId ?? null,
-      storeId: storeId ?? null,
-      accountNameSnapshot: accountName,
-      categoryNameSnapshot: snapshot.categoryName,
-      categoryColorSnapshot: snapshot.categoryColor,
-      breakdownNameSnapshot: snapshot.breakdownName,
-      storeNameSnapshot: storeName,
-      memo,
-      updatedAt: serverTimestamp(),
-    });
-
-    for (const adjustment of buildBalanceAdjustmentsForUpdate(
-      {
-        accountId: current.accountId || DEFAULT_ACCOUNT_ID,
-        type: current.type as TransactionType,
-        amount: current.amount,
-      },
-      { accountId, type, amount },
-    )) {
-      transaction.update(
-        doc(collection(hDoc, "accounts"), adjustment.accountId),
-        {
-          balance: increment(adjustment.delta),
-          updatedAt: serverTimestamp(),
-        },
-      );
-    }
-
-    if (storeId) {
-      transaction.update(doc(collection(hDoc, "stores"), storeId), {
-        lastUsedAt: serverTimestamp(),
-      });
-      if (categoryId) {
-        transaction.set(
-          doc(
-            collection(hDoc, "storeCategoryUsage"),
-            `${storeId}_${categoryId}`,
-          ),
-          {
-            storeId,
-            categoryId,
-            lastUsedAt: serverTimestamp(),
-          },
-          { merge: true },
-        );
-      }
-    }
-    bumpDataVersionInTransaction(transaction, hDoc);
-  });
-}
-
-/** 取引を削除する（ソフトデリート）。
- *  物理削除ではなく `deleted: true` + `updatedAt` 更新にすることで、
- *  updatedAt 差分クエリで削除も検知でき、ローカルキャッシュに幽霊データが
- *  残らない（issue #4 / ADR: transaction-soft-delete）。残高の戻しは従来どおり。 */
-export async function deleteTransaction(id: string): Promise<void> {
-  const hDoc = await householdDoc();
-  const txRef = doc(collection(hDoc, "transactions"), id);
-
-  await runTransaction(getFirestore(), async (transaction) => {
-    const currentSnap = await transaction.get(txRef);
-    if (!snapshotExists(currentSnap)) return;
-    const current = currentSnap.data()!;
-    // 二重削除ガード: すでにソフトデリート済みなら残高を二重に戻さない
-    if (isDeletedTransactionData(current)) return;
-
-    transaction.update(txRef, {
-      deleted: true,
-      updatedAt: serverTimestamp(),
-    });
-    for (const adjustment of buildBalanceAdjustmentsForDelete({
-      accountId: current.accountId || DEFAULT_ACCOUNT_ID,
-      type: current.type as TransactionType,
-      amount: current.amount,
-    })) {
-      transaction.update(
-        doc(collection(hDoc, "accounts"), adjustment.accountId),
-        {
-          balance: increment(adjustment.delta),
-          updatedAt: serverTimestamp(),
-        },
-      );
-    }
-    bumpDataVersionInTransaction(transaction, hDoc);
-  });
-}
-
 export async function updateTransactionFromPrevious(
   previous: Transaction,
   date: string,
@@ -1578,6 +1443,9 @@ export async function updateTransactionFromPrevious(
 }
 
 /** 取引を削除する（ソフトデリート・オフライン対応版）。
+ *  物理削除ではなく `deleted: true` + `updatedAt` 更新にすることで、
+ *  updatedAt 差分クエリで削除も検知でき、ローカルキャッシュに幽霊データが
+ *  残らない（issue #4 / ADR: transaction-soft-delete）。
  *  purposely 読み取りなしのバッチ書込のため二重削除ガードはない。
  *  呼び出し側UIが削除済み項目を即時に一覧から除くこと（従来と同じ前提）。 */
 export async function deleteTransactionFromPrevious(
