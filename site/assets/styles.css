@@ -28,6 +28,7 @@ main { min-height: 62vh; }
 .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 36px; }
 .hero-mark { width: min(180px, 30vw); }
 .eyebrow { margin: 0 0 8px; color: var(--gold); font-size: 0.95rem; font-weight: 700; }
+.hero-cta { margin-top: 26px; }
 h1, h2 { color: var(--brown); line-height: 1.25; }
 h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.6rem); }
 h2 { margin: 0 0 16px; font-size: clamp(1.45rem, 3vw, 2rem); }
