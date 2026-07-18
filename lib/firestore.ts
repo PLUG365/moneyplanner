@@ -1674,19 +1674,17 @@ export async function updateAccountBalance(
   balance: number,
 ): Promise<void> {
   const hDoc = await householdDoc();
-  const accountRef = doc(collection(hDoc, "accounts"), id);
 
   // 残高は「手動設定＋登録/編集/削除の増分」のみで維持する方針（自動 reconcile 廃止）。
   // よって全取引を読んで純額から逆算する必要はなく、入力値をそのまま残高として保存する。
   // initialBalance は手動設定時点の残高として同値を保持する。
-  await runTransaction(getFirestore(), async (tx) => {
-    // 口座ドキュメント自体の同時編集はトランザクション再試行で防ぐ
-    await tx.get(accountRef);
-    tx.update(accountRef, {
-      balance,
-      initialBalance: balance,
-      updatedAt: serverTimestamp(),
-    });
+  // 読み取り値を使わない単純上書きのため runTransaction は使わない。トランザクションは
+  // ローカルキャッシュに楽観反映されず、保存直後の再読込が旧値を返すため（issue #7）。
+  // 同時編集は updateDoc でも last-write-wins となり、最終状態は変わらない。
+  await updateDoc(doc(collection(hDoc, "accounts"), id), {
+    balance,
+    initialBalance: balance,
+    updatedAt: serverTimestamp(),
   });
 }
 
