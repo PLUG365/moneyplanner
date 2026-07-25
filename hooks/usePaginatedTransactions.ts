@@ -31,6 +31,7 @@ import {
 } from "@/lib/localWriteEpoch";
 import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
 import {
+    isReadComplete,
     pickFirstPaintSource,
     type FirstPaintSource,
 } from "@/lib/transactionReadPlan";
@@ -54,6 +55,14 @@ export type PaginatedTransactions = {
   loadingInitial: boolean;
   loadingMore: boolean;
   hasMore: boolean;
+  /**
+   * いま `items` に入っている配列が、現在の日付範囲に対する全件か（ADR の R8）。
+   *
+   * 検索結果の合計を表示してよいかの判定に使う。ページング読みの先頭ページから
+   * 合計を出すと、部分集計を全体の合計として表示することになる。
+   * 「読み込み中か」ではなくこちらで判定する。
+   */
+  itemsComplete: boolean;
   loadMore: () => void;
   refresh: () => void;
   refreshIfStale: () => void;
@@ -121,6 +130,9 @@ export function usePaginatedTransactions(
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  // `items` が現在のスコープに対する全件か（ADR の R8）。安全側の false から始め、
+  // 現在のスコープを描画・取得できた時点でのみ true にする。
+  const [itemsComplete, setItemsComplete] = useState(false);
 
   const lastDocRef = useRef<FirestoreQueryDocSnapshot | null>(null);
   // 多重実行防止（onEndReached連打・refresh重複など）
@@ -171,6 +183,7 @@ export function usePaginatedTransactions(
         // /household へ遷移させるため、読み込み中のまま固着はしない。
         setItems([]);
         setHasMore(false);
+        setItemsComplete(false);
         lastDocRef.current = null;
         return;
       }
@@ -188,6 +201,10 @@ export function usePaginatedTransactions(
       }
       inFlightRef.current = true;
       setLoadingInitial(true);
+      // スコープが変わる場合、描画するまで `items` は前のスコープの配列である。
+      // ここで倒さないと、日付範囲を変えた検索で「前の範囲の全件」を新しい範囲の
+      // 合計として一瞬表示しうる（ADR の R8）。
+      setItemsComplete(false);
       try {
         await loadScopeVersions();
 
@@ -254,7 +271,19 @@ export function usePaginatedTransactions(
 
         // 描画できた時点で「まだ何も無い」状態を抜ける。ここで倒さないと、
         // 背景で再検証している間ずっと空メッセージと検索合計が隠れたままになる。
-        if (paintedPage) setLoadingInitial(false);
+        if (paintedPage) {
+          setLoadingInitial(false);
+          // stamp が残っているスコープは、過去に全件サーバー読みされている。
+          // `page` モードのスコープも stamp されるが（R6-b）、isReadComplete が
+          // isFetchAllScope で弾くため、部分読みを完全と誤認しない。
+          setItemsComplete(
+            isReadComplete({
+              isFetchAllScope: fetchAll,
+              source: painted,
+              scopeKnownComplete: paintedPage.version !== null,
+            }),
+          );
+        }
 
         // ── Phase 2: 鮮度確認（ここで初めてネットワークを使う）───────────
         // すでに描画済みなので、この往復が遅くても初回表示は待たされない。
@@ -320,6 +349,15 @@ export function usePaginatedTransactions(
             setItems(nextItems);
             lastDocRef.current = null;
             setHasMore(false);
+            // 完全なキャッシュに、サーバーから取った変更分をマージした結果なので
+            // 全件である（差分読みは fetchAll のスコープでしか走らない）。
+            setItemsComplete(
+              isReadComplete({
+                isFetchAllScope: fetchAll,
+                source: "server",
+                scopeKnownComplete: true,
+              }),
+            );
             if (scopeKey) {
               firstPageCache.set(scopeKey, {
                 items: nextItems,
@@ -345,6 +383,16 @@ export function usePaginatedTransactions(
           ? false
           : docs.length === TRANSACTIONS_PAGE_SIZE;
         setItems(nextItems);
+        // 全件サーバー読みの直後は、stamp の成否と無関係にこの配列は完全である。
+        // マーカーが null の世帯（オフライン初回など）では setPersistedScopeVersion が
+        // 記録をスキップするため、stamp を必要条件にすると合計が一度も出ない（R8）。
+        setItemsComplete(
+          isReadComplete({
+            isFetchAllScope: fetchAll,
+            source: "server",
+            scopeKnownComplete: true,
+          }),
+        );
         lastDocRef.current = docs.length > 0 ? docs[docs.length - 1] : null;
         setHasMore(nextHasMore);
         if (scopeKey) {
@@ -435,6 +483,7 @@ export function usePaginatedTransactions(
     loadingInitial,
     loadingMore,
     hasMore,
+    itemsComplete,
     loadMore: loadMorePublic,
     refresh: refreshPublic,
     refreshIfStale: refreshIfStalePublic,

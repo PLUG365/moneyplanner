@@ -251,6 +251,7 @@ export default function HistoryScreen() {
     items: paginatedTransactionItems,
     loadingInitial: paginatedLoadingInitial,
     loadingMore: paginatedLoadingMore,
+    itemsComplete: paginatedItemsComplete,
     loadMore: loadMorePaginatedTransactions,
     refresh: refreshPaginatedTransactions,
     refreshIfStale: refreshPaginatedTransactionsIfStale,
@@ -308,8 +309,12 @@ export default function HistoryScreen() {
     () => buildHistorySearchTotals(filteredListTransactions),
     [filteredListTransactions],
   );
+  // 判定は「読み込み中か」ではなく「いま手元の items が現在の日付範囲に対する
+  // 全件か」で行う（ADR の R8）。読み込み中を基準にすると、キャッシュから即座に
+  // 返せる場合でも合計が一度消えて出直す。一方で items の完全性を見なければ、
+  // ページング読みの先頭ページから部分集計を全体の合計として表示しうる。
   const showSearchTotals =
-    viewMode === "list" && shouldReadAllHistory && !paginatedLoadingInitial;
+    viewMode === "list" && shouldReadAllHistory && paginatedItemsComplete;
 
   const accountOptions = useMemo(
     () => [...accountSubscription.data],
