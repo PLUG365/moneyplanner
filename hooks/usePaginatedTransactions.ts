@@ -30,6 +30,7 @@ import {
     isLocalWriteEpochCurrent,
 } from "@/lib/localWriteEpoch";
 import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
+import { READ_TIMED_OUT, withReadTimeout } from "@/lib/readTimeout";
 import {
     isReadComplete,
     pickFirstPaintSource,
@@ -319,9 +320,21 @@ export function usePaginatedTransactions(
           householdId &&
           (options?.refreshMarker || currentVersion === undefined)
         ) {
-          currentVersion =
-            await readHouseholdDataVersionPreferServer(householdId);
-          currentVersionByHousehold.set(householdId, currentVersion);
+          const markerResult = await withReadTimeout(
+            readHouseholdDataVersionPreferServer(householdId),
+          );
+          if (markerResult === READ_TIMED_OUT) {
+            // **メモ化しない。** ここで null を書き込むと、1回の応答なしが
+            // セッション中ずっと「マーカーは null」として残ってしまう。
+            if (paintedPage) {
+              // 描画済みなら、鮮度を確認できないまま読み直さずここで終える。
+              return;
+            }
+            // 何も描けていない場合は、鮮度不明のままデータ読みへ進む。
+          } else {
+            currentVersion = markerResult;
+            currentVersionByHousehold.set(householdId, currentVersion);
+          }
         }
         const comparableVersion = currentVersion ?? null;
 
@@ -354,15 +367,22 @@ export function usePaginatedTransactions(
             !range.to &&
             incrementalSince
           ) {
-            const incrementalSnap = await getQuerySnapshot(
-              query(
-                householdCollection(householdId, "transactions"),
-                where("updatedAt", ">", incrementalSince),
-                orderBy("updatedAt", "asc"),
+            const incrementalResult = await withReadTimeout(
+              getQuerySnapshot(
+                query(
+                  householdCollection(householdId, "transactions"),
+                  where("updatedAt", ">", incrementalSince),
+                  orderBy("updatedAt", "asc"),
+                ),
+                "server",
               ),
-              "server",
             );
-            const changedDocs = incrementalSnap?.docs ?? [];
+            if (incrementalResult === READ_TIMED_OUT) {
+              // キャッシュは描画済みなので、差し替えずここで終える。
+              // stamp も更新しないため、次回また同じ起点で差分を取り直せる。
+              return;
+            }
+            const changedDocs = incrementalResult?.docs ?? [];
             const deletedIds = new Set(
               changedDocs
                 .filter((doc) => isDeletedTransactionData(doc.data()))
@@ -405,10 +425,17 @@ export function usePaginatedTransactions(
         }
 
         // ── Phase 3b: サーバー読み ──────────────────────────────
-        const snap = await getQuerySnapshot(
-          queryLimit == null ? base : query(base, limit(queryLimit)),
-          "server",
+        const serverResult = await withReadTimeout(
+          getQuerySnapshot(
+            queryLimit == null ? base : query(base, limit(queryLimit)),
+            "server",
+          ),
         );
+        if (serverResult === READ_TIMED_OUT) {
+          // 失敗と同じ扱いにする。下の catch が受け、画面は据え置きになる。
+          throw new Error("取引のサーバー読み込みが応答しませんでした");
+        }
+        const snap = serverResult;
         const docs = snap?.docs ?? [];
         const nextItems = mapActiveTransactions(docs);
         const nextHasMore = fetchAll
@@ -440,6 +467,19 @@ export function usePaginatedTransactions(
           // 生のDoc件数を併記する。次回のキャッシュ読みでこれを下回っていれば、
           // 書き込みが無いのに手元が減った＝退避されたと判定できる（ADR の R3）。
           setPersistedScopeVersion(scopeKey, currentVersion ?? null, docs.length);
+        }
+      } catch (error) {
+        // このフックにはエラーを表示する経路が無い。ここで受けないとサーバー読みの
+        // 失敗が未処理の Promise 拒否になり、オフラインでフォーカスするたびに
+        // 開発ビルドで警告が出る（ADR の O-2）。
+        //
+        // 画面はキャッシュ描画のまま据え置き、次のフォーカスで再試行する。
+        // stamp も更新していないため、次回は同じ判定からやり直せる。
+        if (__DEV__) {
+          console.warn(
+            "[usePaginatedTransactions] 取引の再読み込みに失敗しました",
+            error,
+          );
         }
       } finally {
         setLoadingInitial(false);

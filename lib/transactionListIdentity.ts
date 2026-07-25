@@ -45,7 +45,26 @@ export function areTransactionListsEquivalent(
  *
  * 取引の全フィールドはプリミティブ（string / number / null）なので `!==` で足りる。
  */
-const COMPARED_KEY_MAP: Record<keyof Transaction, true> = {
+/**
+ * `createdAt` だけは比較対象から外す。
+ *
+ * `mapTransaction` は `toISOString(data.createdAt)` を使い、`toISOString` は値が無いとき
+ * **その時点の現在時刻**を返す（`lib/firestore.ts`）。未送信の書き込みはサーバー
+ * タイムスタンプが未確定で `null` として読まれるため、**読み直すたびに `createdAt` が
+ * 変わる**。含めたままだと、オフラインで記録が溜まっている間は必ず「内容が変わった」と
+ * 判定され、フォーカスのたびにリストが再描画される。R4 が防ごうとしたスクロール跳ねと
+ * タップずれが、オフラインでだけ復活してしまう。
+ *
+ * **代償**: `createdAt` だけが変わった差分を検出しなくなる。実際に起きるのは
+ * 「未送信の書き込みがサーバーに確定した」瞬間だけで、そのとき保持され続けるのは
+ * 生成時にでっち上げた現在時刻である。この値は同日内の並び替え
+ * （`lib/historyList.ts` / `lib/transactionCacheMerge.ts`）とお店候補の新しさ
+ * （`lib/storeOptions.ts`）に使われるが、いずれも未確定の書き込みについては元から
+ * 近似値でしかなく、実データより新しい側に倒れる点も変わらない。表示には使っていない。
+ */
+type ComparedTransactionKey = Exclude<keyof Transaction, "createdAt">;
+
+const COMPARED_KEY_MAP: Record<ComparedTransactionKey, true> = {
   id: true,
   date: true,
   amount: true,
@@ -60,11 +79,12 @@ const COMPARED_KEY_MAP: Record<keyof Transaction, true> = {
   storeId: true,
   storeName: true,
   memo: true,
-  createdAt: true,
 };
 
-const COMPARED_KEYS = Object.keys(COMPARED_KEY_MAP) as (keyof Transaction)[];
+const COMPARED_KEYS = Object.keys(
+  COMPARED_KEY_MAP,
+) as ComparedTransactionKey[];
 
 /** テストから参照する（比較対象が型と一致していることの検証用）。 */
-export const COMPARED_TRANSACTION_KEYS: readonly (keyof Transaction)[] =
+export const COMPARED_TRANSACTION_KEYS: readonly ComparedTransactionKey[] =
   COMPARED_KEYS;

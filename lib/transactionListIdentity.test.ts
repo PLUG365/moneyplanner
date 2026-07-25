@@ -140,6 +140,29 @@ test("どのフィールドが変わっても検出する（比較対象の網�
   }
 });
 
+test("createdAt だけの違いは検出しない（未送信の書き込み対策）", () => {
+  // toISOString は値が無いとき現在時刻を返すため、未送信の書き込みは読み直すたびに
+  // createdAt が変わる。含めるとオフライン中ずっと「変化あり」になり、
+  // フォーカスのたびにリストが再描画されてしまう。
+  assert.equal(
+    areTransactionListsEquivalent(
+      [buildTransaction({ createdAt: "2026-07-26T00:00:00.000Z" })],
+      [buildTransaction({ createdAt: "2026-07-26T00:00:05.000Z" })],
+    ),
+    true,
+  );
+});
+
+test("createdAt が変わっていても、他が変われば検出する", () => {
+  assert.equal(
+    areTransactionListsEquivalent(
+      [buildTransaction({ createdAt: "2026-07-26T00:00:00.000Z", amount: 1200 })],
+      [buildTransaction({ createdAt: "2026-07-26T00:00:05.000Z", amount: 1300 })],
+    ),
+    false,
+  );
+});
+
 test("多件数で1件だけ違っても検出する", () => {
   const build = (index: number) =>
     buildTransaction({ id: `t${index}`, amount: index });

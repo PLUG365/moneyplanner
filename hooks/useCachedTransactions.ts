@@ -20,6 +20,7 @@ import {
     isLocalWriteEpochCurrent,
 } from "@/lib/localWriteEpoch";
 import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
+import { READ_TIMED_OUT, withReadTimeout } from "@/lib/readTimeout";
 import { areTransactionListsEquivalent } from "@/lib/transactionListIdentity";
 import {
     pickFirstPaintSource,
@@ -258,9 +259,25 @@ export function useCachedTransactions(
         // すでに描画済みなので、この往復が遅くても初回表示は待たされない。
         let currentVersion = currentVersionByHousehold.get(householdId);
         if (input?.refreshMarker || currentVersion === undefined) {
-          currentVersion =
-            await readHouseholdDataVersionPreferServer(householdId);
-          currentVersionByHousehold.set(householdId, currentVersion);
+          const markerResult = await withReadTimeout(
+            readHouseholdDataVersionPreferServer(householdId),
+          );
+          if (markerResult === READ_TIMED_OUT) {
+            // **メモ化しない。** ここで null を書き込むと、1回の応答なしが
+            // セッション中ずっと「マーカーは null」として残ってしまう。
+            if (painted !== "none") {
+              // 描画済みなら、鮮度を確認できないまま読み直さずここで終える。
+              // 次のフォーカスで再試行される。
+              setError(null);
+              return;
+            }
+            // 何も描けていない場合は、鮮度不明のままデータ読みへ進む。
+            // その読みが成功しても currentVersion は undefined のままなので
+            // stamp は記録されない（＝完全性を主張しない）。
+          } else {
+            currentVersion = markerResult;
+            currentVersionByHousehold.set(householdId, currentVersion);
+          }
         }
 
         if (
@@ -268,7 +285,10 @@ export function useCachedTransactions(
           !shouldReadServerForScope({
             hasCachedData: true,
             scopeVersion: paintedVersion,
-            currentDataVersion: currentVersion,
+            // マーカー読みが応答しなかった場合は undefined のまま来る。null として
+            // 扱えば「不一致 → サーバーを読む」に倒れるが、その手前で描画済みなら
+            // 既に return しているため、ここへは何も描けていない場合しか来ない。
+            currentDataVersion: currentVersion ?? null,
             stampedDocCount,
             cachedDocCount,
           })
@@ -286,7 +306,15 @@ export function useCachedTransactions(
         // 描画済みの間は fromCache が true のままなので、呼び出し側はそれを
         // 「更新中」の手がかりに使える。
         if (painted === "none") setLoading(true);
-        const serverSnap = await getTransactionSnapshot(query, "server");
+        const serverResult = await withReadTimeout(
+          getTransactionSnapshot(query, "server"),
+        );
+        if (serverResult === READ_TIMED_OUT) {
+          // 失敗と同じ扱いにする。下の catch が受け、描画済みなら画面は据え置き、
+          // 何も描けていなければエラーとして呼び出し側へ伝わる。
+          throw new Error("取引のサーバー読み込みが応答しませんでした");
+        }
+        const serverSnap = serverResult;
         const serverItems =
           mapActiveTransactions(serverSnap?.docs ?? []);
         const version = currentVersion ?? null;
