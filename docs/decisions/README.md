@@ -13,5 +13,7 @@
 - [取引のソフトデリート採用](transaction-soft-delete.md)
 - [お店候補は取引スナップショットから生成](store-candidates-from-transactions.md)
 - [CSVインポートIAPは初期リリースでFamily Sharingを無効化](csv-import-iap-family-sharing.md)
+- [アカウント削除のApp Store対応](account-deletion-store-compliance.md)
+- [設定画面「アカウント」セクションのデフォルト再び閉じる](account-section-default-collapsed.md)
 
 新しい重要判断を追加した場合は、この一覧と [開発者向けドキュメント](../development.md) の更新要否も確認します。

@@ -207,9 +207,10 @@ export default function SettingsScreen() {
   // 誤操作防止のため、破壊的操作を含むセクションはデフォルトで閉じる。
   const [householdSectionExpanded, setHouseholdSectionExpanded] =
     useState(false);
-  // App Store Guideline 5.1.1(v): アカウント削除導線は探さず見つかる必要が
-  // あるため、既定で展開しておく（build 34 却下対応）。
-  const [accountSectionExpanded, setAccountSectionExpanded] = useState(true);
+  // 誤操作防止のため、破壊的操作を含むセクションはデフォルトで閉じる
+  // （Issue #10 対応。App Store Guideline 5.1.1(v) 再却下リスクを承知の上での変更。
+  // 経緯は docs/decisions/ 参照）。
+  const [accountSectionExpanded, setAccountSectionExpanded] = useState(false);
   const [budgetInputs, setBudgetInputs] = useState<Record<string, string>>({});
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
