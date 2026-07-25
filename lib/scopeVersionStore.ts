@@ -15,9 +15,35 @@ import type { DataVersion } from "./readFreshness";
 const FILE_PATH = `${FileSystem.documentDirectory}scopeVersions.json`;
 const WRITE_DEBOUNCE_MS = 1500;
 
-let versions: Record<string, string> = {};
+/**
+ * 保存する内容。`docCount` はサーバー全件読み時点の**生のDoc件数**
+ * （ソフトデリート除外前）で、Firestore の LRU GC によるキャッシュ退避の
+ * 検出に使う（ADR の R3）。差分読みで更新した場合は再計算できないため未記録にする。
+ */
+type ScopeStamp = {
+  version: string;
+  docCount?: number;
+};
+
+let versions: Record<string, ScopeStamp> = {};
 let loadPromise: Promise<void> | null = null;
 let writeTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * 保存済みの値を現行形式へ寄せる。
+ * 旧形式（`Record<string, string>`）で保存されたファイルは、件数未記録として読む。
+ */
+function normalizeStamp(value: unknown): ScopeStamp | null {
+  if (typeof value === "string") return { version: value };
+  if (value && typeof value === "object") {
+    const record = value as { version?: unknown; docCount?: unknown };
+    if (typeof record.version !== "string") return null;
+    return typeof record.docCount === "number"
+      ? { version: record.version, docCount: record.docCount }
+      : { version: record.version };
+  }
+  return null;
+}
 
 /** 起動後の初回アクセス時にファイルから読み込む（以降はメモリを参照）。冪等。 */
 export function loadScopeVersions(): Promise<void> {
@@ -26,8 +52,14 @@ export function loadScopeVersions(): Promise<void> {
       try {
         const text = await FileSystem.readAsStringAsync(FILE_PATH);
         const parsed = JSON.parse(text);
+        versions = {};
         if (parsed && typeof parsed === "object") {
-          versions = parsed as Record<string, string>;
+          for (const [key, value] of Object.entries(
+            parsed as Record<string, unknown>,
+          )) {
+            const stamp = normalizeStamp(value);
+            if (stamp) versions[key] = stamp;
+          }
         }
       } catch {
         // ファイル未作成・破損時は空で開始
@@ -40,17 +72,34 @@ export function loadScopeVersions(): Promise<void> {
 
 export function getPersistedScopeVersion(key: string): DataVersion {
   return Object.prototype.hasOwnProperty.call(versions, key)
-    ? versions[key]
+    ? versions[key].version
     : null;
+}
+
+/**
+ * stamp 時に記録した生のDoc件数。未記録なら `undefined`。
+ *
+ * 旧形式のファイルから読んだエントリと、差分読みで更新したエントリは未記録になる。
+ * その場合はキャッシュ退避の検出を行わない（＝現行どおりの挙動）。既存利用者に
+ * アップグレード直後の全件再読み込みを強いないための選択であり、次に全件サーバー
+ * 読みが走った時点で記録され、以後は検出が有効になる。
+ */
+export function getPersistedScopeDocCount(key: string): number | undefined {
+  return Object.prototype.hasOwnProperty.call(versions, key)
+    ? versions[key].docCount
+    : undefined;
 }
 
 export function setPersistedScopeVersion(
   key: string,
   version: DataVersion,
+  docCount?: number,
 ): void {
   if (version == null) return; // マーカー未作成（null）は記録しない
-  if (versions[key] === version) return;
-  versions[key] = version;
+  const previous = versions[key];
+  if (previous?.version === version && previous.docCount === docCount) return;
+  versions[key] =
+    docCount === undefined ? { version } : { version, docCount };
   scheduleWrite();
 }
 

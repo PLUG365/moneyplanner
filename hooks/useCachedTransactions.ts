@@ -25,6 +25,7 @@ import {
     type FirstPaintSource,
 } from "@/lib/transactionReadPlan";
 import {
+    getPersistedScopeDocCount,
     getPersistedScopeVersion,
     loadScopeVersions,
     setPersistedScopeVersion,
@@ -190,6 +191,9 @@ export function useCachedTransactions(
         //
         // 描画に使った配列が「いつ時点のサーバー読みか」。鮮度判定に使う。
         let paintedVersion: DataVersion = null;
+        // 件数比較用（ADR の R3）。ディスクキャッシュから描いたときだけ意味を持つ。
+        let stampedDocCount: number | undefined;
+        let cachedDocCount: number | undefined;
 
         if (painted === "memory" && memory) {
           setData(memory.items);
@@ -208,6 +212,9 @@ export function useCachedTransactions(
             // ディスクキャッシュの版は「現在版」ではなく、永続化した
             // 「このスコープを最後にサーバー読みした時点の版」を使う。
             paintedVersion = getPersistedScopeVersion(cacheKey);
+            // 比較はソフトデリート除外前の生の件数で行う（ADR の R3）。
+            stampedDocCount = getPersistedScopeDocCount(cacheKey);
+            cachedDocCount = cacheSnap.docs.length;
             transactionScopeCache.set(cacheKey, {
               items: cachedItems,
               version: paintedVersion,
@@ -235,6 +242,8 @@ export function useCachedTransactions(
             hasCachedData: true,
             scopeVersion: paintedVersion,
             currentDataVersion: currentVersion,
+            stampedDocCount,
+            cachedDocCount,
           })
         ) {
           setError(null);
@@ -260,7 +269,9 @@ export function useCachedTransactions(
           fromCache: false,
           epoch: getLocalWriteEpoch(householdId),
         });
-        setPersistedScopeVersion(cacheKey, version);
+        // 生のDoc件数を併記する。次回のキャッシュ読みでこれを下回っていれば、
+        // 書き込みが無いのに手元が減った＝退避されたと判定できる（ADR の R3）。
+        setPersistedScopeVersion(cacheKey, version, serverSnap?.docs.length);
         setData(serverItems);
         setFromCache(false);
         setError(null);

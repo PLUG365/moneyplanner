@@ -36,6 +36,7 @@ import {
     type FirstPaintSource,
 } from "@/lib/transactionReadPlan";
 import {
+    getPersistedScopeDocCount,
     getPersistedScopeVersion,
     loadScopeVersions,
     setPersistedScopeVersion,
@@ -229,6 +230,10 @@ export function usePaginatedTransactions(
         });
         // 描画に使ったページ。鮮度判定と差分読みの起点に使う。
         let paintedPage: CachedPage | null = null;
+        // 件数比較用（ADR の R3）。**自スコープの stamp を使ったときだけ**意味を持つ。
+        // 全期間スコープから版を借用した場合、件数はそのスコープのものなので比較できない。
+        let stampedDocCount: number | undefined;
+        let cachedDocCount: number | undefined;
 
         if (painted === "memory" && cached) {
           setItems(cached.items);
@@ -246,15 +251,24 @@ export function usePaginatedTransactions(
             cachedDocCount: cacheSnap?.docs.length ?? 0,
           });
           if (painted === "cache" && cacheSnap) {
+            // ディスクキャッシュの版は永続化した「最後にサーバー読みした時点の版」を使う。
+            const ownVersion = scopeKey
+              ? getPersistedScopeVersion(scopeKey)
+              : null;
+            // 自スコープの stamp が無いときだけ、全期間スコープの版を借りる。
+            // 全期間を全件読みしていれば任意の部分期間もその読みに含まれるため健全。
+            const borrowedVersion =
+              !ownVersion && fetchAll && fullHistoryScopeKey
+                ? getPersistedScopeVersion(fullHistoryScopeKey)
+                : null;
+            if (ownVersion && scopeKey) {
+              // 件数は借用しない。借用元は上位集合であり、比較すると必ず下回る。
+              stampedDocCount = getPersistedScopeDocCount(scopeKey);
+              cachedDocCount = cacheSnap.docs.length;
+            }
             const page: CachedPage = {
               items: mapActiveTransactions(cacheSnap.docs),
-              // ディスクキャッシュの版は永続化した「最後にサーバー読みした時点の版」を使う。
-              version: scopeKey
-                ? (getPersistedScopeVersion(scopeKey) ??
-                  (fetchAll && fullHistoryScopeKey
-                    ? getPersistedScopeVersion(fullHistoryScopeKey)
-                    : null))
-                : null,
+              version: ownVersion ?? borrowedVersion,
               lastDoc: cacheSnap.docs[cacheSnap.docs.length - 1] ?? null,
               hasMore: fetchAll
                 ? false
@@ -310,6 +324,8 @@ export function usePaginatedTransactions(
               hasCachedData: true,
               scopeVersion: paintedPage.version,
               currentDataVersion: effectiveCurrentVersion,
+              stampedDocCount,
+              cachedDocCount,
             })
           ) {
             return;
@@ -366,6 +382,9 @@ export function usePaginatedTransactions(
                 hasMore: false,
                 epoch: householdId ? getLocalWriteEpoch(householdId) : 0,
               });
+              // 差分読みでは生のDoc件数を再計算できない（changedDocs には既存Docの
+              // 更新も混ざるため加算できず、items はソフトデリート除外後）。
+              // 件数を未記録に戻し、次に全件サーバー読みが走るまで件数比較を止める。
               setPersistedScopeVersion(scopeKey, effectiveCurrentVersion);
             }
             return;
@@ -403,7 +422,9 @@ export function usePaginatedTransactions(
             hasMore: nextHasMore,
             epoch: householdId ? getLocalWriteEpoch(householdId) : 0,
           });
-          setPersistedScopeVersion(scopeKey, currentVersion ?? null);
+          // 生のDoc件数を併記する。次回のキャッシュ読みでこれを下回っていれば、
+          // 書き込みが無いのに手元が減った＝退避されたと判定できる（ADR の R3）。
+          setPersistedScopeVersion(scopeKey, currentVersion ?? null, docs.length);
         }
       } finally {
         setLoadingInitial(false);
