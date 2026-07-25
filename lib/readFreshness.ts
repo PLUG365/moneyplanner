@@ -20,6 +20,13 @@ export function shouldReadServerForScope(input: {
   cachedDocCount?: number;
 }): boolean {
   if (!input.hasCachedData) return true;
+  // stamp が無い＝このスコープを一度もサーバーから読み切っていない。キャッシュに
+  // 何が入っているか（全件か、過去のページング読みの一部か）を判断する材料が無いので
+  // 信用せずサーバーを読む。
+  //
+  // マーカーも null だと下の比較が `null !== null` で false になり、根拠が無いまま
+  // キャッシュを採用してしまう。その穴を塞ぐ。
+  if (input.scopeVersion == null) return true;
   // 追加・更新・削除はすべてマーカーが捕まえる。件数比較はここを通り抜けた
   // 場合にだけ意味を持つ。
   if (hasDataVersionChanged(input.scopeVersion, input.currentDataVersion)) {

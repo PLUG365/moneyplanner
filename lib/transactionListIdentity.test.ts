@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import type { Transaction } from "./firestore";
-import { areTransactionListsEquivalent } from "./transactionListIdentity";
+import {
+  areTransactionListsEquivalent,
+  COMPARED_TRANSACTION_KEYS,
+} from "./transactionListIdentity";
 
 function buildTransaction(overrides: Partial<Transaction> = {}): Transaction {
   return {
@@ -110,6 +113,31 @@ test("多件数でも内容が同じなら同一と判定する", () => {
   const a = Array.from({ length: 500 }, (_, index) => build(index));
   const b = Array.from({ length: 500 }, (_, index) => build(index));
   assert.equal(areTransactionListsEquivalent(a, b), true);
+});
+
+test("どのフィールドが変わっても検出する（比較対象の網羅性）", () => {
+  // 型（Record<keyof Transaction, true>）でも追従を強制しているが、実際に
+  // 全フィールドが比較に効いていることをここでも確かめる。比較対象から漏れると
+  // 「変更を検出できず画面が古いまま固まる」という壊れ方をするため、二重に守る。
+  const base = buildTransaction();
+  for (const key of COMPARED_TRANSACTION_KEYS) {
+    const changed: Transaction = { ...base };
+    const value = base[key];
+    // 型ごとに「確実に違う値」へ差し替える。
+    if (typeof value === "number") {
+      (changed[key] as number) = value + 1;
+    } else if (typeof value === "string") {
+      (changed[key] as string) = `${value}-changed`;
+    } else {
+      // null のフィールドは文字列を入れれば必ず変わる。
+      (changed[key] as unknown) = "changed";
+    }
+    assert.equal(
+      areTransactionListsEquivalent([base], [changed]),
+      false,
+      `${String(key)} の変更が検出されていない`,
+    );
+  }
 });
 
 test("多件数で1件だけ違っても検出する", () => {

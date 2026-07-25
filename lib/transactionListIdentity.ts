@@ -24,28 +24,47 @@ export function areTransactionListsEquivalent(
     const left = a[index];
     const right = b[index];
     if (left === right) continue;
-    // ID違いは内容比較するまでもなく別物。大量件数での早期打ち切りに効く。
-    if (left.id !== right.id) return false;
-    if (!shallowEqualRecord(left, right)) return false;
+    for (let keyIndex = 0; keyIndex < COMPARED_KEYS.length; keyIndex += 1) {
+      const key = COMPARED_KEYS[keyIndex];
+      if (left[key] !== right[key]) return false;
+    }
   }
   return true;
 }
 
 /**
- * 取引の全フィールドはプリミティブ（string / number / null）なので浅い比較で足りる。
- * フィールドを明示列挙すると型に項目が増えたとき追従漏れが起きるため、キーを走査する。
- * キー配列を確保せずに数えることで、数千件の比較でも余計な確保を出さない。
+ * 比較対象のフィールド一覧。
+ *
+ * **`Record<keyof Transaction, true>` として宣言しているのが要点。** `Transaction` に
+ * フィールドが増えたとき、ここに足し忘れると**型エラーになる**（プロパティ不足）。
+ *
+ * 列挙せずに `for...in` でキーを走査する書き方もできるが、`for...in` は
+ * プロトタイプチェーンを辿るため、数千件×毎回の再検証では無視できないコストになる。
+ * 一方で単純な列挙は追従漏れが起きると「変更を検出できず画面が古いまま固まる」という、
+ * 現状より悪い壊れ方をする。型で追従を強制することで両方を満たす。
+ *
+ * 取引の全フィールドはプリミティブ（string / number / null）なので `!==` で足りる。
  */
-function shallowEqualRecord(left: Transaction, right: Transaction): boolean {
-  // interface には暗黙のインデックスシグネチャが無いため、走査のためだけに変換する。
-  const a = left as unknown as Record<string, unknown>;
-  const b = right as unknown as Record<string, unknown>;
-  let leftKeyCount = 0;
-  for (const key in a) {
-    leftKeyCount += 1;
-    if (a[key] !== b[key]) return false;
-  }
-  let rightKeyCount = 0;
-  for (const key in b) rightKeyCount += 1;
-  return leftKeyCount === rightKeyCount;
-}
+const COMPARED_KEY_MAP: Record<keyof Transaction, true> = {
+  id: true,
+  date: true,
+  amount: true,
+  type: true,
+  accountId: true,
+  accountName: true,
+  categoryId: true,
+  categoryName: true,
+  categoryColor: true,
+  breakdownId: true,
+  breakdownName: true,
+  storeId: true,
+  storeName: true,
+  memo: true,
+  createdAt: true,
+};
+
+const COMPARED_KEYS = Object.keys(COMPARED_KEY_MAP) as (keyof Transaction)[];
+
+/** テストから参照する（比較対象が型と一致していることの検証用）。 */
+export const COMPARED_TRANSACTION_KEYS: readonly (keyof Transaction)[] =
+  COMPARED_KEYS;

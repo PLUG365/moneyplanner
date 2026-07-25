@@ -50,6 +50,30 @@ test("shouldReadServerForScope reads server when cached scope is stale", () => {
   );
 });
 
+test("stampが無いスコープは、マーカーも無くてもキャッシュを信用しない", () => {
+  // scopeVersion が null＝一度も全件読みしていない。マーカーも null だと
+  // `null !== null` が false になり、根拠が無いままキャッシュを採用してしまう。
+  assert.equal(
+    shouldReadServerForScope({
+      hasCachedData: true,
+      scopeVersion: null,
+      currentDataVersion: null,
+    }),
+    true,
+  );
+});
+
+test("stampが無ければマーカーが一致していてもサーバーを読む", () => {
+  assert.equal(
+    shouldReadServerForScope({
+      hasCachedData: true,
+      scopeVersion: null,
+      currentDataVersion: "v1",
+    }),
+    true,
+  );
+});
+
 // ── 件数比較（ADR の R3。LRU GC によるキャッシュ退避の検出）────────────
 
 test("マーカーが一致していても、キャッシュ件数がstamp時を下回ればサーバーを読む", () => {
