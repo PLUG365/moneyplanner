@@ -21,6 +21,10 @@ import {
 } from "@/lib/localWriteEpoch";
 import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
 import {
+    pickFirstPaintSource,
+    type FirstPaintSource,
+} from "@/lib/transactionReadPlan";
+import {
     getPersistedScopeVersion,
     loadScopeVersions,
     setPersistedScopeVersion,
@@ -172,62 +176,80 @@ export function useCachedTransactions(
         setFromCache(false);
       }
 
-      try {
-        let currentVersion = currentVersionByHousehold.get(householdId);
-        if (input?.refreshMarker) {
-          currentVersion =
-            await readHouseholdDataVersionPreferServer(householdId);
-          currentVersionByHousehold.set(householdId, currentVersion);
-        } else if (currentVersion === undefined) {
-          currentVersion =
-            await readHouseholdDataVersionPreferServer(householdId);
-          currentVersionByHousehold.set(householdId, currentVersion);
-        }
+      // 何を描画できたか。catch 側でも参照するため try の外で宣言する。
+      let painted: FirstPaintSource = pickFirstPaintSource({
+        forceServer: !!input?.forceServer,
+        hasUsableMemory: !!memory,
+        cachedDocCount: 0,
+      });
 
-        if (memory && !input?.forceServer) {
+      try {
+        // ── Phase 1: 初回描画（ネットワークを使わない）─────────────────
+        // 案B: マーカーのサーバー往復をこの後ろへ移し、手元にあるものを先に描く。
+        // 以前はマーカー読みが先頭にあり、データが端末にあっても往復を待たされていた。
+        //
+        // 描画に使った配列が「いつ時点のサーバー読みか」。鮮度判定に使う。
+        let paintedVersion: DataVersion = null;
+
+        if (painted === "memory" && memory) {
           setData(memory.items);
           setFromCache(memory.fromCache);
-          if (
-            !shouldReadServerForScope({
-              hasCachedData: true,
-              scopeVersion: memory.version,
-              currentDataVersion: currentVersion,
-            })
-          ) {
-            setError(null);
-            return;
-          }
-        }
-
-        if (!input?.forceServer) {
+          paintedVersion = memory.version;
+          setHasSettled(true);
+        } else if (painted === "none" && !input?.forceServer) {
           const cacheSnap = await getTransactionSnapshot(query, "cache");
-          if (cacheSnap && cacheSnap.docs.length > 0) {
+          painted = pickFirstPaintSource({
+            forceServer: false,
+            hasUsableMemory: false,
+            cachedDocCount: cacheSnap?.docs.length ?? 0,
+          });
+          if (painted === "cache" && cacheSnap) {
             const cachedItems = mapActiveTransactions(cacheSnap.docs);
             // ディスクキャッシュの版は「現在版」ではなく、永続化した
-            // 「このスコープを最後にサーバー読みした時点の版」を使う（案B）。
-            const cachedVersion = getPersistedScopeVersion(cacheKey);
+            // 「このスコープを最後にサーバー読みした時点の版」を使う。
+            paintedVersion = getPersistedScopeVersion(cacheKey);
             transactionScopeCache.set(cacheKey, {
               items: cachedItems,
-              version: cachedVersion,
+              version: paintedVersion,
               fromCache: true,
               epoch: getLocalWriteEpoch(householdId),
             });
             setData(cachedItems);
             setFromCache(true);
-            if (
-              !shouldReadServerForScope({
-                hasCachedData: true,
-                scopeVersion: cachedVersion,
-                currentDataVersion: currentVersion,
-              })
-            ) {
-              setError(null);
-              return;
-            }
+            setHasSettled(true);
           }
         }
 
-        setLoading(true);
+        // ── Phase 2: 鮮度確認（ここで初めてネットワークを使う）───────────
+        // すでに描画済みなので、この往復が遅くても初回表示は待たされない。
+        let currentVersion = currentVersionByHousehold.get(householdId);
+        if (input?.refreshMarker || currentVersion === undefined) {
+          currentVersion =
+            await readHouseholdDataVersionPreferServer(householdId);
+          currentVersionByHousehold.set(householdId, currentVersion);
+        }
+
+        if (
+          painted !== "none" &&
+          !shouldReadServerForScope({
+            hasCachedData: true,
+            scopeVersion: paintedVersion,
+            currentDataVersion: currentVersion,
+          })
+        ) {
+          setError(null);
+          return;
+        }
+
+        // ── Phase 3: サーバー読み ────────────────────────────────
+        // メモリから描いたが版が古かった場合、ディスクキャッシュも同じ版なので
+        // 読み直さずサーバーへ行く（メモリの版は最後のサーバー読みの stamp と一致する）。
+        //
+        // オーバーレイは「描けるものが何も無かったとき」だけ出す。描画済みの上に
+        // かぶせると、背景での再検証のたびに画面が覆われる（ADR の R2）。
+        // 描画済みの間は fromCache が true のままなので、呼び出し側はそれを
+        // 「更新中」の手がかりに使える。
+        if (painted === "none") setLoading(true);
         const serverSnap = await getTransactionSnapshot(query, "server");
         const serverItems =
           mapActiveTransactions(serverSnap?.docs ?? []);
@@ -243,7 +265,10 @@ export function useCachedTransactions(
         setFromCache(false);
         setError(null);
       } catch (err) {
-        setError(err as Error);
+        // 何も描けていないときだけエラーを伝える。キャッシュから描画できている
+        // 場合、背景の再検証が失敗しても画面をエラーへ切り替えない（ADR の R5）。
+        // 更新できていないことは fromCache が true のままであることで表す。
+        if (painted === "none") setError(err as Error);
       } finally {
         setLoading(false);
         setHasSettled(true);
