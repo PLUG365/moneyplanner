@@ -111,6 +111,8 @@ export function useCachedTransactions(
   // 「data 空 かつ 非ローディング」になり、呼び出し側が0件と誤判定する（Issue #9）。
   // 空メッセージの表示可否はこちらで判定する。
   const [hasSettled, setHasSettled] = useState(false);
+  // 現在 `data` に入っている内容が、どのスコープのものか。スコープ切替の判定に使う。
+  const paintedScopeRef = useRef<string | null>(null);
   const inFlightRef = useRef(false);
   // 進行中に scope（年・日付範囲）変更などで来た再読込要求を、完了後にやり直すための予約。
   const pendingReloadRef = useRef<{
@@ -174,7 +176,14 @@ export function useCachedTransactions(
           ? memoryEntry
           : undefined;
 
-      if (!memory && !input?.forceServer) {
+      // スコープ（年・日付範囲）が変わったときだけ空にする。前のスコープのデータを
+      // 新しいスコープの内容として見せないための処理である。
+      //
+      // 「メモリキャッシュが使えないとき」を条件にしてはいけない。端末自身の書き込み後は
+      // R1 により memory を捨てるため、記録直後に集計タブへ移ると画面がいったん空に
+      // なってしまう。同じスコープなら、画面に出ている内容をディスク読みが返るまで
+      // 保持したほうがよい（ディスク読みはローカルなので待ち時間は短い）。
+      if (paintedScopeRef.current !== cacheKey && !input?.forceServer) {
         setData([]);
         setFromCache(false);
       }
@@ -206,6 +215,7 @@ export function useCachedTransactions(
               : memory.items,
           );
           setFromCache(memory.fromCache);
+          paintedScopeRef.current = cacheKey;
           paintedVersion = memory.version;
         } else if (painted === "none" && !input?.forceServer) {
           const cacheSnap = await getTransactionSnapshot(query, "cache");
@@ -234,6 +244,7 @@ export function useCachedTransactions(
                 : cachedItems,
             );
             setFromCache(true);
+            paintedScopeRef.current = cacheKey;
           }
         }
 
@@ -292,6 +303,7 @@ export function useCachedTransactions(
           areTransactionListsEquivalent(prev, serverItems) ? prev : serverItems,
         );
         setFromCache(false);
+        paintedScopeRef.current = cacheKey;
         setError(null);
       } catch (err) {
         // 何も描けていないときだけエラーを伝える。キャッシュから描画できている
