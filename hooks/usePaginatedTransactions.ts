@@ -513,13 +513,22 @@ export function usePaginatedTransactions(
     inFlightRef.current = true;
     setLoadingMore(true);
     try {
-      const snap = await getDocs(
-        query(
-          base,
-          startAfter(lastDocRef.current),
-          limit(TRANSACTIONS_PAGE_SIZE),
+      // refresh 側と同じく上限時間を設ける。ここも inFlightRef を握るため、
+      // 応答が返らないと年の切り替えや検索の適用まで止まる（ADR の O-3）。
+      const snapResult = await withReadTimeout(
+        getDocs(
+          query(
+            base,
+            startAfter(lastDocRef.current),
+            limit(TRANSACTIONS_PAGE_SIZE),
+          ),
         ),
       );
+      if (snapResult === READ_TIMED_OUT) {
+        // 追加分を足さずに終える。hasMore は変えないので、もう一度スクロールすれば再試行できる。
+        return;
+      }
+      const snap = snapResult;
       setItems((prev) => {
         const seen = new Set(prev.map((tx) => tx.id));
         const next = mapActiveTransactions(snap.docs).filter(
@@ -531,9 +540,25 @@ export function usePaginatedTransactions(
         lastDocRef.current = snap.docs[snap.docs.length - 1];
       }
       setHasMore(snap.docs.length === TRANSACTIONS_PAGE_SIZE);
+    } catch (error) {
+      // catch が無いと未処理の Promise 拒否になる（ADR の O-2 と同じ）。
+      if (__DEV__) {
+        console.warn(
+          "[usePaginatedTransactions] 追加読み込みに失敗しました",
+          error,
+        );
+      }
     } finally {
       setLoadingMore(false);
       inFlightRef.current = false;
+      // **予約された再読み込みをここでも消化する。**
+      // これが無いと、追加読み込み中に年の切り替えや検索の適用を行った場合、
+      // その要求は予約キューに積まれたまま誰にも実行されずに捨てられる。
+      const pending = pendingReloadRef.current;
+      pendingReloadRef.current = null;
+      if (pending) {
+        void refreshRef.current?.(pending);
+      }
     }
   }, [buildBaseQuery, fetchAll, hasMore]);
 
