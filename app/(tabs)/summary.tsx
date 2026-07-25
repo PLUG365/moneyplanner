@@ -130,7 +130,11 @@ export default function SummaryScreen() {
     () => buildYearMonthlyTotalsFromTransactions(transactionData, year),
     [transactionData, year],
   );
+  // 起動直後は householdId が未解決（null）で、購読フックは queryKey が null の間
+  // loading を false にするため、そのままだと「データ0件かつ非ローディング」と
+  // 判定されて空メッセージが出てしまう。解決前も読み込み中として扱う（Issue #9 と同種）。
   const loading =
+    householdId === null ||
     transactionLoading ||
     budgetSubscription.loading ||
     categorySubscription.loading;
@@ -603,7 +607,7 @@ export default function SummaryScreen() {
               </View>
             )}
 
-            {categorySummary.length === 0 && (
+            {!loading && categorySummary.length === 0 && (
               <Text style={[styles.emptyText, { color: colors.subText }]}>
                 記録がありません
               </Text>
