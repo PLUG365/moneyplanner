@@ -38,6 +38,7 @@ import {
     buildStoreMasterRestorePlan,
     buildTransactionMasterRelinkPatch,
 } from "./masterRelink";
+import { bumpLocalWriteEpoch } from "./localWriteEpoch";
 import { type DataVersion } from "./readFreshness";
 import { buildStoreOptionsForCategory, findStoreByName } from "./storeOptions";
 import { excludeDeletedTransactionDocs } from "./transactionSoftDelete";
@@ -240,6 +241,10 @@ function bumpDataVersionInBatch(
   hDoc: FirestoreDocRef,
 ): void {
   batch.set(dataVersionDoc(hDoc), dataVersionPayload(), { merge: true });
+  // 世帯データを書き換える経路はすべてここを通るため、端末自身の書き込みを
+  // メモリキャッシュへ伝える地点としてもここを使う（Issue #9 / ADR の R1）。
+  // バッチ構築はコミットまで同期的に進むため、ここで進めても取りこぼさない。
+  bumpLocalWriteEpoch(hDoc.id);
 }
 
 function dataVersionFromSnapshot(snap: FirestoreDocSnapshot): DataVersion {
