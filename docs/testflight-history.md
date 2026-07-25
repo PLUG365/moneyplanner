@@ -11,6 +11,60 @@ TestFlight/dev-clientで実施した実機確認の履歴を記録する文書�
 - 不具合は再現手順、期待結果、実際の結果、暫定対応、次アクションを残す
 - 修正後は対応したbuild番号と結果を追記する
 
+## build 39（バージョン1.0.2、TestFlight確認中）
+
+- 検証日: 2026-07-25
+- 確認者: 本人
+- app build: `1.0.2`（buildNumberは要確認。build 38を中止したため39以降）
+- 対象コミット: `04a07ab`
+- 目的: issue #8 / #9 / #10 の対応を含む1.0.2アップデート
+- 結果: **確認の結果、issue #9 の集計タブ側が未解消。修正を入れたため、このビルドは提出せず再ビルドする**
+- 注意: App Store Connect上の公開バージョンのレコード名は `1.01` と表示されている。Appleが `1.01` を `1.1` として解釈すると `1.0.2` のバージョンレコードを作成できない可能性がある。エラーになった場合は `1.1.1` など `1.01` より大きい番号へ変更する（提出前に判明するため審査サイクルは消費しない）
+
+### build 39 確認項目
+
+- [x] 設定 → アカウントセクションを開く → 「アカウントを削除（全データ削除）」まで明確に操作できる（`docs/decisions/account-section-default-collapsed.md` でセクションを既定閉じへ戻したため、Guideline 5.1.1(v)の再却下リスクを確認する）
+- [x] 履歴タブを開いた直後に「記録がありません」がちらつかない
+- [ ] **集計タブを開いた直後に「記録がありません」がちらつかない → 未解消**
+- [x] 履歴検索の適用中に、件数と合計金額が表示される（issue #8）
+- [ ] **検索結果が表示されるまでのタイムラグが気になる → 未対応**
+- [ ] 世帯未参加時の削除導線（`app/household.tsx` の「アカウントを削除」）が従来どおり動作する
+- [ ] 設定タブを開いたときアカウントセクションが閉じている
+
+### build 39 発見事項
+
+| 重要度 | 内容 | 次アクション |
+| ------ | ---- | ------------ |
+| 中 | 集計タブの「記録がありません」が起動直後に表示される（issue #9の未解消分）。再現手順: アプリを起動して集計タブを開く。期待結果: 読み込み中は空メッセージを出さない。実際の結果: 一瞬「記録がありません」が出てから集計が描画される。原因: `hooks/useCachedTransactions.ts` の `loading` が `useState(false)` 始まりで、`setLoading(true)` はサーバー読み直前でしか呼ばれない。その手前の `loadScopeVersions()` / `readHouseholdDataVersionPreferServer()` / `getDocsFromCache()` の間は「data 空 かつ 非ローディング」になる。`usePaginatedTransactions` は `setLoadingInitial(true)` を全awaitの前で呼ぶため履歴タブは解消した | **対応済み（次ビルドで確認）**: `useCachedTransactions` に `hasSettled` を追加し、`app/(tabs)/summary.tsx` の空メッセージ判定に使う。`loading` は `ProgressOverlay`（`app/(tabs)/summary.tsx`）を駆動しており、そのまま流用すると年切替のたびにオーバーレイが点滅するためフラグを分けた |
+| 中 | 履歴検索・集計・履歴の初回表示にタイムラグがある。原因: キャッシュ先出し自体は実装済み（`getDocsFromCache` → `getDocsFromServer` を `scopeVersion` で判定）だが、その**手前に `readHouseholdDataVersionPreferServer` のサーバー往復が1回入る**（`useCachedTransactions.ts`、`usePaginatedTransactions.ts`）。この関数は `readHouseholdDataVersion(..., "server")` を await し、失敗時のみキャッシュへフォールバックするため、電波が悪いと丸ごと待たされる。検索時はさらに `fetchAll` の全件取得が乗る | **別タスク**: 判断と改善案は `docs/decisions/initial-render-latency-version-check.md` に記録。1.0.2では対応しない |
+
+## build 38
+
+- 検証日: 未実施
+- app build: `1.0.1 (38)`
+- 結果: **破棄（提出せず）**
+- メモ: `app.json` が `1.0.1` のままビルドを開始したが、1.0.1は既にbuild 37としてリリース済みで同一バージョンの重複になるため、ビルドを中止した。同一内容を `1.0.2` で作り直す
+
+## build 37
+
+- 提出日: 2026-07-19 23:48
+- 確認者: 本人
+- app build: `1.0.1 (37)`
+- App Store Connectのバージョンレコード名: `1.01`（ビルドの `CFBundleShortVersionString` は `1.0.1`。表記が揺れているため、次バージョン作成時は番号比較に注意する）
+- 対象コミット: `dbe004b`（`app.json` の version を1.0.0→1.0.1へ更新。同日に実施）
+- 目的: 口座残高の手動設定が保存直後にUIへ反映されない問題（issue #7）の修正
+- 結果: **承認済み。現在App Storeで配信中の公開バージョン**（App Store Connect上のステータスは「1.01 配信準備完了」）
+
+## build 35〜36
+
+- 提出日: 2026-07-18 11:59（App Store Connect上の提出バージョンは `1.0`）
+- 確認者: 本人
+- app build: `1.0.0`（buildNumberは35または36。**要確認**）
+- 対象コミット: `a918b78`（App Store審査対応のアカウント削除機能改善）以降
+- 目的: build 34のGuideline 5.1.1(v)却下への対応と再提出
+- 結果: **審査完了。2026-07-18にバージョン1.0としてApp Store初回配信**
+- メモ: build 35・36の個別の提出/差し替え経緯は記録が残っていないため1エントリにまとめる。実施した対応内容は `docs/decisions/account-deletion-store-compliance.md` を参照
+
 ## build 34
 
 - 検証日: 2026-07-14（App Store審査提出済み）

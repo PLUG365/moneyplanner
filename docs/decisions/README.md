@@ -15,5 +15,6 @@
 - [CSVインポートIAPは初期リリースでFamily Sharingを無効化](csv-import-iap-family-sharing.md)
 - [アカウント削除のApp Store対応](account-deletion-store-compliance.md)
 - [設定画面「アカウント」セクションのデフォルト再び閉じる](account-section-default-collapsed.md)
+- [初回表示レイテンシと版チェックのサーバー往復](initial-render-latency-version-check.md)
 
 新しい重要判断を追加した場合は、この一覧と [開発者向けドキュメント](../development.md) の更新要否も確認します。

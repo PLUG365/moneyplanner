@@ -335,7 +335,9 @@ App Store配布前の確認項目は [docs/release-checklist.md](docs/release-ch
 
 - [x] 2026-07-14: build 34をバージョン1.0として審査提出
 - [x] 2026-07-15: Guideline 5.1.1(v)（アカウント削除）で却下。対応を実装（世帯未参加でも世帯設定画面からアカウント削除可能に、設定画面の文言を「アカウントを削除（全データ削除）」へ変更＋アカウントセクション既定展開、Apple Sign-Inトークン失効を追加。判断の詳細は [docs/decisions/account-deletion-store-compliance.md](docs/decisions/account-deletion-store-compliance.md)）
-- [ ] build 35で再提出し、App Reviewへの返信に実機の削除フロー画面録画を添付する（残タスクは [docs/release-checklist.md](docs/release-checklist.md) を参照）
+- [x] 2026-07-18: 削除導線対応を反映したビルド（build 35または36）が承認され、**バージョン1.0としてApp Store初回配信**
+- [x] 2026-07-19: build 37（`1.0.1 (37)`）を提出し承認。issue #7の口座残高修正を含む。**現在App Storeで配信中の公開バージョン**（App Store Connect上のバージョンレコード名は `1.01`）
+- [ ] 次のアップデートをバージョン1.0.2として提出する（issue #8 / #9 / #10 対応。作成中だったbuild 38は `1.0.1` のまま上がり既存リリースと重複するため破棄済み。`app.json` は `1.0.2` へ更新済み。残タスクは [docs/release-checklist.md](docs/release-checklist.md) を参照）
 
 #### AI活用・開発運用の改善
 
