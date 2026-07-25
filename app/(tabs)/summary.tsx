@@ -69,6 +69,7 @@ export default function SummaryScreen() {
     data: transactionData,
     loading: transactionLoading,
     fromCache: transactionFromCache,
+    hasSettled: transactionHasSettled,
     refreshIfStale: refreshTransactionsIfStale,
   } = useCachedTransactions(householdId, {
     scopeKey: `summary-year:${yearScope}`,
@@ -138,6 +139,11 @@ export default function SummaryScreen() {
     transactionLoading ||
     budgetSubscription.loading ||
     categorySubscription.loading;
+  // 空メッセージは loading だけでは守れない。useCachedTransactions の loading は
+  // サーバー読みの間しか true にならず、その手前の版チェック・キャッシュ読みの間は
+  // 「0件かつ非ローディング」になるため（Issue #9）。読み込みが一巡するまで出さない。
+  // loading をそのまま流用すると ProgressOverlay が年切替のたびに点滅するので分けている。
+  const canShowEmptyMessage = !loading && transactionHasSettled;
 
   const prevPeriod = () => {
     if (viewMode === "monthly") {
@@ -607,7 +613,7 @@ export default function SummaryScreen() {
               </View>
             )}
 
-            {!loading && categorySummary.length === 0 && (
+            {canShowEmptyMessage && categorySummary.length === 0 && (
               <Text style={[styles.emptyText, { color: colors.subText }]}>
                 記録がありません
               </Text>

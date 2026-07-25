@@ -25,6 +25,10 @@ import {
     pickNewestDataVersion,
     shouldFetchAllTransactions,
 } from "@/lib/paginatedTransactionsMode";
+import {
+    getLocalWriteEpoch,
+    isLocalWriteEpochCurrent,
+} from "@/lib/localWriteEpoch";
 import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
 import {
     getPersistedScopeVersion,
@@ -60,6 +64,8 @@ type CachedPage = {
   version: DataVersion;
   lastDoc: FirestoreQueryDocSnapshot | null;
   hasMore: boolean;
+  /** このエントリを作った時点の、端末自身の書き込みカウンタ（ADR の R1）。 */
+  epoch: number;
 };
 
 const firstPageCache = new Map<string, CachedPage>();
@@ -194,7 +200,15 @@ export function usePaginatedTransactions(
         }
         const comparableVersion = currentVersion ?? null;
 
-        const cached = scopeKey ? firstPageCache.get(scopeKey) : undefined;
+        // 端末自身が書き込んだあとのエントリは、その書き込みを含まないため使わない
+        // （ADR の R1）。捨てたあとはディスクキャッシュ読みが初回描画になる。
+        const cachedEntry = scopeKey ? firstPageCache.get(scopeKey) : undefined;
+        const cached =
+          cachedEntry &&
+          householdId &&
+          isLocalWriteEpochCurrent(householdId, cachedEntry.epoch)
+            ? cachedEntry
+            : undefined;
         if (cached && !options?.forceServer) {
           setItems(cached.items);
           lastDocRef.current = cached.lastDoc;
@@ -237,6 +251,7 @@ export function usePaginatedTransactions(
               hasMore: fetchAll
                 ? false
                 : cacheSnap.docs.length === TRANSACTIONS_PAGE_SIZE,
+              epoch: householdId ? getLocalWriteEpoch(householdId) : 0,
             };
             if (scopeKey) firstPageCache.set(scopeKey, page);
             setItems(page.items);
@@ -290,6 +305,7 @@ export function usePaginatedTransactions(
                   version: effectiveCurrentVersion,
                   lastDoc: null,
                   hasMore: false,
+                  epoch: householdId ? getLocalWriteEpoch(householdId) : 0,
                 });
                 setPersistedScopeVersion(scopeKey, effectiveCurrentVersion);
               }
@@ -316,6 +332,7 @@ export function usePaginatedTransactions(
             version: currentVersion ?? null,
             lastDoc: lastDocRef.current,
             hasMore: nextHasMore,
+            epoch: householdId ? getLocalWriteEpoch(householdId) : 0,
           });
           setPersistedScopeVersion(scopeKey, currentVersion ?? null);
         }

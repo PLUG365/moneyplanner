@@ -15,6 +15,10 @@ import {
     type FirestoreQuery,
     type FirestoreQuerySnapshot,
 } from "@/lib/firestore";
+import {
+    getLocalWriteEpoch,
+    isLocalWriteEpochCurrent,
+} from "@/lib/localWriteEpoch";
 import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
 import {
     getPersistedScopeVersion,
@@ -26,6 +30,8 @@ type CachedTransactionScope = {
   items: Transaction[];
   version: DataVersion;
   fromCache: boolean;
+  /** このエントリを作った時点の、端末自身の書き込みカウンタ（ADR の R1）。 */
+  epoch: number;
 };
 
 type CachedTransactionsRange = {
@@ -84,6 +90,8 @@ export function useCachedTransactions(
   loading: boolean;
   error: Error | null;
   fromCache: boolean;
+  /** このスコープの読み込みが一巡したか。空メッセージの表示可否に使う。 */
+  hasSettled: boolean;
   refresh: () => void;
   refreshIfStale: () => void;
 } {
@@ -91,6 +99,11 @@ export function useCachedTransactions(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [fromCache, setFromCache] = useState(false);
+  // このスコープの読み込みが一巡したか。`loading` はサーバー読みの間だけ true に
+  // なる（= ProgressOverlay 用）ので、その手前の版チェック・キャッシュ読みの間は
+  // 「data 空 かつ 非ローディング」になり、呼び出し側が0件と誤判定する（Issue #9）。
+  // 空メッセージの表示可否はこちらで判定する。
+  const [hasSettled, setHasSettled] = useState(false);
   const inFlightRef = useRef(false);
   // 進行中に scope（年・日付範囲）変更などで来た再読込要求を、完了後にやり直すための予約。
   const pendingReloadRef = useRef<{
@@ -112,6 +125,11 @@ export function useCachedTransactions(
   const load = useCallback(
     async (input?: { forceServer?: boolean; refreshMarker?: boolean }) => {
       if (!householdId) {
+        // ここでは hasSettled を倒さない（false のまま維持する）。倒すと世帯ID未解決の間に
+        // 空メッセージが出てしまうため。世帯なしユーザーはルートレイアウトが /household へ
+        // 遷移させるので、通常この状態でタブが表示され続けることはない。
+        // ただし万一 householdId が解決しないままだと、集計タブはデータも空メッセージも
+        // 出さない無表示状態になる（loading は false のためオーバーレイも消える）。
         setData([]);
         setLoading(false);
         setFromCache(false);
@@ -128,6 +146,10 @@ export function useCachedTransactions(
         return;
       }
       inFlightRef.current = true;
+      // 年切替などでスコープが変わるときも、新スコープの読み込みが終わるまでは
+      // 0件と確定させない（下で setData([]) するため、ここで倒さないと
+      // 切替直後に空メッセージが出る）。
+      setHasSettled(false);
       await loadScopeVersions();
 
       const cacheKey = buildScopeCacheKey(householdId, scopeKey);
@@ -136,7 +158,14 @@ export function useCachedTransactions(
         { from: rangeFrom, to: rangeTo },
         orderByDateDesc,
       );
-      const memory = transactionScopeCache.get(cacheKey);
+      // 端末自身が書き込んだあとのエントリは、その書き込みを含まないため使わない。
+      // 捨てたあとはディスクキャッシュ読みが初回描画になり、そちらは未送信の
+      // 書き込みも含むので、自分の記録が反映された状態で描画される（ADR の R1）。
+      const memoryEntry = transactionScopeCache.get(cacheKey);
+      const memory =
+        memoryEntry && isLocalWriteEpochCurrent(householdId, memoryEntry.epoch)
+          ? memoryEntry
+          : undefined;
 
       if (!memory && !input?.forceServer) {
         setData([]);
@@ -181,6 +210,7 @@ export function useCachedTransactions(
               items: cachedItems,
               version: cachedVersion,
               fromCache: true,
+              epoch: getLocalWriteEpoch(householdId),
             });
             setData(cachedItems);
             setFromCache(true);
@@ -206,6 +236,7 @@ export function useCachedTransactions(
           items: serverItems,
           version,
           fromCache: false,
+          epoch: getLocalWriteEpoch(householdId),
         });
         setPersistedScopeVersion(cacheKey, version);
         setData(serverItems);
@@ -215,6 +246,7 @@ export function useCachedTransactions(
         setError(err as Error);
       } finally {
         setLoading(false);
+        setHasSettled(true);
         inFlightRef.current = false;
         const pending = pendingReloadRef.current;
         pendingReloadRef.current = null;
@@ -240,5 +272,5 @@ export function useCachedTransactions(
     void load({ refreshMarker: true });
   }, [load]);
 
-  return { data, loading, error, fromCache, refresh, refreshIfStale };
+  return { data, loading, error, fromCache, hasSettled, refresh, refreshIfStale };
 }
