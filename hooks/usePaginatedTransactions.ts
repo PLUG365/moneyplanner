@@ -31,6 +31,10 @@ import {
 } from "@/lib/localWriteEpoch";
 import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
 import {
+    pickFirstPaintSource,
+    type FirstPaintSource,
+} from "@/lib/transactionReadPlan";
+import {
     getPersistedScopeVersion,
     loadScopeVersions,
     setPersistedScopeVersion,
@@ -186,20 +190,11 @@ export function usePaginatedTransactions(
       setLoadingInitial(true);
       try {
         await loadScopeVersions();
-        let currentVersion = householdId
-          ? currentVersionByHousehold.get(householdId)
-          : undefined;
-        if (householdId && options?.refreshMarker) {
-          currentVersion =
-            await readHouseholdDataVersionPreferServer(householdId);
-          currentVersionByHousehold.set(householdId, currentVersion);
-        } else if (householdId && currentVersion === undefined) {
-          currentVersion =
-            await readHouseholdDataVersionPreferServer(householdId);
-          currentVersionByHousehold.set(householdId, currentVersion);
-        }
-        const comparableVersion = currentVersion ?? null;
 
+        // ── Phase 1: 初回描画（ネットワークを使わない）─────────────────
+        // 案B: マーカーのサーバー往復をこの後ろへ移し、手元にあるものを先に描く。
+        // 以前はマーカー読みが先頭にあり、データが端末にあっても往復を待たされていた。
+        //
         // 端末自身が書き込んだあとのエントリは、その書き込みを含まないため使わない
         // （ADR の R1）。捨てたあとはディスクキャッシュ読みが初回描画になる。
         const cachedEntry = scopeKey ? firstPageCache.get(scopeKey) : undefined;
@@ -209,45 +204,41 @@ export function usePaginatedTransactions(
           isLocalWriteEpochCurrent(householdId, cachedEntry.epoch)
             ? cachedEntry
             : undefined;
-        if (cached && !options?.forceServer) {
+
+        let painted: FirstPaintSource = pickFirstPaintSource({
+          forceServer: !!options?.forceServer,
+          hasUsableMemory: !!cached,
+          cachedDocCount: 0,
+        });
+        // 描画に使ったページ。鮮度判定と差分読みの起点に使う。
+        let paintedPage: CachedPage | null = null;
+
+        if (painted === "memory" && cached) {
           setItems(cached.items);
           lastDocRef.current = cached.lastDoc;
           setHasMore(cached.hasMore);
-          const effectiveCurrentVersion = pickNewestDataVersion(
-            comparableVersion,
-            cached.version,
-          );
-          if (
-            !shouldReadServerForScope({
-              hasCachedData: true,
-              scopeVersion: cached.version,
-              currentDataVersion: effectiveCurrentVersion,
-            })
-          ) {
-            return;
-          }
-        }
-
-        if (!options?.forceServer) {
+          paintedPage = cached;
+        } else if (painted === "none" && !options?.forceServer) {
           const cacheSnap = await getQuerySnapshot(
             queryLimit == null ? base : query(base, limit(queryLimit)),
             "cache",
           );
-          if (cacheSnap && cacheSnap.docs.length > 0) {
-            const cachedItems = mapActiveTransactions(cacheSnap.docs);
+          painted = pickFirstPaintSource({
+            forceServer: false,
+            hasUsableMemory: false,
+            cachedDocCount: cacheSnap?.docs.length ?? 0,
+          });
+          if (painted === "cache" && cacheSnap) {
             const page: CachedPage = {
-              items: cachedItems,
-              // ディスクキャッシュの版は永続化した「最後にサーバー読みした時点の版」を使う（案B）。
+              items: mapActiveTransactions(cacheSnap.docs),
+              // ディスクキャッシュの版は永続化した「最後にサーバー読みした時点の版」を使う。
               version: scopeKey
                 ? (getPersistedScopeVersion(scopeKey) ??
                   (fetchAll && fullHistoryScopeKey
                     ? getPersistedScopeVersion(fullHistoryScopeKey)
                     : null))
                 : null,
-              lastDoc:
-                cacheSnap.docs.length > 0
-                  ? cacheSnap.docs[cacheSnap.docs.length - 1]
-                  : null,
+              lastDoc: cacheSnap.docs[cacheSnap.docs.length - 1] ?? null,
               hasMore: fetchAll
                 ? false
                 : cacheSnap.docs.length === TRANSACTIONS_PAGE_SIZE,
@@ -257,63 +248,93 @@ export function usePaginatedTransactions(
             setItems(page.items);
             lastDocRef.current = page.lastDoc;
             setHasMore(page.hasMore);
-            const effectiveCurrentVersion = pickNewestDataVersion(
-              comparableVersion,
-              page.version,
-            );
-            const shouldReadServer = shouldReadServerForScope({
-              hasCachedData: true,
-              scopeVersion: page.version,
-              currentDataVersion: effectiveCurrentVersion,
-            });
-            if (!shouldReadServer) {
-              return;
-            }
-            const incrementalSince = dataVersionToTimestamp(page.version);
-            if (
-              householdId &&
-              fetchAll &&
-              !range.from &&
-              !range.to &&
-              incrementalSince
-            ) {
-              const incrementalSnap = await getQuerySnapshot(
-                query(
-                  householdCollection(householdId, "transactions"),
-                  where("updatedAt", ">", incrementalSince),
-                  orderBy("updatedAt", "asc"),
-                ),
-                "server",
-              );
-              const changedDocs = incrementalSnap?.docs ?? [];
-              const deletedIds = new Set(
-                changedDocs
-                  .filter((doc) => isDeletedTransactionData(doc.data()))
-                  .map((doc) => doc.id),
-              );
-              const nextItems = mergeTransactionCacheItems(
-                page.items,
-                mapActiveTransactions(changedDocs),
-                deletedIds,
-              );
-              setItems(nextItems);
-              lastDocRef.current = null;
-              setHasMore(false);
-              if (scopeKey) {
-                firstPageCache.set(scopeKey, {
-                  items: nextItems,
-                  version: effectiveCurrentVersion,
-                  lastDoc: null,
-                  hasMore: false,
-                  epoch: householdId ? getLocalWriteEpoch(householdId) : 0,
-                });
-                setPersistedScopeVersion(scopeKey, effectiveCurrentVersion);
-              }
-              return;
-            }
+            paintedPage = page;
           }
         }
 
+        // 描画できた時点で「まだ何も無い」状態を抜ける。ここで倒さないと、
+        // 背景で再検証している間ずっと空メッセージと検索合計が隠れたままになる。
+        if (paintedPage) setLoadingInitial(false);
+
+        // ── Phase 2: 鮮度確認（ここで初めてネットワークを使う）───────────
+        // すでに描画済みなので、この往復が遅くても初回表示は待たされない。
+        let currentVersion = householdId
+          ? currentVersionByHousehold.get(householdId)
+          : undefined;
+        if (
+          householdId &&
+          (options?.refreshMarker || currentVersion === undefined)
+        ) {
+          currentVersion =
+            await readHouseholdDataVersionPreferServer(householdId);
+          currentVersionByHousehold.set(householdId, currentVersion);
+        }
+        const comparableVersion = currentVersion ?? null;
+
+        if (paintedPage) {
+          const effectiveCurrentVersion = pickNewestDataVersion(
+            comparableVersion,
+            paintedPage.version,
+          );
+          if (
+            !shouldReadServerForScope({
+              hasCachedData: true,
+              scopeVersion: paintedPage.version,
+              currentDataVersion: effectiveCurrentVersion,
+            })
+          ) {
+            return;
+          }
+
+          // ── Phase 3a: 差分読み ────────────────────────────────
+          // 全期間の全件スコープに限り、変更分だけ取ってマージする。
+          // メモリから描画した場合も版の意味は同じ（最後にサーバー読みした時点）
+          // なので、同じ起点で差分を取れる。
+          const incrementalSince = dataVersionToTimestamp(paintedPage.version);
+          if (
+            householdId &&
+            fetchAll &&
+            !range.from &&
+            !range.to &&
+            incrementalSince
+          ) {
+            const incrementalSnap = await getQuerySnapshot(
+              query(
+                householdCollection(householdId, "transactions"),
+                where("updatedAt", ">", incrementalSince),
+                orderBy("updatedAt", "asc"),
+              ),
+              "server",
+            );
+            const changedDocs = incrementalSnap?.docs ?? [];
+            const deletedIds = new Set(
+              changedDocs
+                .filter((doc) => isDeletedTransactionData(doc.data()))
+                .map((doc) => doc.id),
+            );
+            const nextItems = mergeTransactionCacheItems(
+              paintedPage.items,
+              mapActiveTransactions(changedDocs),
+              deletedIds,
+            );
+            setItems(nextItems);
+            lastDocRef.current = null;
+            setHasMore(false);
+            if (scopeKey) {
+              firstPageCache.set(scopeKey, {
+                items: nextItems,
+                version: effectiveCurrentVersion,
+                lastDoc: null,
+                hasMore: false,
+                epoch: householdId ? getLocalWriteEpoch(householdId) : 0,
+              });
+              setPersistedScopeVersion(scopeKey, effectiveCurrentVersion);
+            }
+            return;
+          }
+        }
+
+        // ── Phase 3b: サーバー読み ──────────────────────────────
         const snap = await getQuerySnapshot(
           queryLimit == null ? base : query(base, limit(queryLimit)),
           "server",
