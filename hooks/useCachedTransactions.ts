@@ -100,6 +100,16 @@ export function useCachedTransactions(
   fromCache: boolean;
   /** このスコープの読み込みが一巡したか。空メッセージの表示可否に使う。 */
   hasSettled: boolean;
+  /**
+   * いま `data` に入っている配列が、このスコープの全件か。
+   *
+   * 集計（合計・カテゴリ別・予算進捗）の表示可否に使う。Firestore のキャッシュには
+   * 「この端末が過去に取得したぶん」しか入っておらず、履歴タブのページングで
+   * 取り込まれた一部だけが該当年に入っている、という状態が起こりうる。そこから
+   * 合計を出すと**確定値の顔をした誤った金額**になる。一覧と違い、集計は欠けても
+   * 見て分からないため、確認できないときは表示しない。
+   */
+  isComplete: boolean;
   refresh: () => void;
   refreshIfStale: () => void;
 } {
@@ -112,6 +122,8 @@ export function useCachedTransactions(
   // 「data 空 かつ 非ローディング」になり、呼び出し側が0件と誤判定する（Issue #9）。
   // 空メッセージの表示可否はこちらで判定する。
   const [hasSettled, setHasSettled] = useState(false);
+  // `data` がこのスコープの全件か（集計の表示可否）。安全側の false から始める。
+  const [isComplete, setIsComplete] = useState(false);
   // 現在 `data` に入っている内容が、どのスコープのものか。スコープ切替の判定に使う。
   const paintedScopeRef = useRef<string | null>(null);
   const inFlightRef = useRef(false);
@@ -160,6 +172,9 @@ export function useCachedTransactions(
       // 0件と確定させない（下で setData([]) するため、ここで倒さないと
       // 切替直後に空メッセージが出る）。
       setHasSettled(false);
+      // スコープが変わる場合、描画するまで data は前のスコープの配列である。
+      // 集計に使ってよいかは、新しいスコープで描き直すまで確定させない。
+      setIsComplete(false);
       await loadScopeVersions();
 
       const cacheKey = buildScopeCacheKey(householdId, scopeKey);
@@ -206,6 +221,8 @@ export function useCachedTransactions(
         // 件数比較用（ADR の R3）。ディスクキャッシュから描いたときだけ意味を持つ。
         let stampedDocCount: number | undefined;
         let cachedDocCount: number | undefined;
+        // 描画に使った配列が、このスコープの全件と分かっているか。
+        let paintedComplete = false;
 
         if (painted === "memory" && memory) {
           // 内容が同じなら前の配列を保持する。参照が変わらなければ再描画自体が
@@ -218,6 +235,9 @@ export function useCachedTransactions(
           setFromCache(memory.fromCache);
           paintedScopeRef.current = cacheKey;
           paintedVersion = memory.version;
+          // サーバー読みで作られたエントリ（fromCache === false）は、stamp の
+          // 保存可否に関わらず全件である。ディスク由来なら stamp の有無で判断する。
+          paintedComplete = !memory.fromCache || memory.version !== null;
         } else if (painted === "none" && !input?.forceServer) {
           const cacheSnap = await getTransactionSnapshot(query, "cache");
           painted = pickFirstPaintSource({
@@ -246,8 +266,12 @@ export function useCachedTransactions(
             );
             setFromCache(true);
             paintedScopeRef.current = cacheKey;
+            // stamp があれば、過去にこのスコープをサーバーから読み切っている。
+            // 無ければ、履歴タブのページングで入った一部が混ざっているだけかもしれない。
+            paintedComplete = paintedVersion !== null;
           }
         }
+        setIsComplete(paintedComplete);
 
         // 描画できたかで「0件と確定してよいか」が決まる。ディスクキャッシュ0件では
         // 「世帯が空」と「未キャッシュ」を区別できないため、サーバー読みを待つ。
@@ -305,7 +329,9 @@ export function useCachedTransactions(
         // かぶせると、背景での再検証のたびに画面が覆われる（ADR の R2）。
         // 描画済みの間は fromCache が true のままなので、呼び出し側はそれを
         // 「更新中」の手がかりに使える。
-        if (painted === "none") setLoading(true);
+        // 全件と分かっているものを描けていないなら、集計は出せない状態なので
+        // 読み込み中として扱う。描画済みでも部分的なキャッシュしか無い場合を含む。
+        if (!paintedComplete) setLoading(true);
         const serverResult = await withReadTimeout(
           getTransactionSnapshot(query, "server"),
         );
@@ -332,6 +358,8 @@ export function useCachedTransactions(
         );
         setFromCache(false);
         paintedScopeRef.current = cacheKey;
+        // サーバーから読み切った直後なので、stamp の保存可否に関わらず全件である。
+        setIsComplete(true);
         setError(null);
       } catch (err) {
         // 何も描けていないときだけエラーを伝える。キャッシュから描画できている
@@ -366,5 +394,14 @@ export function useCachedTransactions(
     void load({ refreshMarker: true });
   }, [load]);
 
-  return { data, loading, error, fromCache, hasSettled, refresh, refreshIfStale };
+  return {
+    data,
+    loading,
+    error,
+    fromCache,
+    hasSettled,
+    isComplete,
+    refresh,
+    refreshIfStale,
+  };
 }

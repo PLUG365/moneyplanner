@@ -70,6 +70,7 @@ export default function SummaryScreen() {
     loading: transactionLoading,
     fromCache: transactionFromCache,
     hasSettled: transactionHasSettled,
+    isComplete: transactionIsComplete,
     refreshIfStale: refreshTransactionsIfStale,
   } = useCachedTransactions(householdId, {
     scopeKey: `summary-year:${yearScope}`,
@@ -144,6 +145,11 @@ export default function SummaryScreen() {
   // 「0件かつ非ローディング」になるため（Issue #9）。読み込みが一巡するまで出さない。
   // loading をそのまま流用すると ProgressOverlay が年切替のたびに点滅するので分けている。
   const canShowEmptyMessage = !loading && transactionHasSettled;
+  // 集計は「この期間の記録が全件そろっている」と分かっているときだけ描画する。
+  // Firestoreのキャッシュには過去に取得したぶんしか無く、履歴タブのページングで
+  // 入った一部だけが該当年に含まれている、という状態が起こりうる。そこから合計を
+  // 出すと確定値の顔をした誤った金額になる。一覧と違い、集計は欠けても見て分からない。
+  const canShowAggregates = transactionIsComplete;
 
   const prevPeriod = () => {
     if (viewMode === "monthly") {
@@ -321,7 +327,22 @@ export default function SummaryScreen() {
       ) : null}
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {viewMode === "monthly" ? (
+        {!canShowAggregates ? (
+          // 読み込み中はオーバーレイが出ているので、確定してから案内する。
+          canShowEmptyMessage ? (
+            <View style={styles.unavailableBlock}>
+              <Text style={[styles.emptyText, { color: colors.subText }]}>
+                集計を表示できません
+              </Text>
+              <Text
+                style={[styles.unavailableHint, { color: colors.subText }]}
+              >
+                この期間の記録が、まだすべてこの端末に届いていません。
+                オンラインのときにもう一度開くと集計できます。
+              </Text>
+            </View>
+          ) : null
+        ) : viewMode === "monthly" ? (
           <>
             {/* サマリーカード */}
             <View
@@ -861,6 +882,13 @@ const styles = StyleSheet.create({
   monthJumpHint: { fontSize: 11, fontWeight: "700", marginTop: 2 },
   scrollContent: { paddingHorizontal: 12, paddingBottom: 100 },
   emptyText: { textAlign: "center", marginTop: 48, fontSize: 15 },
+  unavailableBlock: { paddingHorizontal: 24 },
+  unavailableHint: {
+    textAlign: "center",
+    marginTop: 12,
+    fontSize: 13,
+    lineHeight: 20,
+  },
   summaryCard: {
     borderRadius: 12,
     borderWidth: 1,
