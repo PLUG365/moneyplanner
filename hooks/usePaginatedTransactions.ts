@@ -42,6 +42,7 @@ import {
     setPersistedScopeVersion,
 } from "@/lib/scopeVersionStore";
 import { mergeTransactionCacheItems } from "@/lib/transactionCacheMerge";
+import { areTransactionListsEquivalent } from "@/lib/transactionListIdentity";
 import { isDeletedTransactionData } from "@/lib/transactionSoftDelete";
 
 export const TRANSACTIONS_PAGE_SIZE = 100;
@@ -236,7 +237,13 @@ export function usePaginatedTransactions(
         let cachedDocCount: number | undefined;
 
         if (painted === "memory" && cached) {
-          setItems(cached.items);
+          // 内容が同じなら前の配列を保持する。参照が変わらなければ再描画自体が
+          // 起きず、スクロール位置の跳ねやタップ先のズレを避けられる（ADR の R4）。
+          setItems((prev) =>
+            areTransactionListsEquivalent(prev, cached.items)
+              ? prev
+              : cached.items,
+          );
           lastDocRef.current = cached.lastDoc;
           setHasMore(cached.hasMore);
           paintedPage = cached;
@@ -276,7 +283,11 @@ export function usePaginatedTransactions(
               epoch: householdId ? getLocalWriteEpoch(householdId) : 0,
             };
             if (scopeKey) firstPageCache.set(scopeKey, page);
-            setItems(page.items);
+            setItems((prev) =>
+              areTransactionListsEquivalent(prev, page.items)
+                ? prev
+                : page.items,
+            );
             lastDocRef.current = page.lastDoc;
             setHasMore(page.hasMore);
             paintedPage = page;
@@ -362,7 +373,9 @@ export function usePaginatedTransactions(
               mapActiveTransactions(changedDocs),
               deletedIds,
             );
-            setItems(nextItems);
+            setItems((prev) =>
+              areTransactionListsEquivalent(prev, nextItems) ? prev : nextItems,
+            );
             lastDocRef.current = null;
             setHasMore(false);
             // 完全なキャッシュに、サーバーから取った変更分をマージした結果なので
@@ -401,7 +414,9 @@ export function usePaginatedTransactions(
         const nextHasMore = fetchAll
           ? false
           : docs.length === TRANSACTIONS_PAGE_SIZE;
-        setItems(nextItems);
+        setItems((prev) =>
+          areTransactionListsEquivalent(prev, nextItems) ? prev : nextItems,
+        );
         // 全件サーバー読みの直後は、stamp の成否と無関係にこの配列は完全である。
         // マーカーが null の世帯（オフライン初回など）では setPersistedScopeVersion が
         // 記録をスキップするため、stamp を必要条件にすると合計が一度も出ない（R8）。

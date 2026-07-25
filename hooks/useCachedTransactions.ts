@@ -20,6 +20,7 @@ import {
     isLocalWriteEpochCurrent,
 } from "@/lib/localWriteEpoch";
 import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
+import { areTransactionListsEquivalent } from "@/lib/transactionListIdentity";
 import {
     pickFirstPaintSource,
     type FirstPaintSource,
@@ -196,7 +197,13 @@ export function useCachedTransactions(
         let cachedDocCount: number | undefined;
 
         if (painted === "memory" && memory) {
-          setData(memory.items);
+          // 内容が同じなら前の配列を保持する。参照が変わらなければ再描画自体が
+          // 起きず、スクロール位置の跳ねやタップ先のズレを避けられる（ADR の R4）。
+          setData((prev) =>
+            areTransactionListsEquivalent(prev, memory.items)
+              ? prev
+              : memory.items,
+          );
           setFromCache(memory.fromCache);
           paintedVersion = memory.version;
           setHasSettled(true);
@@ -221,7 +228,11 @@ export function useCachedTransactions(
               fromCache: true,
               epoch: getLocalWriteEpoch(householdId),
             });
-            setData(cachedItems);
+            setData((prev) =>
+              areTransactionListsEquivalent(prev, cachedItems)
+                ? prev
+                : cachedItems,
+            );
             setFromCache(true);
             setHasSettled(true);
           }
@@ -272,7 +283,9 @@ export function useCachedTransactions(
         // 生のDoc件数を併記する。次回のキャッシュ読みでこれを下回っていれば、
         // 書き込みが無いのに手元が減った＝退避されたと判定できる（ADR の R3）。
         setPersistedScopeVersion(cacheKey, version, serverSnap?.docs.length);
-        setData(serverItems);
+        setData((prev) =>
+          areTransactionListsEquivalent(prev, serverItems) ? prev : serverItems,
+        );
         setFromCache(false);
         setError(null);
       } catch (err) {
