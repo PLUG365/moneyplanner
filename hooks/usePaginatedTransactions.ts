@@ -102,7 +102,13 @@ export function usePaginatedTransactions(
   options: PaginatedTransactionsOptions = {},
 ): PaginatedTransactions {
   const [items, setItems] = useState<Transaction[]>([]);
-  const [loadingInitial, setLoadingInitial] = useState(false);
+  // マウント直後は必ず初回読み込みが走るため、最初の描画から「読み込み中」で始める。
+  // false 始まりだと、世帯ID解決前（householdId が null の間）に
+  // 「items 空 かつ 非ローディング」の状態が描画され、
+  // 空メッセージが一瞬出てからローディングに切り替わる（Issue #9）。
+  // householdId が null の間は下の early return で loadingInitial を倒さず、
+  // 解決後の読み込み完了まで読み込み中のまま維持する。
+  const [loadingInitial, setLoadingInitial] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
 
@@ -149,6 +155,10 @@ export function usePaginatedTransactions(
     async (options?: { forceServer?: boolean; refreshMarker?: boolean }) => {
       const base = buildBaseQuery();
       if (!base) {
+        // householdId 未解決（起動直後）はまだ読み込みが確定していないため、
+        // loadingInitial は倒さない。ここで false にすると空メッセージが
+        // 一瞬表示される（Issue #9）。世帯なしユーザーはルートレイアウトが
+        // /household へ遷移させるため、読み込み中のまま固着はしない。
         setItems([]);
         setHasMore(false);
         lastDocRef.current = null;
