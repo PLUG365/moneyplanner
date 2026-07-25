@@ -59,6 +59,7 @@ import {
     type HistorySearchType,
 } from "@/lib/historySearch";
 import { hasHistorySearchCriteria } from "@/lib/historySearchCriteria";
+import { buildHistorySearchTotals } from "@/lib/historySearchTotals";
 import {
     buildHistorySearchBreakdownOptions,
     buildHistorySearchCategoryOptions,
@@ -300,6 +301,15 @@ export default function HistoryScreen() {
       filterHistoryTransactions(listTransactions, appliedHistorySearchCriteria),
     [appliedHistorySearchCriteria, listTransactions],
   );
+
+  // 検索結果の合計。検索条件ありのときは全件取得（readAll）されるため合計が正確になる。
+  // 条件なしの履歴はページング読みで手元に一部しかないため、合計は表示しない。
+  const searchTotals = useMemo(
+    () => buildHistorySearchTotals(filteredListTransactions),
+    [filteredListTransactions],
+  );
+  const showSearchTotals =
+    viewMode === "list" && shouldReadAllHistory && !paginatedLoadingInitial;
 
   const accountOptions = useMemo(
     () => [...accountSubscription.data],
@@ -1184,6 +1194,49 @@ export default function HistoryScreen() {
         />
       ) : null}
 
+      {showSearchTotals ? (
+        <View
+          style={[
+            styles.searchTotalsBar,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.searchTotalsCount, { color: colors.subText }]}>
+            {searchTotals.count}件
+          </Text>
+          <View style={styles.searchTotalsAmounts}>
+            {searchTotals.hasIncome ? (
+              <Text style={[styles.searchTotalsAmount, { color: incomeColor }]}>
+                +¥{formatAmount(searchTotals.income)}
+              </Text>
+            ) : null}
+            {searchTotals.hasExpense ? (
+              <Text style={[styles.searchTotalsAmount, { color: expenseColor }]}>
+                -¥{formatAmount(searchTotals.expense)}
+              </Text>
+            ) : null}
+            {searchTotals.hasIncome && searchTotals.hasExpense ? (
+              <Text
+                style={[
+                  styles.searchTotalsAmount,
+                  { color: searchTotals.net >= 0 ? incomeColor : expenseColor },
+                ]}
+              >
+                差引 {searchTotals.net >= 0 ? "+" : "-"}¥
+                {formatAmount(Math.abs(searchTotals.net))}
+              </Text>
+            ) : null}
+            {!searchTotals.hasIncome && !searchTotals.hasExpense ? (
+              <Text
+                style={[styles.searchTotalsAmount, { color: colors.subText }]}
+              >
+                ¥0
+              </Text>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+
       {viewMode === "list" ? (
         // --- リストビュー（カーソルページング + 仮想化）---
         <FlatList
@@ -1643,6 +1696,27 @@ const styles = StyleSheet.create({
   listFill: { flex: 1 },
   scrollContent: { paddingHorizontal: 12, paddingBottom: 100 },
   emptyText: { textAlign: "center", marginTop: 48, fontSize: 15 },
+  searchTotalsBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 8,
+    marginHorizontal: 12,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+  },
+  searchTotalsCount: { fontSize: 13 },
+  searchTotalsAmounts: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  searchTotalsAmount: { fontSize: 15, fontWeight: "600" },
   txRow: {
     flexDirection: "row",
     alignItems: "center",
