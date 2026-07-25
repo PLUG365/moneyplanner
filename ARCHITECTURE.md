@@ -418,9 +418,16 @@ moneyplanner/
 | `lib/historySearch.ts`                                     | 履歴フィルタリング条件                                                     |
 | `lib/historySearchOptions.ts`                              | 履歴検索パネルのカテゴリ/内訳/お店候補生成                                 |
 | `lib/moneyInput.ts`                                        | 金額入力の正規化・四則演算評価                                             |
+| `lib/readFreshness.ts`                                     | スコープの版・件数からサーバー再読込の要否を判定（純関数）                 |
+| `lib/scopeVersionStore.ts`                                 | スコープごとの「最後にサーバー全件読みした版と件数」を端末へ永続化         |
+| `lib/transactionReadPlan.ts`                               | 読み取り順序・空状態・集計の表示可否の判定（純関数）                       |
+| `lib/localWriteEpoch.ts`                                   | 端末自身の書き込みを追跡し、古いメモリキャッシュの使用を防ぐ               |
+| `lib/transactionListIdentity.ts`                           | 取引リストの内容一致判定（不要な再描画の抑止）                             |
+| `lib/readTimeout.ts`                                       | サーバー読み取りの待ち時間上限（オフライン時の固着回避）                   |
+| `lib/pendingWrite.ts`                                      | 書き込みackの待ち時間上限（オフライン時の固着回避）                        |
 | `hooks/useFirestore.ts`                                    | Firestore リアルタイム購読 + fromCache メタデータ                          |
-| `hooks/useCachedTransactions.ts`                           | 集計・カレンダー向けの取引キャッシュ読み取り                               |
-| `hooks/usePaginatedTransactions.ts`                        | 履歴リスト/検索向けの取引読み取り                                          |
+| `hooks/useCachedTransactions.ts`                           | 集計・カレンダー向けの取引キャッシュ読み取り（キャッシュ先出し）           |
+| `hooks/usePaginatedTransactions.ts`                        | 履歴リスト/検索向けの取引読み取り（キャッシュ先出し・差分読み）            |
 | `hooks/useCachedStoreOptions.ts`                           | 取引キャッシュ由来のお店候補                                               |
 | `components/TransactionEditor.tsx`                         | 記録/履歴編集の共通フォーム                                                |
 | `components/MoneyInputModal.tsx` / `NumericInputModal.tsx` | 金額・数値入力モーダル（共通部品）                                         |

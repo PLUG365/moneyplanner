@@ -15,10 +15,13 @@ TestFlight/dev-clientで実施した実機確認の履歴を記録する文書�
 
 - 検証日: 未実施
 - app build: `1.0.2`（buildNumberは自動採番）
-- 対象コミット: `f41294e` 以降
-- 目的: issue #8 / #9 / #10 に加え、初回表示レイテンシの改善一式（`docs/decisions/initial-render-latency-version-check.md` の案B / R1 / R3 / R4 / R5 / R8）
+- 対象コミット: build 39（`04a07ab`）以降のすべて
+- 目的: issue #8 / #9 / #10 に加え、初回表示レイテンシの改善一式。詳細は `docs/decisions/initial-render-latency-version-check.md` を参照
+  - キャッシュ先出し（案B）を両フックへ適用し、マーカーのサーバー往復を初回描画の後ろへ移した
+  - R1（自分の書き込み後の古いキャッシュ）、R3（キャッシュ退避の検出）、R4（不要な再描画の抑止）、R5（背景読み失敗の扱い）、R8（検索合計の完全性判定）
+  - O-1〜O-5（オフライン利用時の5件。未送信書き込みでの再描画、未処理のPromise拒否、読み取りの固着、`loadMore` の3つの穴、集計タブの完全性ガード）
 - 状態: **EAS Free plan の月間iOSビルド枠を使い切ったため、2026-08-01までビルドできない**。実装は完了しており、実機確認だけが残っている
-- 確認項目: ADR の R9 受け入れ基準表（9シナリオ）を正とする。加えて `docs/development-setup.md` の定型7項目
+- 確認項目: ADR の「R9: 受け入れ基準」表（15シナリオ）を正とする。加えて `docs/development-setup.md` の定型7項目
 
 ## build 39（バージョン1.0.2、提出せず）
 
