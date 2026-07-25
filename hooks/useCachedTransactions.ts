@@ -23,6 +23,7 @@ import { DataVersion, shouldReadServerForScope } from "@/lib/readFreshness";
 import { areTransactionListsEquivalent } from "@/lib/transactionListIdentity";
 import {
     pickFirstPaintSource,
+    resolveHasSettled,
     type FirstPaintSource,
 } from "@/lib/transactionReadPlan";
 import {
@@ -206,7 +207,6 @@ export function useCachedTransactions(
           );
           setFromCache(memory.fromCache);
           paintedVersion = memory.version;
-          setHasSettled(true);
         } else if (painted === "none" && !input?.forceServer) {
           const cacheSnap = await getTransactionSnapshot(query, "cache");
           painted = pickFirstPaintSource({
@@ -234,9 +234,14 @@ export function useCachedTransactions(
                 : cachedItems,
             );
             setFromCache(true);
-            setHasSettled(true);
           }
         }
+
+        // 描画できたかで「0件と確定してよいか」が決まる。ディスクキャッシュ0件では
+        // 「世帯が空」と「未キャッシュ」を区別できないため、サーバー読みを待つ。
+        setHasSettled(
+          resolveHasSettled({ paintedSource: painted, serverReadDone: false }),
+        );
 
         // ── Phase 2: 鮮度確認（ここで初めてネットワークを使う）───────────
         // すでに描画済みなので、この往復が遅くても初回表示は待たされない。
