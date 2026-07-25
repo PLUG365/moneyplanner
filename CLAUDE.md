@@ -29,7 +29,7 @@
 ## 検証とドキュメント
 
 - 変更内容に応じて、関連ユニットテスト、`npm test -- <対象test>`、`npm run lint`、Firestore Rules変更時は `npm run test:rules` を実行する。
-- 実機確認が必要な変更は、最終回答でTestFlight/dev-client確認項目を明記する。
+- 実機確認が必要な変更は、最終回答でTestFlight/dev-client確認項目を明記する。手順（PC側・iPhone側の操作、取引の読み書きに触る変更の定型7項目）は [docs/development-setup.md](docs/development-setup.md#dev-clientでの動作確認) を正とする。ここに書いてあることを回答内で書き直さない。
 - 仕様差分が出たら [PLAN.md](PLAN.md)、[ARCHITECTURE.md](ARCHITECTURE.md)、[docs/ai-development.md](docs/ai-development.md)、必要に応じて [docs/decisions/](docs/decisions/) を更新する。
 - 重要な設計判断、方針転換、採用/不採用理由はADRとして [docs/decisions/](docs/decisions/) に残す。
 
@@ -46,7 +46,7 @@ cd C:\Users\rnmgy\dev\moneyplanner
 npx expo start
 ```
 
-iPhoneのdev-clientビルドで開く。TestFlight検証中のビルド情報は [PLAN.md](PLAN.md) を参照する。
+iPhoneのdev-clientビルドで開く。iPhone側の接続操作、リロード方法、取引の読み書きに触る変更の定型確認項目は [docs/development-setup.md](docs/development-setup.md#dev-clientでの動作確認) を参照する。TestFlight検証中のビルド情報は [PLAN.md](PLAN.md) を参照する。
 
 ## 主要ファイル
 
