@@ -1,3 +1,4 @@
+import * as Haptics from "expo-haptics";
 import React from "react";
 import {
     Modal,
@@ -42,11 +43,14 @@ const DIGIT_ROWS: NumericInputKey[][] = [
   ["0"],
 ];
 
+// 演算記号は右端の縦一列にまとめ、上から ＋ － × ÷ の順に並べる。
+// 記号が行をまたいで散らないぶん、狙って押しやすい。
+// 押し出される ⌫ は最下段（0 の隣）へ置く。
 const OPERATOR_ROWS: NumericInputKey[][] = [
-  ["7", "8", "9", "backspace"],
-  ["4", "5", "6", "+"],
-  ["1", "2", "3", "-"],
-  ["clear", "0", "*", "/"],
+  ["7", "8", "9", "+"],
+  ["4", "5", "6", "-"],
+  ["1", "2", "3", "*"],
+  ["clear", "0", "backspace", "/"],
 ];
 
 function getKeyLabel(key: NumericInputKey): string {
@@ -75,6 +79,7 @@ export default function NumericInputModal({
   const rows = allowOperators ? OPERATOR_ROWS : DIGIT_ROWS;
 
   const handlePress = (key: NumericInputKey) => {
+    playKeyFeedback();
     onChange(
       applyNumericInputKey(value, key, { allowOperators, allowNegative }),
     );
@@ -147,7 +152,10 @@ export default function NumericInputModal({
         {onEvaluate ? (
           <TouchableOpacity
             style={[styles.evaluateButton, { backgroundColor: colors.tint }]}
-            onPress={onEvaluate}
+            onPress={() => {
+              playKeyFeedback();
+              onEvaluate();
+            }}
           >
             <Text style={styles.evaluateButtonText}>計算</Text>
           </TouchableOpacity>
@@ -169,6 +177,17 @@ export default function NumericInputModal({
 
 function isOperatorKey(key: NumericInputKey): boolean {
   return key === "+" || key === "-" || key === "*" || key === "/";
+}
+
+/**
+ * キーを押したときの触覚フィードバック。
+ *
+ * `selectionAsync` は iOS の標準キーボードに近い軽いクリック感で、
+ * 連打しても重くならない。触覚に対応していない端末では何も起きない。
+ * 入力の妨げにならないよう待たずに投げっぱなしにし、失敗も握りつぶす。
+ */
+function playKeyFeedback(): void {
+  void Haptics.selectionAsync().catch(() => undefined);
 }
 
 const styles = StyleSheet.create({
