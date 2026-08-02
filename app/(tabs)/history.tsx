@@ -1284,11 +1284,8 @@ export default function HistoryScreen() {
             />
           }
           ListEmptyComponent={
-            searchResultsPending ? (
-              <Text style={[styles.emptyText, { color: colors.subText }]}>
-                検索中…
-              </Text>
-            ) : paginatedLoadingInitial ? null : (
+            // 検索中は ProgressOverlay が出るので、一覧側には何も出さない。
+            searchResultsPending || paginatedLoadingInitial ? null : (
               <Text style={[styles.emptyText, { color: colors.subText }]}>
                 記録がありません
               </Text>
@@ -1680,9 +1677,10 @@ export default function HistoryScreen() {
 
       <ProgressOverlay
         visible={
-          paginatedLoadingInitial && filteredListTransactions.length === 0
+          searchResultsPending ||
+          (paginatedLoadingInitial && filteredListTransactions.length === 0)
         }
-        message="読み込み中…"
+        message={searchResultsPending ? "検索中…" : "読み込み中…"}
       />
     </View>
   );
