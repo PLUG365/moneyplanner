@@ -89,6 +89,9 @@ import {
 type ViewMode = "list" | "calendar";
 const WRITE_ACK_TIMEOUT_MS = 900;
 
+/** 参照が変わると FlatList が無駄に再描画されるため、空配列は使い回す。 */
+const EMPTY_TRANSACTIONS: Transaction[] = [];
+
 type UncopiedRecord = {
   id: string;
   date: string;
@@ -313,6 +316,15 @@ export default function HistoryScreen() {
   // ページング読みの先頭ページから部分集計を全体の合計として表示しうる。
   const showSearchTotals =
     viewMode === "list" && shouldReadAllHistory && paginatedItemsComplete;
+
+  // 検索を適用した直後は、スコープが page から all へ切り替わる一方で items には
+  // まだ切り替え前の先頭ページが残っている。それを絞り込むと**実際より少ない
+  // 検索結果**を確定値のように見せてしまう（合計は itemsComplete で守っていたが、
+  // 一覧は無防備だった）。全件そろうまでは一覧を出さず、検索中であることを示す。
+  const searchResultsPending = shouldReadAllHistory && !paginatedItemsComplete;
+  const visibleListTransactions = searchResultsPending
+    ? EMPTY_TRANSACTIONS
+    : filteredListTransactions;
 
   const accountOptions = useMemo(
     () => [...accountSubscription.data],
@@ -1250,7 +1262,7 @@ export default function HistoryScreen() {
         // --- リストビュー（カーソルページング + 仮想化）---
         <FlatList
           style={styles.listFill}
-          data={filteredListTransactions}
+          data={visibleListTransactions}
           extraData={isSelectionMode ? selectedTxIds : null}
           keyExtractor={(tx) => tx.id}
           renderItem={({ item }) => renderTransactionItem(item)}
@@ -1272,7 +1284,11 @@ export default function HistoryScreen() {
             />
           }
           ListEmptyComponent={
-            paginatedLoadingInitial ? null : (
+            searchResultsPending ? (
+              <Text style={[styles.emptyText, { color: colors.subText }]}>
+                検索中…
+              </Text>
+            ) : paginatedLoadingInitial ? null : (
               <Text style={[styles.emptyText, { color: colors.subText }]}>
                 記録がありません
               </Text>
