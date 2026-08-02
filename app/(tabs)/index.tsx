@@ -395,7 +395,9 @@ export default function RecordScreen() {
         onCategoryChange={handleCategoryChange}
         onBreakdownChange={setBreakdownId}
         onStoreChange={setStoreName}
-        onStorePickerOpen={refreshStoreOptions}
+        // 選択を開いたときだけ全期間から候補を作り直す。部分一致の検索が
+        // 過去のお店に当たらないと使えないため（ADR: 店舗候補の網羅性）。
+        onStorePickerOpen={() => refreshStoreOptions({ full: true })}
         onMemoChange={setMemo}
         onSubmit={handleSave}
       />

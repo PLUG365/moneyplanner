@@ -43,6 +43,8 @@ const STORE_SOURCE_WIDEN_THRESHOLD = 300;
 type StoreSourceCache = {
   householdId: string;
   epoch: number;
+  /** 全期間から作ったか。窓ありの要求は全期間キャッシュで満たせる（上位集合のため）。 */
+  full: boolean;
   transactions: Transaction[];
 };
 
@@ -57,52 +59,72 @@ type StoreSourceCache = {
  * 端末自身の書き込み（`lib/localWriteEpoch.ts`）があれば作り直す。
  */
 let sourceCache: StoreSourceCache | null = null;
-let inFlight: { householdId: string; promise: Promise<Transaction[]> } | null =
-  null;
+let inFlight: {
+  householdId: string;
+  full: boolean;
+  promise: Promise<Transaction[]>;
+} | null = null;
 
 async function loadStoreSourceTransactions(
   householdId: string,
+  wantFull: boolean,
 ): Promise<Transaction[]> {
   const epoch = getLocalWriteEpoch(householdId);
   if (
     sourceCache &&
     sourceCache.householdId === householdId &&
-    sourceCache.epoch === epoch
+    sourceCache.epoch === epoch &&
+    // 全期間キャッシュは窓ありの要求も満たす。逆は満たさない。
+    (sourceCache.full || !wantFull)
   ) {
     return sourceCache.transactions;
   }
-  if (inFlight && inFlight.householdId === householdId) {
+  if (
+    inFlight &&
+    inFlight.householdId === householdId &&
+    (inFlight.full || !wantFull)
+  ) {
     return inFlight.promise;
   }
 
   const promise = (async () => {
     const base = householdCollection(householdId, "transactions");
-    let snapshot = await getDocsFromCache(
-      query(
-        base,
-        where(
-          "date",
-          ">=",
-          monthsAgoDateString(new Date(), STORE_SOURCE_WINDOW_MONTHS),
-        ),
-        orderBy("date", "desc"),
-      ),
-    );
+    const readAll = () => getDocsFromCache(query(base, orderBy("date", "desc")));
+
+    let snapshot = wantFull
+      ? await readAll()
+      : await getDocsFromCache(
+          query(
+            base,
+            where(
+              "date",
+              ">=",
+              monthsAgoDateString(new Date(), STORE_SOURCE_WINDOW_MONTHS),
+            ),
+            orderBy("date", "desc"),
+          ),
+        );
     // 期間内が少ない世帯では、期間を切っても速くならず候補が減るだけなので
     // 全期間から作り直す。返す件数が少なければ全期間読みも軽い。
-    if (snapshot.docs.length < STORE_SOURCE_WIDEN_THRESHOLD) {
-      snapshot = await getDocsFromCache(query(base, orderBy("date", "desc")));
-    }
+    const widened =
+      !wantFull && snapshot.docs.length < STORE_SOURCE_WIDEN_THRESHOLD;
+    if (widened) snapshot = await readAll();
+
     const mapped = mapActiveTransactions(snapshot.docs);
     // 取得開始時点の epoch で記録する。読み込み中に書き込みがあれば
     // 次回は不一致となり読み直される。
-    sourceCache = { householdId, epoch, transactions: mapped };
+    sourceCache = {
+      householdId,
+      epoch,
+      full: wantFull || widened,
+      transactions: mapped,
+    };
     return mapped;
   })().finally(() => {
     inFlight = null;
   });
 
-  inFlight = { householdId, promise };
+  inFlight = { householdId, full: wantFull, promise };
   return promise;
 }
 
@@ -118,24 +140,34 @@ export function useCachedStoreOptions(
 ): {
   storeOptions: StorePickerOption[];
   transactions: Transaction[];
-  refresh: () => void;
+  /**
+   * `full: true` で全期間から作り直す。**お店選択を開いたときに使う。**
+   *
+   * 通常の更新（起動・タブフォーカス・書き込み後）は期間を切って軽く済ませるが、
+   * 利用者がお店を選ぼうとしている場面では、部分一致の検索が過去のお店に
+   * 当たらないと使えない。網羅性が要る瞬間にだけ全期間を読む。
+   */
+  refresh: (options?: { full?: boolean }) => void;
 } {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
 
-  const refresh = useCallback(() => {
-    if (!householdId) {
-      setTransactions([]);
-      return;
-    }
-
-    void loadStoreSourceTransactions(householdId)
-      .then((loaded) => {
-        setTransactions(loaded);
-      })
-      .catch(() => {
+  const refresh = useCallback(
+    (options?: { full?: boolean }) => {
+      if (!householdId) {
         setTransactions([]);
-      });
-  }, [householdId]);
+        return;
+      }
+
+      void loadStoreSourceTransactions(householdId, !!options?.full)
+        .then((loaded) => {
+          setTransactions(loaded);
+        })
+        .catch(() => {
+          setTransactions([]);
+        });
+    },
+    [householdId],
+  );
 
   useEffect(() => {
     refresh();

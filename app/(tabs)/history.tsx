@@ -1598,7 +1598,10 @@ export default function HistoryScreen() {
                 onCategoryChange={handleEditCategoryChange}
                 onBreakdownChange={setEditBreakdownId}
                 onStoreChange={setEditStoreName}
-                onStorePickerOpen={refreshCachedStoreOptions}
+                // 選択を開いたときだけ全期間から候補を作り直す（index.tsx と同じ理由）。
+                onStorePickerOpen={() =>
+                  refreshCachedStoreOptions({ full: true })
+                }
                 onMemoChange={setEditMemo}
                 onSubmit={handleUpdate}
               />
