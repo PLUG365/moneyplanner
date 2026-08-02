@@ -293,16 +293,43 @@ export default function HistoryScreen() {
     [paginatedTransactionItems],
   );
 
-  const calendarTransactions = useMemo(
-    () => buildHistoryListTransactions(monthTransactionData),
-    [monthTransactionData],
+  // 削除の反映を待たずに一覧から消すための保持（下の filteredListTransactions を参照）。
+  const [pendingDeletedIds, setPendingDeletedIds] = useState<readonly string[]>(
+    [],
   );
 
-  const filteredListTransactions = useMemo(
-    () =>
-      filterHistoryTransactions(listTransactions, appliedHistorySearchCriteria),
-    [appliedHistorySearchCriteria, listTransactions],
-  );
+  const calendarTransactions = useMemo(() => {
+    const built = buildHistoryListTransactions(monthTransactionData);
+    if (pendingDeletedIds.length === 0) return built;
+    const removed = new Set(pendingDeletedIds);
+    return built.filter((tx) => !removed.has(tx.id));
+  }, [monthTransactionData, pendingDeletedIds]);
+
+  const filteredListTransactions = useMemo(() => {
+    const filtered = filterHistoryTransactions(
+      listTransactions,
+      appliedHistorySearchCriteria,
+    );
+    if (pendingDeletedIds.length === 0) return filtered;
+    const removed = new Set(pendingDeletedIds);
+    return filtered.filter((tx) => !removed.has(tx.id));
+  }, [appliedHistorySearchCriteria, listTransactions, pendingDeletedIds]);
+
+  // 削除した項目は、書き込みの返事を待たずに一覧から消す。
+  // `deleteTransactionFromPrevious` が前提としている「呼び出し側UIが削除済み項目を
+  // 即時に一覧から除く」の実装。ackを待ってから読み直すと、オフラインでは必ず
+  // 上限時間ぶん（WRITE_ACK_TIMEOUT_MS）待たされ、オンラインでも往復ぶん遅れる。
+  //
+  // 読み直しが反映され次第、`listTransactions` から消えるので保持をやめる。
+  // 反映されるまでは保持し続けるため、途中で別の再読込が挟まっても復活しない。
+  useEffect(() => {
+    setPendingDeletedIds((prev) => {
+      if (prev.length === 0) return prev;
+      const stillPresent = new Set(listTransactions.map((tx) => tx.id));
+      const next = prev.filter((id) => stillPresent.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [listTransactions]);
 
   // 検索結果の合計。検索条件ありのときは全件取得（readAll）されるため合計が正確になる。
   // 条件なしの履歴はページング読みで手元に一部しかないため、合計は表示しない。
@@ -639,10 +666,25 @@ export default function HistoryScreen() {
           text: "削除",
           style: "destructive",
           onPress: async () => {
-            await waitForPendingWrite(
-              deleteTransactionFromPrevious(tx),
-              WRITE_ACK_TIMEOUT_MS,
+            // 先に一覧から消す。書き込みの返事を待つと、オフラインでは必ず
+            // 上限時間ぶん待たされ、オンラインでも往復ぶん遅れる。
+            setPendingDeletedIds((prev) =>
+              prev.includes(tx.id) ? prev : [...prev, tx.id],
             );
+            try {
+              await waitForPendingWrite(
+                deleteTransactionFromPrevious(tx),
+                WRITE_ACK_TIMEOUT_MS,
+              );
+            } catch (error) {
+              // 書き込み自体が失敗したなら消したままにはできない。保持をやめて
+              // 次の読み直しで元に戻す。オフラインでの未送信は失敗ではないため
+              // ここには来ない（waitForPendingWrite が queued として返す）。
+              setPendingDeletedIds((prev) => prev.filter((id) => id !== tx.id));
+              if (__DEV__) {
+                console.warn("[history] 取引の削除に失敗しました", error);
+              }
+            }
             // 自分の書き込み直後は forceServer を使わない。書き込みは既にローカルの
             // キャッシュへ反映されており、サーバーだけを読む指定にすると、オフラインでは
             // 読み取りが失敗して画面が更新されないまま残る。マーカーは自分の書き込みで
