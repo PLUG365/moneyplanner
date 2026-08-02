@@ -253,7 +253,6 @@ export default function HistoryScreen() {
     loadingMore: paginatedLoadingMore,
     itemsComplete: paginatedItemsComplete,
     loadMore: loadMorePaginatedTransactions,
-    refresh: refreshPaginatedTransactions,
     refreshIfStale: refreshPaginatedTransactionsIfStale,
   } = usePaginatedTransactions(
     householdId,
@@ -266,7 +265,6 @@ export default function HistoryScreen() {
 
   const {
     data: monthTransactionData,
-    refresh: refreshMonthTransactions,
     refreshIfStale: refreshMonthTransactionsIfStale,
   } = useCachedTransactions(householdId, {
     scopeKey: `history-month:${monthScope}`,
@@ -633,8 +631,12 @@ export default function HistoryScreen() {
               deleteTransactionFromPrevious(tx),
               WRITE_ACK_TIMEOUT_MS,
             );
-            refreshPaginatedTransactions();
-            refreshMonthTransactions();
+            // 自分の書き込み直後は forceServer を使わない。書き込みは既にローカルの
+            // キャッシュへ反映されており、サーバーだけを読む指定にすると、オフラインでは
+            // 読み取りが失敗して画面が更新されないまま残る。マーカーは自分の書き込みで
+            // 進んでいるため、IfStale でもオンラインならサーバーから読み直される。
+            refreshPaginatedTransactionsIfStale();
+            refreshMonthTransactionsIfStale();
             refreshCachedStoreOptions();
           },
         },
@@ -763,8 +765,9 @@ export default function HistoryScreen() {
     setShowBulkCopyModal(false);
     setShowCopyDatePicker(false);
     exitSelectionMode();
-    refreshPaginatedTransactions();
-    refreshMonthTransactions();
+    // 自分の書き込み直後は forceServer を使わない（削除時と同じ理由）。
+    refreshPaginatedTransactionsIfStale();
+    refreshMonthTransactionsIfStale();
     refreshCachedStoreOptions();
     await load();
 
@@ -926,8 +929,9 @@ export default function HistoryScreen() {
     setShowEditModal(false);
     setEditingTxId(null);
     setEditingTx(null);
-    refreshPaginatedTransactions();
-    refreshMonthTransactions();
+    // 自分の書き込み直後は forceServer を使わない（削除時と同じ理由）。
+    refreshPaginatedTransactionsIfStale();
+    refreshMonthTransactionsIfStale();
     refreshCachedStoreOptions();
   };
 
