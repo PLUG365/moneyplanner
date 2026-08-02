@@ -22,6 +22,8 @@ import {
 } from "@/lib/firestore";
 import {
     buildPaginatedTransactionsScopeKey,
+    HISTORY_CACHE_WINDOW_MONTHS,
+    monthsAgoDateString,
     pickNewestDataVersion,
     shouldFetchAllTransactions,
 } from "@/lib/paginatedTransactionsMode";
@@ -204,7 +206,6 @@ export function usePaginatedTransactions(
       }
       inFlightRef.current = true;
       setLoadingInitial(true);
-      // スコープが変わる場合、描画するまで `items` は前のスコープの配列である。
       // ここで倒さないと、日付範囲を変えた検索で「前の範囲の全件」を新しい範囲の
       // 合計として一瞬表示しうる（ADR の R8）。
       setItemsComplete(false);
@@ -249,14 +250,47 @@ export function usePaginatedTransactions(
           setHasMore(cached.hasMore);
           paintedPage = cached;
         } else if (painted === "none" && !options?.forceServer) {
-          const cacheSnap = await getQuerySnapshot(
-            queryLimit == null ? base : query(base, limit(queryLimit)),
-            "cache",
-          );
+          // **キャッシュ読みは日付の窓を段階的に広げながら行う。**
+          // Firestore のローカルクエリはローカルインデックスを持たないため、
+          // `limit` を付けても候補を全部 materialize してから上位N件を選ぶ。
+          // 取引が1万件規模になると先頭100件を得るだけで5〜12秒かかっていた。
+          // 一方、日付範囲つきのクエリは候補そのものが減るため速い
+          //（集計の年スコープは1131件で286ms）。
+          //
+          // 窓を使うのは「日付範囲指定なしのページングモード」だけ。全件モードや
+          // 日付範囲つきの検索は、網羅性が要るか既に範囲で絞られているため対象外。
+          const useDateWindow = !fetchAll && !range.from && !range.to;
+          const windows = useDateWindow
+            ? HISTORY_CACHE_WINDOW_MONTHS
+            : ([null] as const);
+          const wantedCount = queryLimit ?? Number.POSITIVE_INFINITY;
+
+          let cacheSnap: FirestoreQuerySnapshot | null = null;
+          let allCachedDocs: FirestoreQueryDocSnapshot[] = [];
+          let usedWindow: number | null = null;
+          for (const months of windows) {
+            const windowedQuery =
+              months == null
+                ? base
+                : query(
+                    base,
+                    where("date", ">=", monthsAgoDateString(new Date(), months)),
+                  );
+            cacheSnap = await getQuerySnapshot(windowedQuery, "cache");
+            allCachedDocs = cacheSnap?.docs ?? [];
+            usedWindow = months;
+            // 先頭ページ分そろったら、それ以上さかのぼる必要はない。
+            if (allCachedDocs.length >= wantedCount) break;
+          }
+          // ページングモードでは先頭ページ分だけを画面に出す。全件モードは全部使う。
+          const pageDocs =
+            queryLimit == null
+              ? allCachedDocs
+              : allCachedDocs.slice(0, queryLimit);
           painted = pickFirstPaintSource({
             forceServer: false,
             hasUsableMemory: false,
-            cachedDocCount: cacheSnap?.docs.length ?? 0,
+            cachedDocCount: pageDocs.length,
           });
           if (painted === "cache" && cacheSnap) {
             // ディスクキャッシュの版は永続化した「最後にサーバー読みした時点の版」を使う。
@@ -271,16 +305,19 @@ export function usePaginatedTransactions(
                 : null;
             if (ownVersion && scopeKey) {
               // 件数は借用しない。借用元は上位集合であり、比較すると必ず下回る。
+              // stamp はサーバー読み時の件数（＝ページ分）なので、比較もページ分で行う。
               stampedDocCount = getPersistedScopeDocCount(scopeKey);
-              cachedDocCount = cacheSnap.docs.length;
+              cachedDocCount = pageDocs.length;
             }
             const page: CachedPage = {
-              items: mapActiveTransactions(cacheSnap.docs),
+              items: mapActiveTransactions(pageDocs),
               version: ownVersion ?? borrowedVersion,
-              lastDoc: cacheSnap.docs[cacheSnap.docs.length - 1] ?? null,
+              lastDoc: pageDocs[pageDocs.length - 1] ?? null,
+              // 窓の中で切り出しが発生したか、窓が全期間に届いていないなら続きがある。
+              // 全期間まで広げてもページ分に満たなかった場合だけ、続きなしと確定できる。
               hasMore: fetchAll
                 ? false
-                : cacheSnap.docs.length === TRANSACTIONS_PAGE_SIZE,
+                : allCachedDocs.length > pageDocs.length || usedWindow != null,
               epoch: householdId ? getLocalWriteEpoch(householdId) : 0,
             };
             if (scopeKey) firstPageCache.set(scopeKey, page);
@@ -529,13 +566,16 @@ export function usePaginatedTransactions(
         return;
       }
       const snap = snapResult;
-      setItems((prev) => {
-        const seen = new Set(prev.map((tx) => tx.id));
-        const next = mapActiveTransactions(snap.docs).filter(
-          (tx) => !seen.has(tx.id),
-        );
-        return [...prev, ...next];
-      });
+      // 単純連結ではなくマージを使う。差分読みで過去日付の取引が先頭ページへ
+      // 入った場合、連結だけでは新しい取引がその後ろに並んで順序が崩れる。
+      // mergeTransactionCacheItems は id で重複を排除したうえで日付降順に整える。
+      setItems((prev) =>
+        mergeTransactionCacheItems(
+          prev,
+          mapActiveTransactions(snap.docs),
+          new Set<string>(),
+        ),
+      );
       if (snap.docs.length > 0) {
         lastDocRef.current = snap.docs[snap.docs.length - 1];
       }

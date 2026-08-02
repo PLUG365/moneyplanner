@@ -190,23 +190,63 @@ export interface CategoryDeletionImpact {
 // ── ヘルパー ─────────────────────────────────────────
 let _cachedHouseholdId: string | null = null;
 let _householdIdPromise: Promise<string> | null = null;
+let _householdIdResolution: Promise<string | null> | null = null;
 
 async function ensureHouseholdId(): Promise<string> {
   if (_cachedHouseholdId) return _cachedHouseholdId;
   if (!_householdIdPromise) {
-    _householdIdPromise = getHouseholdId().then((id) => {
-      if (!id) throw new Error("世帯が未設定です");
-      _cachedHouseholdId = id;
-      _householdIdPromise = null;
-      return id;
-    });
+    _householdIdPromise = getHouseholdId()
+      .then((id) => {
+        if (!id) throw new Error("世帯が未設定です");
+        _cachedHouseholdId = id;
+        return id;
+      })
+      .finally(() => {
+        // 成否に関わらずクリアする。失敗した Promise を保持し続けると、
+        // 起動直後の一度の失敗でセッション中ずっと書き込みができなくなる。
+        _householdIdPromise = null;
+      });
   }
   return _householdIdPromise;
+}
+
+/**
+ * 画面側から世帯IDを解決する。**プロセス内で1回だけ実行する。**
+ *
+ * `getHouseholdId()` は `users/{uid}` と `households/{hid}/members/{uid}` を
+ * `getDoc`（サーバー優先）で読むため、呼ぶたびにネットワーク往復が2回発生する。
+ * 記録・履歴・集計の3画面がそれぞれ `useHouseholdId` で独立に呼んでいたため、
+ * 画面をマウントするたびに同じ値のために2往復していた。そして**その解決が
+ * 終わるまで各画面は取引の読み込みを開始できない**ため、起動直後の表示が
+ * 待たされる主因になっていた。
+ *
+ * ロジックは変えていない。同じ解決を共有するだけで、在籍確認とその副作用
+ * （在籍していなければ `users/{uid}.householdId` を消す）は従来どおり実行される。
+ * 実行回数がセッションあたり1回になる。アクセス制御自体は Firestore Security
+ * Rules が担保しており、この確認はUIの遷移判断のためのものである。
+ *
+ * 世帯が未設定なら `null` を返す（キャッシュしないので、世帯参加後に再解決される）。
+ * サインアウトや権限エラー時は `clearHouseholdCache()` で破棄される。
+ */
+export function resolveHouseholdIdOnce(): Promise<string | null> {
+  if (_cachedHouseholdId) return Promise.resolve(_cachedHouseholdId);
+  if (!_householdIdResolution) {
+    _householdIdResolution = getHouseholdId()
+      .then((id) => {
+        if (id) _cachedHouseholdId = id;
+        return id;
+      })
+      .finally(() => {
+        _householdIdResolution = null;
+      });
+  }
+  return _householdIdResolution;
 }
 
 export function clearHouseholdCache() {
   _cachedHouseholdId = null;
   _householdIdPromise = null;
+  _householdIdResolution = null;
 }
 
 async function householdDoc() {

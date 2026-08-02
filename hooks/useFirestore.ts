@@ -1,8 +1,8 @@
 import {
+    resolveHouseholdIdOnce,
     type FirestoreDocRef,
     type FirestoreQuery,
 } from "@/lib/firestore";
-import { getHouseholdId } from "@/lib/household";
 import {
     onSnapshot,
     type DocumentData,
@@ -12,13 +12,18 @@ import { useEffect, useRef, useState } from "react";
 /**
  * 世帯IDを取得・キャッシュするフック。
  * レイアウトやコレクションフックの queryKey 組み立てに使う。
+ *
+ * 解決はプロセス内で共有される（`resolveHouseholdIdOnce`）。記録・履歴・集計の
+ * 3画面がそれぞれ独立に解決していたころは、画面をマウントするたびに
+ * サーバーへの往復が2回発生し、その完了まで各画面が取引の読み込みを
+ * 開始できなかった。
  */
 export function useHouseholdId(): string | null {
   const [householdId, setHouseholdId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    getHouseholdId().then((id) => {
+    resolveHouseholdIdOnce().then((id) => {
       if (!cancelled) setHouseholdId(id);
     });
     return () => {

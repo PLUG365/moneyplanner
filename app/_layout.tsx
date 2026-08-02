@@ -13,6 +13,7 @@ import { AppThemeProvider, useAppTheme } from "@/hooks/useAppTheme";
 import { initAppCheck } from "@/lib/appCheck";
 import { waitForAppCheckReadiness } from "@/lib/appCheckReadiness";
 import { useAuth } from "@/lib/auth";
+import { clearStoreSourceCache } from "@/hooks/useCachedStoreOptions";
 import { clearHouseholdCache, initFirestore } from "@/lib/firestore";
 import { getHouseholdId } from "@/lib/household";
 
@@ -52,6 +53,7 @@ function RootLayoutContent() {
 
     if (!user) {
       clearHouseholdCache();
+      clearStoreSourceCache();
       initializedHouseholdRef.current = null;
       // 未ログイン → 認証画面へ
       if (!inAuthScreen) {
