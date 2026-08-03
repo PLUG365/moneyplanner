@@ -18,6 +18,7 @@
 
 ## 実装方針
 
+- Security Rules、世帯所属、データ削除、課金、並行処理、オフライン同期に触る変更は、実装前に状態遷移とRulesの評価時点（`get()` か `getAfter()` か）を表で固定し、実装バッチと独立監査を1回ずつにする。手順は [docs/ai-development.md](docs/ai-development.md#高リスク変更の進め方) を正とする。
 - 既存のFirestore CRUDは [lib/firestore.ts](lib/firestore.ts) を中心に扱い、画面側でDB実装を重複させない。
 - 取引・口座・カテゴリ・内訳・店舗のスナップショット/フォールバック方針を崩さない。CSV入出力や履歴表示は既存のスナップショット方針に合わせる。
 - 口座残高は「手動設定 + 記録/編集/削除時の増分」で維持する。全取引からの自動reconcileを安易に復活させない。
@@ -29,6 +30,7 @@
 ## 検証とドキュメント
 
 - 変更内容に応じて、関連ユニットテスト、`npm test -- <対象test>`、`npm run lint`、Firestore Rules変更時は `npm run test:rules` を実行する。
+- `npm run test:rules` を実行するとEmulatorが `firestore-debug.log` をローカルに再生成する。ローカル生成物なので `.gitignore` 済み。差分に出ないのが正常で、追跡対象へ戻さない。
 - 実機確認が必要な変更は、最終回答でTestFlight/dev-client確認項目を明記する。手順（PC側・iPhone側の操作、取引の読み書きに触る変更の定型7項目）は [docs/development-setup.md](docs/development-setup.md#dev-clientでの動作確認) を正とする。ここに書いてあることを回答内で書き直さない。
 - 仕様差分が出たら [PLAN.md](PLAN.md)、[ARCHITECTURE.md](ARCHITECTURE.md)、[docs/ai-development.md](docs/ai-development.md)、必要に応じて [docs/decisions/](docs/decisions/) を更新する。
 - 重要な設計判断、方針転換、採用/不採用理由はADRとして [docs/decisions/](docs/decisions/) に残す。

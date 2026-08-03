@@ -58,5 +58,8 @@ AGENTS.md
 artifacts/
 .codex-tmp/
 
+# Firestore Emulatorのデバッグログ（npm run test:rules のたびにローカルで再生成される）
+firestore-debug.log
+
 # superpowersのドキュメント
 docs/superpowers/
