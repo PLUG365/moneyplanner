@@ -140,6 +140,97 @@ rulesTest(
   },
 );
 
+rulesTest(
+  "active member cannot create another household by repointing their users document in a batch",
+  async () => {
+    const db = testEnv!.authenticatedContext("alice").firestore();
+    const householdId = "household-second";
+    const batch = writeBatch(db);
+
+    batch.set(doc(db, "households", householdId), {
+      createdBy: "alice",
+      inviteCode: "SECOND1",
+      createdAt: "2026-08-03T00:00:00.000Z",
+    });
+    batch.set(doc(db, "users", "alice"), { householdId }, { merge: true });
+    batch.set(doc(db, "households", householdId, "members", "alice"), {
+      displayName: "Alice",
+      joinedAt: "2026-08-03T00:00:00.000Z",
+    });
+    batch.set(doc(db, "inviteCodes", "SECOND1"), {
+      householdId,
+      createdBy: "alice",
+      createdAt: "2026-08-03T00:00:00.000Z",
+      expiresAt: FUTURE_EXPIRES_AT,
+      disabledAt: null,
+    });
+
+    await assertFails(batch.commit());
+  },
+);
+
+rulesTest("active member cannot delete their own users document", async () => {
+  const db = testEnv!.authenticatedContext("alice").firestore();
+
+  await assertFails(deleteDoc(doc(db, "users", "alice")));
+});
+
+rulesTest(
+  "active members cannot remove or replace their own household ID, but can update their profile",
+  async () => {
+    const db = testEnv!.authenticatedContext("alice").firestore();
+
+    await assertFails(
+      setDoc(doc(db, "users", "alice"), { householdId: null }, { merge: true }),
+    );
+    await assertFails(
+      setDoc(
+        doc(db, "users", "alice"),
+        { householdId: "household-other" },
+        { merge: true },
+      ),
+    );
+    await assertSucceeds(
+      setDoc(
+        doc(db, "users", "alice"),
+        { displayName: "Alice Updated" },
+        { merge: true },
+      ),
+    );
+  },
+);
+
+rulesTest(
+  "active members cannot clear their household ID and create a join request in one batch",
+  async () => {
+    const db = testEnv!.authenticatedContext("alice").firestore();
+    const batch = writeBatch(db);
+
+    batch.set(
+      doc(db, "users", "alice"),
+      { householdId: null },
+      { merge: true },
+    );
+    batch.set(doc(db, "households", HOUSEHOLD_ID, "joinRequests", "alice"), {
+      uid: "alice",
+      inviteCode: "123456",
+      displayName: "Alice",
+      status: "pending",
+      requestedAt: "2026-08-03T00:00:00.000Z",
+    });
+
+    await assertFails(batch.commit());
+  },
+);
+
+rulesTest("removed members can clear their former household ID", async () => {
+  const db = testEnv!.authenticatedContext("bob").firestore();
+
+  await assertSucceeds(
+    setDoc(doc(db, "users", "bob"), { householdId: null }, { merge: true }),
+  );
+});
+
 rulesTest("active members can disable an invite code", async () => {
   const db = testEnv!.authenticatedContext("alice").firestore();
 
@@ -215,6 +306,105 @@ rulesTest("non-members can create a pending join request", async () => {
     }),
   );
 });
+
+rulesTest(
+  "users with only a pending household ID can create a pending join request",
+  async () => {
+    await testEnv!.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "users", "dana"), {
+        pendingHouseholdId: HOUSEHOLD_ID,
+      });
+    });
+
+    const db = testEnv!.authenticatedContext("dana").firestore();
+    await assertSucceeds(
+      setDoc(doc(db, "households", HOUSEHOLD_ID, "joinRequests", "dana"), {
+        uid: "dana",
+        inviteCode: "123456",
+        displayName: "Dana",
+        status: "pending",
+        requestedAt: "2026-08-03T00:00:00.000Z",
+      }),
+    );
+  },
+);
+
+rulesTest("active members cannot create their own join request", async () => {
+  const db = testEnv!.authenticatedContext("alice").firestore();
+
+  await assertFails(
+    setDoc(doc(db, "households", HOUSEHOLD_ID, "joinRequests", "alice"), {
+      uid: "alice",
+      inviteCode: "123456",
+      displayName: "Alice",
+      status: "pending",
+      requestedAt: "2026-08-03T00:00:00.000Z",
+    }),
+  );
+});
+
+rulesTest(
+  "unaffiliated users cannot create a household and a join request in the same batch",
+  async () => {
+    const db = testEnv!.authenticatedContext("dana").firestore();
+    const newHouseholdId = "household-dana";
+    const batch = writeBatch(db);
+
+    batch.set(doc(db, "households", newHouseholdId), {
+      createdBy: "dana",
+      inviteCode: "DANA123",
+      createdAt: "2026-08-03T00:00:00.000Z",
+    });
+    batch.set(doc(db, "users", "dana"), {
+      householdId: newHouseholdId,
+      displayName: "Dana",
+    });
+    batch.set(doc(db, "households", newHouseholdId, "members", "dana"), {
+      displayName: "Dana",
+      joinedAt: "2026-08-03T00:00:00.000Z",
+    });
+    batch.set(doc(db, "households", HOUSEHOLD_ID, "joinRequests", "dana"), {
+      uid: "dana",
+      inviteCode: "123456",
+      displayName: "Dana",
+      status: "pending",
+      requestedAt: "2026-08-03T00:00:00.000Z",
+    });
+
+    await assertFails(batch.commit());
+  },
+);
+
+rulesTest(
+  "active members cannot update their own pending join request",
+  async () => {
+    await testEnv!.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(
+          context.firestore(),
+          "households",
+          HOUSEHOLD_ID,
+          "joinRequests",
+          "alice",
+        ),
+        {
+          uid: "alice",
+          inviteCode: "123456",
+          displayName: "Alice",
+          status: "pending",
+          requestedAt: "2026-08-03T00:00:00.000Z",
+        },
+      );
+    });
+
+    const db = testEnv!.authenticatedContext("alice").firestore();
+    await assertFails(
+      updateDoc(doc(db, "households", HOUSEHOLD_ID, "joinRequests", "alice"), {
+        displayName: "Alice Updated",
+      }),
+    );
+  },
+);
 
 rulesTest("join request with expired invite code is rejected", async () => {
   await testEnv!.withSecurityRulesDisabled(async (context) => {
@@ -549,20 +739,17 @@ rulesTest(
   },
 );
 
-rulesTest(
-  "invite code createdBy cannot be changed via update",
-  async () => {
-    const db = testEnv!.authenticatedContext("alice").firestore();
+rulesTest("invite code createdBy cannot be changed via update", async () => {
+  const db = testEnv!.authenticatedContext("alice").firestore();
 
-    await assertFails(
-      setDoc(
-        doc(db, "inviteCodes", "123456"),
-        { createdBy: "mallory" },
-        { merge: true },
-      ),
-    );
-  },
-);
+  await assertFails(
+    setDoc(
+      doc(db, "inviteCodes", "123456"),
+      { createdBy: "mallory" },
+      { merge: true },
+    ),
+  );
+});
 
 // ── 世帯削除・退出フロー（build 26 発見事項 #2/#3 の回帰テスト）──
 
@@ -609,11 +796,14 @@ rulesTest(
   },
 );
 
-rulesTest("active members can delete their household's invite code", async () => {
-  const db = testEnv!.authenticatedContext("alice").firestore();
+rulesTest(
+  "active members can delete their household's invite code",
+  async () => {
+    const db = testEnv!.authenticatedContext("alice").firestore();
 
-  await assertSucceeds(deleteDoc(doc(db, "inviteCodes", "123456")));
-});
+    await assertSucceeds(deleteDoc(doc(db, "inviteCodes", "123456")));
+  },
+);
 
 rulesTest(
   "last member can delete household data, invite codes, then members+household in one batch",

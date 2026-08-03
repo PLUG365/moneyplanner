@@ -4,10 +4,12 @@ import {
     deleteField,
     doc,
     getDoc,
+    getDocFromServer,
     getDocs,
     getFirestore,
     onSnapshot,
     query,
+    runTransaction,
     serverTimestamp,
     setDoc,
     where,
@@ -24,6 +26,10 @@ import {
     isActiveHouseholdMember,
     mapHouseholdMember,
 } from "./householdMembership";
+import {
+    HouseholdMembershipIndeterminateError,
+    resolveHouseholdMembership,
+} from "./householdStartupResolution";
 import {
     buildInviteCodeExpiryDate,
     createReplacementInviteCode,
@@ -127,8 +133,13 @@ export async function createHousehold(displayName: string): Promise<string> {
     throw new Error(validationError);
   }
 
-  const currentUserDoc = await getDoc(doc(getFirestore(), "users", user.uid));
+  const currentUserDoc = await getDocFromServer(
+    doc(getFirestore(), "users", user.uid),
+  );
   const currentUserData = getSnapshotDataOrNull(currentUserDoc);
+  if (typeof currentUserData?.householdId === "string") {
+    throw new Error("すでに世帯に参加しています");
+  }
   if (typeof currentUserData?.pendingHouseholdId === "string") {
     throw new Error(
       "承認待ちの参加リクエストがあります。承認されるまでお待ちください。",
@@ -187,8 +198,11 @@ export async function requestJoinHousehold(
     if (!user) throw new Error("未ログインです");
 
     const userRef = doc(getFirestore(), "users", user.uid);
-    const currentUserDoc = await getDoc(userRef);
+    const currentUserDoc = await getDocFromServer(userRef);
     const currentUserData = getSnapshotDataOrNull(currentUserDoc);
+    if (typeof currentUserData?.householdId === "string") {
+      throw new Error("すでに世帯に参加しています");
+    }
     if (typeof currentUserData?.pendingHouseholdId === "string") {
       throw new Error(
         "承認待ちの参加リクエストがあります。承認されるまでお待ちください。",
@@ -383,10 +397,21 @@ export async function completeJoinAfterApproval(
     "joinRequests",
     user.uid,
   );
-  const requestSnap = await getDoc(requestRef);
+  const requestSnap = await getDocFromServer(requestRef);
   const requestData = getSnapshotDataOrNull(requestSnap);
   if (!requestData || requestData.status !== "approved") {
     throw new Error("参加リクエストがまだ承認されていません");
+  }
+
+  const userRef = doc(getFirestore(), "users", user.uid);
+  const currentUserSnap = await getDocFromServer(userRef);
+  const currentUserData = getSnapshotDataOrNull(currentUserSnap);
+  const currentHouseholdId = currentUserData?.householdId;
+  if (
+    typeof currentHouseholdId === "string" &&
+    currentHouseholdId !== householdId
+  ) {
+    throw new Error("すでに別の世帯に参加しています");
   }
 
   const normalizedDisplayName = normalizeJoinDisplayName(
@@ -398,7 +423,7 @@ export async function completeJoinAfterApproval(
   }
 
   await setDoc(
-    doc(getFirestore(), "users", user.uid),
+    userRef,
     {
       householdId,
       displayName: normalizedDisplayName,
@@ -509,7 +534,11 @@ export async function deleteCurrentUserProfileWithoutHousehold(): Promise<void> 
   const user = getCurrentUser();
   if (!user) throw new Error("未ログインです");
 
-  if (await getHouseholdId()) {
+  const currentUserDoc = await getDocFromServer(
+    doc(getFirestore(), "users", user.uid),
+  );
+  const currentUserData = getSnapshotDataOrNull(currentUserDoc);
+  if (typeof currentUserData?.householdId === "string") {
     throw new Error(
       "世帯参加中はこの画面からアカウント削除できません。設定画面の「アカウントを削除」を使ってください。",
     );
@@ -565,29 +594,113 @@ export async function getHouseholdId(): Promise<string | null> {
   const user = getCurrentUser();
   if (!user) return null;
 
-  const userSnap = await getDoc(doc(getFirestore(), "users", user.uid));
-  const userData = getSnapshotDataOrNull(userSnap);
-  if (!userData) return null;
+  const firestore = getFirestore();
+  const userRef = doc(firestore, "users", user.uid);
+  let userSnap = await getDoc(userRef);
+  let userData = getSnapshotDataOrNull(userSnap);
+  let userFromCache = userSnap.metadata.fromCache;
+  let householdId = userData?.householdId;
 
-  const householdId = userData.householdId;
-  if (!householdId) return null;
-
-  const memberDoc = await getDoc(
-    doc(getFirestore(), "households", householdId, "members", user.uid),
-  );
-
-  if (!isActiveHouseholdMember(memberDoc.data())) {
-    await setDoc(
-      doc(getFirestore(), "users", user.uid),
-      {
-        householdId: deleteField(),
+  if (typeof householdId !== "string" || householdId.length === 0) {
+    const cachedResolution = resolveHouseholdMembership({
+      user: {
+        exists: !!userData,
+        householdId,
+        fromCache: userFromCache,
       },
-      { merge: true },
-    );
-    return null;
+    });
+    if (cachedResolution.kind === "unaffiliated") return null;
+
+    // ローカルキャッシュ由来の欠落では未所属と断定しない。サーバー確認に
+    // 失敗した場合も呼び出し元へ伝播させ、起動側で安全に再試行する。
+    userSnap = await getDocFromServer(userRef);
+    userData = getSnapshotDataOrNull(userSnap);
+    userFromCache = userSnap.metadata.fromCache;
+    householdId = userData?.householdId;
+
+    const serverResolution = resolveHouseholdMembership({
+      user: {
+        exists: !!userData,
+        householdId,
+        fromCache: userFromCache,
+      },
+    });
+    if (serverResolution.kind === "unaffiliated") return null;
+
+    // ここでの indeterminate は「member をまだ読んでいない」という意味しか
+    // 持たない（resolveHouseholdMembership は member 未指定なら常に
+    // indeterminate を返す）。これを打ち切り条件にすると、サーバーで
+    // householdId を確認できていても必ず1往復を空振りして再試行になるため、
+    // そのまま下のメンバー確認へ進む。
+    if (typeof householdId !== "string" || householdId.length === 0) {
+      // サーバー応答でも householdId を確定できないときだけ判定不能とし、
+      // 未所属へ倒さずに呼び出し元の再試行へ委ねる。
+      throw new HouseholdMembershipIndeterminateError();
+    }
   }
 
-  return householdId;
+  const memberRef = doc(
+    firestore,
+    "households",
+    householdId,
+    "members",
+    user.uid,
+  );
+  let memberDoc = await getDoc(memberRef);
+  let memberData = getSnapshotDataOrNull(memberDoc);
+
+  let resolution = resolveHouseholdMembership({
+    user: {
+      exists: !!userData,
+      householdId,
+      fromCache: userFromCache,
+    },
+    member: {
+      exists: !!memberData,
+      active: isActiveHouseholdMember(memberData),
+      fromCache: memberDoc.metadata.fromCache,
+    },
+  });
+  if (resolution.kind === "member") return resolution.householdId;
+
+  if (resolution.kind === "indeterminate") {
+    // active なキャッシュメンバーは上で即時採用済み。欠落・非アクティブな
+    // キャッシュ結果だけをサーバーで再確認する。
+    memberDoc = await getDocFromServer(memberRef);
+    memberData = getSnapshotDataOrNull(memberDoc);
+    resolution = resolveHouseholdMembership({
+      user: {
+        exists: !!userData,
+        householdId,
+        fromCache: userFromCache,
+      },
+      member: {
+        exists: !!memberData,
+        active: isActiveHouseholdMember(memberData),
+        fromCache: memberDoc.metadata.fromCache,
+      },
+    });
+    if (resolution.kind === "member") return resolution.householdId;
+    if (resolution.kind === "indeterminate") {
+      throw new HouseholdMembershipIndeterminateError();
+    }
+  }
+
+  // サーバーで非アクティブと確定した場合だけ、古い世帯IDを消去する。
+  if (!memberDoc.metadata.fromCache) {
+    // member 判定後に別の世帯へ参加した場合、その新しい householdId を
+    // 古い判定結果で消さない。トランザクションで最新値が対象IDと一致する
+    // ときだけクリアし、競合時は何もしない。
+    await runTransaction(firestore, async (transaction) => {
+      const latestUserSnap = await transaction.get(userRef);
+      const latestUserData = getSnapshotDataOrNull(latestUserSnap);
+      if (latestUserData?.householdId === householdId) {
+        transaction.update(userRef, { householdId: deleteField() });
+      }
+    });
+  }
+
+  return null;
 }
 
 /**

@@ -25,6 +25,31 @@ service cloud.firestore {
         && notRemoved(get(/databases/$(database)/documents/households/$(householdId)/members/$(request.auth.uid)).data);
     }
 
+    // 作成バッチの get() はコミット前状態を参照する。これにより、既存の
+    // active member が users.householdId を同一バッチで差し替えて別世帯を
+    // 作成する競合を fail-closed にする。
+    function requesterHasActiveMembership() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && 'householdId' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId is string
+        && exists(/databases/$(database)/documents/households/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId))
+        && exists(/databases/$(database)/documents/households/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId)/members/$(request.auth.uid))
+        && notRemoved(get(/databases/$(database)/documents/households/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId)/members/$(request.auth.uid)).data);
+    }
+
+    // join request の作成/申請者本人による pending 更新では、同一バッチ内で
+    // 新世帯への所属を成立させた場合も拒否するためコミット後状態を評価する。
+    function requesterHasActiveMembershipAfter() {
+      return signedIn()
+        && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid))
+        && 'householdId' in getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId is string
+        && existsAfter(/databases/$(database)/documents/households/$(getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId))
+        && existsAfter(/databases/$(database)/documents/households/$(getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId)/members/$(request.auth.uid))
+        && notRemoved(getAfter(/databases/$(database)/documents/households/$(getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.householdId)/members/$(request.auth.uid)).data);
+    }
+
     function createsOwnHouseholdInvite(householdId) {
       return existsAfter(/databases/$(database)/documents/households/$(householdId))
         && getAfter(/databases/$(database)/documents/households/$(householdId)).data.createdBy == request.auth.uid
@@ -44,7 +69,22 @@ service cloud.firestore {
 
     // ユーザードキュメント: 本人のみ読み書き可
     match /users/{userId} {
-      allow read, write: if signedIn() && request.auth.uid == userId;
+      allow read, create: if signedIn() && request.auth.uid == userId;
+      // active member はプロフィールを更新できるが、所属世帯IDを先に消去・
+      // 差し替えてから別世帯を作成・参加する逐次迂回は許可しない。
+      allow update: if signedIn()
+        && request.auth.uid == userId
+        && (
+          !requesterHasActiveMembership()
+          || (
+            'householdId' in request.resource.data
+            && request.resource.data.householdId == resource.data.householdId
+          )
+        );
+      // active member のプロフィール単独削除は世帯データを孤児化するため拒否する。
+      allow delete: if signedIn()
+        && request.auth.uid == userId
+        && !requesterHasActiveMembership();
     }
 
     // 招待コード: コードを知っている認証済みユーザーのみ直接参照する。
@@ -79,6 +119,7 @@ service cloud.firestore {
     // 世帯メンバーは全員対等（オーナー/管理者ロールなし）。createdBy は作成記録であり権限には使わない。
     match /households/{householdId} {
       allow create: if signedIn()
+        && !requesterHasActiveMembership()
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.inviteCode is string;
       allow read, delete: if activeMember(householdId);
@@ -109,6 +150,8 @@ service cloud.firestore {
           || (signedIn() && request.auth.uid == userId);
 
         allow create: if signedIn()
+          && !requesterHasActiveMembership()
+          && !requesterHasActiveMembershipAfter()
           && request.auth.uid == userId
           && request.resource.data.uid == userId
           && request.resource.data.status == "pending"
@@ -120,6 +163,8 @@ service cloud.firestore {
 
         allow update: if (
             signedIn()
+            && !requesterHasActiveMembership()
+            && !requesterHasActiveMembershipAfter()
             && request.auth.uid == userId
             && request.resource.data.uid == userId
             && request.resource.data.status == "pending"
@@ -131,6 +176,7 @@ service cloud.firestore {
           )
           || (
             activeMember(householdId)
+            && request.auth.uid != userId
             // 承認/却下は状態更新のみ。申請者uidの改変は不可
             && request.resource.data.uid == resource.data.uid
           );
