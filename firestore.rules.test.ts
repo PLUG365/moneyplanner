@@ -831,6 +831,39 @@ rulesTest(
 );
 
 rulesTest(
+  "account deletion completes: users document can be deleted once members+household are gone",
+  async () => {
+    // 設定画面「アカウントを削除（全データ削除）」と同じ順序を再現する:
+    // サブコレクション → inviteCodes → (members + 世帯を1バッチ) → users。
+    // 最後の users 削除まで通らないとアカウント削除が完走せず、App Store の
+    // Guideline 5.1.1(v) を満たせない
+    // （docs/decisions/account-deletion-store-compliance.md）。
+    const db = testEnv!.authenticatedContext("alice").firestore();
+
+    await assertSucceeds(
+      deleteDoc(doc(db, "households", HOUSEHOLD_ID, "transactions", "tx-1")),
+    );
+    await assertSucceeds(deleteDoc(doc(db, "inviteCodes", "123456")));
+
+    const finalBatch = writeBatch(db);
+    finalBatch.delete(doc(db, "households", HOUSEHOLD_ID));
+    finalBatch.delete(doc(db, "households", HOUSEHOLD_ID, "members", "alice"));
+    finalBatch.delete(doc(db, "households", HOUSEHOLD_ID, "members", "bob"));
+    await assertSucceeds(finalBatch.commit());
+
+    await assertSucceeds(deleteDoc(doc(db, "users", "alice")));
+  },
+);
+
+rulesTest("removed members can delete their own users document", async () => {
+  // 退出済みユーザーがアカウント削除する経路。members に removedAt が入って
+  // いれば active member ではないため、users を削除できる。
+  const db = testEnv!.authenticatedContext("bob").firestore();
+
+  await assertSucceeds(deleteDoc(doc(db, "users", "bob")));
+});
+
+rulesTest(
   "deleting own member doc first locks out later household deletion (regression guard)",
   async () => {
     // members を先に消すと activeMember 資格を失い世帯ドキュメントを消せなくなる。
