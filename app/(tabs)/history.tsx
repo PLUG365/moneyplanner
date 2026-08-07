@@ -66,6 +66,7 @@ import {
 import { hasHistorySearchCriteria } from "@/lib/historySearchCriteria";
 import { buildHistorySearchTotals } from "@/lib/historySearchTotals";
 import {
+    buildHistorySearchAccountOptions,
     buildHistorySearchBreakdownOptions,
     buildHistorySearchCategoryOptions,
     buildHistorySearchStoreOptions,
@@ -195,6 +196,7 @@ export default function HistoryScreen() {
     useState("");
   const [historySearchBreakdownName, setHistorySearchBreakdownName] =
     useState("");
+  const [historySearchAccountName, setHistorySearchAccountName] = useState("");
   const [historySearchStoreName, setHistorySearchStoreName] = useState("");
   const [historySearchMemoQuery, setHistorySearchMemoQuery] = useState("");
   const [historySearchFromDate, setHistorySearchFromDate] = useState<
@@ -213,6 +215,8 @@ export default function HistoryScreen() {
     appliedHistorySearchBreakdownName,
     setAppliedHistorySearchBreakdownName,
   ] = useState("");
+  const [appliedHistorySearchAccountName, setAppliedHistorySearchAccountName] =
+    useState("");
   const [appliedHistorySearchStoreName, setAppliedHistorySearchStoreName] =
     useState("");
   const [appliedHistorySearchMemoQuery, setAppliedHistorySearchMemoQuery] =
@@ -231,12 +235,14 @@ export default function HistoryScreen() {
       type: appliedHistorySearchType,
       categoryName: appliedHistorySearchCategoryName,
       breakdownName: appliedHistorySearchBreakdownName,
+      accountName: appliedHistorySearchAccountName,
       storeName: appliedHistorySearchStoreName,
       memoQuery: appliedHistorySearchMemoQuery,
       fromDate: appliedHistorySearchFromDate,
       toDate: appliedHistorySearchToDate,
     }),
     [
+      appliedHistorySearchAccountName,
       appliedHistorySearchBreakdownName,
       appliedHistorySearchCategoryName,
       appliedHistorySearchFromDate,
@@ -428,6 +434,16 @@ export default function HistoryScreen() {
     [cachedStoreTransactions, historySearchType, listTransactions],
   );
 
+  const historySearchAccountOptions = useMemo(
+    () =>
+      buildHistorySearchAccountOptions(
+        listTransactions,
+        historySearchType,
+        cachedStoreTransactions,
+      ),
+    [cachedStoreTransactions, historySearchType, listTransactions],
+  );
+
   const historySearchBreakdownOptions = useMemo(
     () =>
       buildHistorySearchBreakdownOptions(
@@ -533,6 +549,7 @@ export default function HistoryScreen() {
     appliedHistorySearchType,
     appliedHistorySearchCategoryName,
     appliedHistorySearchBreakdownName,
+    appliedHistorySearchAccountName,
     appliedHistorySearchStoreName,
     appliedHistorySearchMemoQuery,
   ]);
@@ -556,6 +573,7 @@ export default function HistoryScreen() {
     setHistorySearchType(parsed.type);
     setHistorySearchCategoryName(parsed.categoryName);
     setHistorySearchBreakdownName("");
+    setHistorySearchAccountName("");
     setHistorySearchStoreName("");
     setHistorySearchMemoQuery("");
     setHistorySearchFromDate(parsed.fromDate || null);
@@ -563,6 +581,7 @@ export default function HistoryScreen() {
     setAppliedHistorySearchType(parsed.type);
     setAppliedHistorySearchCategoryName(parsed.categoryName);
     setAppliedHistorySearchBreakdownName("");
+    setAppliedHistorySearchAccountName("");
     setAppliedHistorySearchStoreName("");
     setAppliedHistorySearchMemoQuery("");
     setAppliedHistorySearchFromDate(parsed.fromDate || null);
@@ -583,6 +602,7 @@ export default function HistoryScreen() {
     setHistorySearchType("all");
     setHistorySearchCategoryName("");
     setHistorySearchBreakdownName("");
+    setHistorySearchAccountName("");
     setHistorySearchStoreName("");
     setHistorySearchMemoQuery("");
     setHistorySearchFromDate(null);
@@ -590,6 +610,7 @@ export default function HistoryScreen() {
     setAppliedHistorySearchType("all");
     setAppliedHistorySearchCategoryName("");
     setAppliedHistorySearchBreakdownName("");
+    setAppliedHistorySearchAccountName("");
     setAppliedHistorySearchStoreName("");
     setAppliedHistorySearchMemoQuery("");
     setAppliedHistorySearchFromDate(null);
@@ -602,6 +623,7 @@ export default function HistoryScreen() {
     setAppliedHistorySearchType(historySearchType);
     setAppliedHistorySearchCategoryName(historySearchCategoryName);
     setAppliedHistorySearchBreakdownName(historySearchBreakdownName);
+    setAppliedHistorySearchAccountName(historySearchAccountName);
     setAppliedHistorySearchStoreName(historySearchStoreName);
     setAppliedHistorySearchMemoQuery(historySearchMemoQuery);
     setAppliedHistorySearchFromDate(historySearchFromDate);
@@ -615,6 +637,7 @@ export default function HistoryScreen() {
     setHistorySearchType(nextType);
     setHistorySearchCategoryName("");
     setHistorySearchBreakdownName("");
+    setHistorySearchAccountName("");
     setHistorySearchStoreName("");
     setHistorySearchMemoQuery("");
     setHistorySearchFromDate(null);
@@ -661,6 +684,7 @@ export default function HistoryScreen() {
     setHistorySearchType("all");
     setHistorySearchCategoryName("");
     setHistorySearchBreakdownName("");
+    setHistorySearchAccountName("");
     setHistorySearchStoreName("");
     setHistorySearchMemoQuery("");
     setHistorySearchFromDate(null);
@@ -668,6 +692,7 @@ export default function HistoryScreen() {
     setAppliedHistorySearchType("all");
     setAppliedHistorySearchCategoryName("");
     setAppliedHistorySearchBreakdownName("");
+    setAppliedHistorySearchAccountName("");
     setAppliedHistorySearchStoreName("");
     setAppliedHistorySearchMemoQuery("");
     setAppliedHistorySearchFromDate(null);
@@ -1260,6 +1285,7 @@ export default function HistoryScreen() {
           type={historySearchType}
           categoryName={historySearchCategoryName}
           breakdownName={historySearchBreakdownName}
+          accountName={historySearchAccountName}
           storeName={historySearchStoreName}
           memoQuery={historySearchMemoQuery}
           fromDate={historySearchFromDate}
@@ -1267,12 +1293,14 @@ export default function HistoryScreen() {
           datePickerTarget={searchDatePickerTarget}
           categoryOptions={historySearchCategoryOptions}
           breakdownOptions={historySearchBreakdownOptions}
+          accountOptions={historySearchAccountOptions}
           storeOptions={historySearchStoreOptions}
           expanded={isHistorySearchExpanded}
           onExpandedChange={setIsHistorySearchExpanded}
           onTypeChange={handleHistorySearchTypeChange}
           onCategoryNameChange={setHistorySearchCategoryName}
           onBreakdownNameChange={setHistorySearchBreakdownName}
+          onAccountNameChange={setHistorySearchAccountName}
           onStoreNameChange={setHistorySearchStoreName}
           onMemoQueryChange={setHistorySearchMemoQuery}
           onFromDateChange={setHistorySearchFromDate}

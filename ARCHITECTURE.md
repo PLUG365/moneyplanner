@@ -417,7 +417,7 @@ moneyplanner/
 | `lib/inviteQr.ts`                                          | 招待コードQRの行列生成（純JS）とスキャン結果の検証                         |
 | `components/InviteQrCode.tsx` / `InviteQrScanner.tsx`      | 招待QRの表示（Viewグリッド描画）と読み取り（expo-camera、遅延ロード）      |
 | `lib/historySearch.ts`                                     | 履歴フィルタリング条件                                                     |
-| `lib/historySearchOptions.ts`                              | 履歴検索パネルのカテゴリ/内訳/お店候補生成                                 |
+| `lib/historySearchOptions.ts`                              | 履歴検索パネルのカテゴリ/内訳/口座/お店候補生成                            |
 | `lib/historyFutureVisibility.ts`                           | 履歴一覧の日付上限判定（既定は当日まで。純関数）                           |
 | `lib/historyDisplayPreference.ts`                          | 履歴の表示設定を端末ローカルへ保存（形式は `historyDisplayPreferenceFormat.ts`） |
 | `hooks/useHistoryDisplayPreference.tsx`                    | 履歴の表示設定の共有（履歴タブと設定タブで同期）                           |

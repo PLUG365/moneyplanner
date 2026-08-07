@@ -1,5 +1,6 @@
 import type { HistorySearchType } from "./historySearch";
 import {
+    buildHistorySearchAccountOptions,
     buildHistorySearchBreakdownOptions,
     buildHistorySearchCategoryOptions,
     buildHistorySearchStoreOptions,
@@ -21,6 +22,7 @@ export type HistorySearchPreviewTransaction = {
 export type HistorySearchPreviewOptions = {
   categoryOptions: string[];
   breakdownOptions: string[];
+  accountOptions: string[];
   storeOptions: string[];
 };
 
@@ -111,6 +113,7 @@ export function buildHistorySearchPreviewOptions(
       type,
       categoryName,
     }),
+    accountOptions: buildHistorySearchAccountOptions(transactions, type),
     storeOptions: buildHistorySearchStoreOptions(transactions, {
       categoryName,
       storeQuery: "",

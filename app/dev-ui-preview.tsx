@@ -42,6 +42,7 @@ export default function DevUiPreviewScreen() {
   const [searchType, setSearchType] = useState<HistorySearchType>("expense");
   const [categoryName, setCategoryName] = useState("");
   const [breakdownName, setBreakdownName] = useState("");
+  const [accountName, setAccountName] = useState("");
   const [storeName, setStoreName] = useState("");
   const [memoQuery, setMemoQuery] = useState("");
   const [fromDate, setFromDate] = useState<string | null>(null);
@@ -90,12 +91,14 @@ export default function DevUiPreviewScreen() {
         type: searchType,
         categoryName,
         breakdownName,
+        accountName,
         storeName,
         memoQuery,
         fromDate,
         toDate,
       }),
     [
+      accountName,
       breakdownName,
       categoryName,
       fromDate,
@@ -109,6 +112,7 @@ export default function DevUiPreviewScreen() {
   const clearConditions = () => {
     setCategoryName("");
     setBreakdownName("");
+    setAccountName("");
     setStoreName("");
     setMemoQuery("");
     setFromDate(null);
@@ -223,6 +227,7 @@ export default function DevUiPreviewScreen() {
           type={searchType}
           categoryName={categoryName}
           breakdownName={breakdownName}
+          accountName={accountName}
           storeName={storeName}
           memoQuery={memoQuery}
           fromDate={fromDate}
@@ -230,12 +235,14 @@ export default function DevUiPreviewScreen() {
           datePickerTarget={datePickerTarget}
           categoryOptions={options.categoryOptions}
           breakdownOptions={options.breakdownOptions}
+          accountOptions={options.accountOptions}
           storeOptions={options.storeOptions}
           expanded={isSearchExpanded}
           onExpandedChange={setIsSearchExpanded}
           onTypeChange={handleTypeChange}
           onCategoryNameChange={setCategoryName}
           onBreakdownNameChange={setBreakdownName}
+          onAccountNameChange={setAccountName}
           onStoreNameChange={setStoreName}
           onMemoQueryChange={setMemoQuery}
           onFromDateChange={setFromDate}

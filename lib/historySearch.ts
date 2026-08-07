@@ -4,6 +4,8 @@ export type HistorySearchCriteria = {
   type: HistorySearchType;
   categoryName?: string | null;
   breakdownName?: string | null;
+  /** 口座名での絞り込み。取引の `accountName` スナップショットと完全一致で比べる。 */
+  accountName?: string | null;
   storeName?: string | null;
   memoQuery?: string | null;
   fromDate?: string | null;
@@ -39,6 +41,7 @@ export function filterHistoryTransactions<T extends SearchableTransaction>(
 ): T[] {
   const categoryName = normalizeOptional(criteria.categoryName);
   const breakdownName = normalizeOptional(criteria.breakdownName);
+  const accountName = normalizeOptional(criteria.accountName);
   const storeName = normalizeOptional(criteria.storeName);
   const memoQuery = normalizeOptional(criteria.memoQuery);
   const fromDate = criteria.fromDate?.trim() ?? "";
@@ -67,6 +70,13 @@ export function filterHistoryTransactions<T extends SearchableTransaction>(
     if (
       breakdownName &&
       normalizeOptional(transaction.breakdownName) !== breakdownName
+    ) {
+      return false;
+    }
+
+    if (
+      accountName &&
+      normalizeOptional(transaction.accountName) !== accountName
     ) {
       return false;
     }
@@ -101,6 +111,9 @@ export function buildHistorySearchConditionSummary(
   }
   if (criteria.breakdownName?.trim()) {
     parts.push(criteria.breakdownName.trim());
+  }
+  if (criteria.accountName?.trim()) {
+    parts.push(criteria.accountName.trim());
   }
   if (criteria.storeName?.trim()) {
     parts.push(criteria.storeName.trim());
