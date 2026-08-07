@@ -73,8 +73,8 @@ graph LR
 | ---- | ------------------------- | ---------------------------------------- |
 | 記録 | `app/(tabs)/index.tsx`    | 収支入力フォーム・カテゴリ選択・日付入力 |
 | 履歴 | `app/(tabs)/history.tsx`  | リスト表示・カレンダービュー             |
-| 集計 | `app/(tabs)/summary.tsx`  | 月次・年次・カテゴリ別集計               |
-| 設定 | `app/(tabs)/settings.tsx` | カテゴリ管理・CSV出力・世帯管理          |
+| 集計 | `app/(tabs)/summary.tsx`  | 月次・年次・カテゴリ別・口座別集計       |
+| 設定 | `app/(tabs)/settings.tsx` | カテゴリ管理・CSV出力・世帯管理・履歴の表示設定 |
 
 ---
 
@@ -410,6 +410,7 @@ moneyplanner/
 | `lib/auth.ts`                                              | Firebase Auth + Apple Sign-In                                              |
 | `lib/household.ts`                                         | 世帯作成・招待コード・参加リクエスト・メンバー管理                         |
 | `lib/summaryAggregation.ts`                                | 月次/年次集計・予算進捗の純関数集計ロジック                                |
+| `lib/accountSummaryAggregation.ts`                         | 月次の口座別集計（口座名スナップショットで束ねる純関数）                   |
 | `lib/csvExport.ts`                                         | CSV生成・共有                                                              |
 | `lib/csvImport.ts`                                         | CSV取り込み（検証は `csvImportParse.ts`、マスタ解決は Resolve に分離）     |
 | `lib/csvImportIap.ts`                                      | CSVインポートIAPの購入/復元（expo-iap。判定は `csvImportPurchaseGate.ts`） |
@@ -417,6 +418,9 @@ moneyplanner/
 | `components/InviteQrCode.tsx` / `InviteQrScanner.tsx`      | 招待QRの表示（Viewグリッド描画）と読み取り（expo-camera、遅延ロード）      |
 | `lib/historySearch.ts`                                     | 履歴フィルタリング条件                                                     |
 | `lib/historySearchOptions.ts`                              | 履歴検索パネルのカテゴリ/内訳/お店候補生成                                 |
+| `lib/historyFutureVisibility.ts`                           | 履歴一覧の日付上限判定（既定は当日まで。純関数）                           |
+| `lib/historyDisplayPreference.ts`                          | 履歴の表示設定を端末ローカルへ保存（形式は `historyDisplayPreferenceFormat.ts`） |
+| `hooks/useHistoryDisplayPreference.tsx`                    | 履歴の表示設定の共有（履歴タブと設定タブで同期）                           |
 | `lib/moneyInput.ts`                                        | 金額入力の正規化・四則演算評価                                             |
 | `lib/readFreshness.ts`                                     | スコープの版・件数からサーバー再読込の要否を判定（純関数）                 |
 | `lib/scopeVersionStore.ts`                                 | スコープごとの「最後にサーバー全件読みした版と件数」を端末へ永続化         |

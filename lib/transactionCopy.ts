@@ -58,6 +58,14 @@ export type CopyTarget = {
   breakdownId: string | null;
   accountId: string;
   accountFallback: boolean;
+  /**
+   * カテゴリが現存せず、元記録のID・スナップショット名のまま複製したか。
+   *
+   * 取引はカテゴリ削除後もスナップショット（`categoryNameSnapshot` 等）で表示できる
+   * 方針のため、コピーもこれに合わせて成立させる。IDを引き継ぐのは、同じ削除済み
+   * カテゴリの記録が集計で1つにまとまる状態を保つため。
+   */
+  categoryFallback: boolean;
 };
 
 function normalize(value: string): string {
@@ -124,14 +132,18 @@ export function resolveTransactionMasterSelection(
   };
 }
 
+/**
+ * コピー先のカテゴリ・内訳・口座を決める。
+ *
+ * カテゴリが現存しない場合もコピー自体は成立させ、`categoryFallback` で呼び出し側に
+ * 知らせる（Issue #12）。取引はカテゴリ削除後もスナップショットで表示できる方針な
+ * ので、コピーだけを失敗させるとユーザーから見て理由のないエラーになる。
+ */
 export function resolveTransactionCopyTarget(
   source: CopySource,
   context: ResolveContext,
-): CopyTarget | null {
+): CopyTarget {
   const selection = resolveTransactionMasterSelection(source, context);
-  if (!selection) {
-    return null;
-  }
 
   const account = context.accounts.find(
     (candidate) => candidate.id === source.accountId,
@@ -152,9 +164,10 @@ export function resolveTransactionCopyTarget(
   const accountFallback = !account && !accountByName;
 
   return {
-    categoryId: selection.categoryId,
-    breakdownId: selection.breakdownId,
+    categoryId: selection?.categoryId ?? source.categoryId ?? "",
+    breakdownId: selection ? selection.breakdownId : (source.breakdownId ?? null),
     accountId: resolvedAccountId,
     accountFallback,
+    categoryFallback: !selection,
   };
 }

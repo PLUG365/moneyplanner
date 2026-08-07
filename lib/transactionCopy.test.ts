@@ -62,6 +62,7 @@ test("resolveTransactionCopyTarget keeps valid current ids", () => {
     breakdownId: "bd-dinner",
     accountId: "wallet",
     accountFallback: false,
+    categoryFallback: false,
   });
 });
 
@@ -98,18 +99,19 @@ test("resolveTransactionCopyTarget falls back to snapshot names", () => {
     breakdownId: "bd-dinner",
     accountId: "wallet",
     accountFallback: false,
+    categoryFallback: false,
   });
 });
 
-test("resolveTransactionCopyTarget returns null when category cannot be resolved", () => {
+test("resolveTransactionCopyTarget keeps the deleted category as-is instead of failing", () => {
   const result = resolveTransactionCopyTarget(
     {
       id: "tx-3",
       type: "income",
       categoryId: "missing",
       categoryName: "不明な収入",
-      breakdownId: null,
-      breakdownName: "",
+      breakdownId: "missing-bd",
+      breakdownName: "臨時",
       accountId: "missing",
       accountName: "",
     },
@@ -121,7 +123,42 @@ test("resolveTransactionCopyTarget returns null when category cannot be resolved
     },
   );
 
-  assert.equal(result, null);
+  assert.deepEqual(result, {
+    categoryId: "missing",
+    breakdownId: "missing-bd",
+    accountId: "default",
+    accountFallback: true,
+    categoryFallback: true,
+  });
+});
+
+test("resolveTransactionCopyTarget tolerates a source without any category id", () => {
+  const result = resolveTransactionCopyTarget(
+    {
+      id: "tx-4",
+      type: "expense",
+      categoryId: null,
+      categoryName: "",
+      breakdownId: null,
+      breakdownName: "",
+      accountId: "wallet",
+      accountName: "財布",
+    },
+    {
+      categories: [{ id: "cat-food", name: "食費", type: "expense" }],
+      breakdownsByCategory: new Map(),
+      accounts: [{ id: "wallet", name: "財布" }],
+      defaultAccountId: "wallet",
+    },
+  );
+
+  assert.deepEqual(result, {
+    categoryId: "",
+    breakdownId: null,
+    accountId: "wallet",
+    accountFallback: false,
+    categoryFallback: true,
+  });
 });
 
 test("resolveTransactionMasterSelection falls back to snapshot category and breakdown names", () => {

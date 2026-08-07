@@ -24,6 +24,11 @@ import {
   MonthlyCategorySummary,
   MonthlyTotal,
 } from "@/lib/firestore";
+import {
+  buildAccountSummaryTotals,
+  buildMonthAccountSummaryFromTransactions,
+  type MonthlyAccountSummary,
+} from "@/lib/accountSummaryAggregation";
 import { buildFirestoreQueryKey } from "@/lib/firestoreSubscription";
 import { buildHistoryDrilldownParams } from "@/lib/historyDrilldown";
 import { formatYearMonthLabel, shiftYearMonth } from "@/lib/monthPicker";
@@ -128,6 +133,11 @@ export default function SummaryScreen() {
       year,
     ],
   );
+  const accountSummary: MonthlyAccountSummary[] = useMemo(
+    () =>
+      buildMonthAccountSummaryFromTransactions(transactionData, year, month),
+    [month, transactionData, year],
+  );
   const yearlyData: MonthlyTotal[] = useMemo(
     () => buildYearMonthlyTotalsFromTransactions(transactionData, year),
     [transactionData, year],
@@ -201,6 +211,8 @@ export default function SummaryScreen() {
   const totalIncome = incomeItems.reduce((s, c) => s + c.total, 0);
   const totalExpense = expenseItems.reduce((s, c) => s + c.total, 0);
   const balance = totalIncome - totalExpense;
+
+  const accountTotals = buildAccountSummaryTotals(accountSummary);
 
   const yearTotalIncome = yearlyData.reduce((s, m) => s + m.income, 0);
   const yearTotalExpense = yearlyData.reduce((s, m) => s + m.expense, 0);
@@ -634,6 +646,154 @@ export default function SummaryScreen() {
               </View>
             )}
 
+            {/* 口座別（Issue #11）。口座名は取引のスナップショットを使うため、
+                口座を消しても過去の集計名が消えない。 */}
+            {accountSummary.length > 0 && (
+              <View
+                style={[
+                  styles.tableCard,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.tableTitle, { color: colors.text }]}>
+                  口座別
+                </Text>
+                <View
+                  style={[
+                    styles.tableHeaderRow,
+                    { borderBottomColor: colors.border },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.tableHeaderCell,
+                      { color: colors.subText, flex: 2 },
+                    ]}
+                  >
+                    口座
+                  </Text>
+                  <Text
+                    style={[
+                      styles.tableHeaderCell,
+                      { color: incomeColor, flex: 2, textAlign: "right" },
+                    ]}
+                  >
+                    収入
+                  </Text>
+                  <Text
+                    style={[
+                      styles.tableHeaderCell,
+                      { color: expenseColor, flex: 2, textAlign: "right" },
+                    ]}
+                  >
+                    支出
+                  </Text>
+                  <Text
+                    style={[
+                      styles.tableHeaderCell,
+                      { color: colors.subText, flex: 2, textAlign: "right" },
+                    ]}
+                  >
+                    収支
+                  </Text>
+                </View>
+                {accountSummary.map((item) => (
+                  <View
+                    key={item.accountId || item.accountName}
+                    style={[
+                      styles.yearTableRow,
+                      { borderTopColor: colors.border },
+                    ]}
+                  >
+                    <Text
+                      style={[styles.accountNameCell, { color: colors.text }]}
+                      numberOfLines={1}
+                    >
+                      {item.accountName}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.yearCell,
+                        {
+                          color:
+                            item.income > 0 ? incomeColor : colors.subText,
+                        },
+                      ]}
+                    >
+                      {item.income > 0 ? `¥${fmt(item.income)}` : "-"}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.yearCell,
+                        {
+                          color:
+                            item.expense > 0 ? expenseColor : colors.subText,
+                        },
+                      ]}
+                    >
+                      {item.expense > 0 ? `¥${fmt(item.expense)}` : "-"}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.yearCell,
+                        {
+                          color: item.net >= 0 ? incomeColor : expenseColor,
+                        },
+                      ]}
+                    >
+                      {`${item.net >= 0 ? "+" : ""}¥${fmt(item.net)}`}
+                    </Text>
+                  </View>
+                ))}
+                <View
+                  style={[
+                    styles.yearTableRow,
+                    styles.totalRow,
+                    { borderTopColor: colors.border },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.accountNameCell,
+                      { color: colors.text, fontWeight: "700" },
+                    ]}
+                  >
+                    合計
+                  </Text>
+                  <Text
+                    style={[
+                      styles.yearCell,
+                      { color: incomeColor, fontWeight: "700" },
+                    ]}
+                  >
+                    ¥{fmt(accountTotals.income)}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.yearCell,
+                      { color: expenseColor, fontWeight: "700" },
+                    ]}
+                  >
+                    ¥{fmt(accountTotals.expense)}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.yearCell,
+                      {
+                        color:
+                          accountTotals.net >= 0 ? incomeColor : expenseColor,
+                        fontWeight: "700",
+                      },
+                    ]}
+                  >
+                    {`${accountTotals.net >= 0 ? "+" : ""}¥${fmt(
+                      accountTotals.net,
+                    )}`}
+                  </Text>
+                </View>
+              </View>
+            )}
+
             {canShowEmptyMessage && categorySummary.length === 0 && (
               <Text style={[styles.emptyText, { color: colors.subText }]}>
                 記録がありません
@@ -953,6 +1113,8 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   yearMonthLabel: { flex: 1, fontSize: 14 },
+  // 口座名は月ラベルより長くなるため、金額3列と同じ重みの幅を取る。
+  accountNameCell: { flex: 2, fontSize: 14, paddingRight: 8 },
   yearCell: {
     flex: 2,
     fontSize: 13,
