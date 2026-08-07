@@ -73,7 +73,7 @@ graph LR
 | ---- | ------------------------- | ---------------------------------------- |
 | 記録 | `app/(tabs)/index.tsx`    | 収支入力フォーム・カテゴリ選択・日付入力 |
 | 履歴 | `app/(tabs)/history.tsx`  | リスト表示・カレンダービュー             |
-| 集計 | `app/(tabs)/summary.tsx`  | 月次・年次・カテゴリ別・口座別集計       |
+| 集計 | `app/(tabs)/summary.tsx`  | 月次・年次・カテゴリ別集計               |
 | 設定 | `app/(tabs)/settings.tsx` | カテゴリ管理・CSV出力・世帯管理・履歴の表示設定 |
 
 ---
@@ -410,7 +410,6 @@ moneyplanner/
 | `lib/auth.ts`                                              | Firebase Auth + Apple Sign-In                                              |
 | `lib/household.ts`                                         | 世帯作成・招待コード・参加リクエスト・メンバー管理                         |
 | `lib/summaryAggregation.ts`                                | 月次/年次集計・予算進捗の純関数集計ロジック                                |
-| `lib/accountSummaryAggregation.ts`                         | 月次の口座別集計（口座名スナップショットで束ねる純関数）                   |
 | `lib/csvExport.ts`                                         | CSV生成・共有                                                              |
 | `lib/csvImport.ts`                                         | CSV取り込み（検証は `csvImportParse.ts`、マスタ解決は Resolve に分離）     |
 | `lib/csvImportIap.ts`                                      | CSVインポートIAPの購入/復元（expo-iap。判定は `csvImportPurchaseGate.ts`） |
