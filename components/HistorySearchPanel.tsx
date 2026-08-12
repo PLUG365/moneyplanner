@@ -36,6 +36,7 @@ type HistorySearchPanelProps = {
   type: HistorySearchType;
   categoryName: string;
   breakdownName: string;
+  accountName: string;
   storeName: string;
   memoQuery: string;
   fromDate: string | null;
@@ -43,12 +44,14 @@ type HistorySearchPanelProps = {
   datePickerTarget: HistorySearchDateTarget | null;
   categoryOptions: string[];
   breakdownOptions: string[];
+  accountOptions: string[];
   storeOptions: string[];
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
   onTypeChange: (type: HistorySearchType) => void;
   onCategoryNameChange: (name: string) => void;
   onBreakdownNameChange: (name: string) => void;
+  onAccountNameChange: (name: string) => void;
   onStoreNameChange: (name: string) => void;
   onMemoQueryChange: (query: string) => void;
   onFromDateChange: (date: string | null) => void;
@@ -85,6 +88,7 @@ export default function HistorySearchPanel({
   type,
   categoryName,
   breakdownName,
+  accountName,
   storeName,
   memoQuery,
   fromDate,
@@ -92,12 +96,14 @@ export default function HistorySearchPanel({
   datePickerTarget,
   categoryOptions,
   breakdownOptions,
+  accountOptions,
   storeOptions,
   expanded,
   onExpandedChange,
   onTypeChange,
   onCategoryNameChange,
   onBreakdownNameChange,
+  onAccountNameChange,
   onStoreNameChange,
   onMemoQueryChange,
   onFromDateChange,
@@ -110,6 +116,7 @@ export default function HistorySearchPanel({
     type,
     categoryName,
     breakdownName,
+    accountName,
     storeName,
     memoQuery,
     fromDate,
@@ -247,6 +254,58 @@ export default function HistorySearchPanel({
               ))}
             </View>
           </ScrollView>
+
+          {/* 口座は種別・カテゴリと独立した軸なので、カテゴリの絞り込み条件の外に置く。 */}
+          {accountOptions.length > 0 ? (
+            <>
+              <Text style={[styles.searchLabel, { color: colors.subText }]}>
+                口座
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.searchChipRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.searchChip,
+                      { borderColor: colors.border },
+                      !accountName && { backgroundColor: colors.tint },
+                    ]}
+                    onPress={() => onAccountNameChange("")}
+                  >
+                    <Text
+                      style={[
+                        styles.searchChipText,
+                        { color: accountName ? colors.text : "#fff" },
+                      ]}
+                    >
+                      指定なし
+                    </Text>
+                  </TouchableOpacity>
+                  {accountOptions.map((name) => (
+                    <TouchableOpacity
+                      key={name}
+                      style={[
+                        styles.searchChip,
+                        { borderColor: colors.border },
+                        accountName === name && {
+                          backgroundColor: colors.tint,
+                        },
+                      ]}
+                      onPress={() => onAccountNameChange(name)}
+                    >
+                      <Text
+                        style={[
+                          styles.searchChipText,
+                          { color: accountName === name ? "#fff" : colors.text },
+                        ]}
+                      >
+                        {name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </>
+          ) : null}
 
           {showCategoryFilter ? (
             <>

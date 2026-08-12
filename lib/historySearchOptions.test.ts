@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+    buildHistorySearchAccountOptions,
     buildHistorySearchBreakdownOptions,
     buildHistorySearchCategoryOptions,
     buildHistorySearchStoreOptions,
@@ -181,5 +182,38 @@ test("buildHistorySearchBreakdownOptions searches cached all-history breakdowns 
       cachedTransactions,
     ),
     ["スーパー", "まとめ買い"],
+  );
+});
+
+const accountTransactions = [
+  { type: "expense" as const, accountName: "財布" },
+  { type: "expense" as const, accountName: "クレジットカード" },
+  { type: "expense" as const, accountName: "財布" },
+  { type: "expense" as const, accountName: "" },
+  { type: "income" as const, accountName: "銀行" },
+];
+
+test("buildHistorySearchAccountOptions lists unique account names in list order", () => {
+  assert.deepEqual(
+    buildHistorySearchAccountOptions(accountTransactions, "all"),
+    ["財布", "クレジットカード", "銀行"],
+  );
+});
+
+test("buildHistorySearchAccountOptions narrows accounts by selected type", () => {
+  assert.deepEqual(
+    buildHistorySearchAccountOptions(accountTransactions, "income"),
+    ["銀行"],
+  );
+  assert.deepEqual(
+    buildHistorySearchAccountOptions(accountTransactions, "expense"),
+    ["財布", "クレジットカード"],
+  );
+});
+
+test("buildHistorySearchAccountOptions searches cached all-history accounts beyond the visible list", () => {
+  assert.deepEqual(
+    buildHistorySearchAccountOptions([], "all", accountTransactions),
+    ["財布", "クレジットカード", "銀行"],
   );
 });

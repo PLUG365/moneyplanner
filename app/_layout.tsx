@@ -12,6 +12,7 @@ import "react-native-reanimated";
 
 import { AppThemeProvider, useAppTheme } from "@/hooks/useAppTheme";
 import { clearStoreSourceCache } from "@/hooks/useCachedStoreOptions";
+import { HistoryDisplayPreferenceProvider } from "@/hooks/useHistoryDisplayPreference";
 import { initAppCheck } from "@/lib/appCheck";
 import { waitForAppCheckReadiness } from "@/lib/appCheckReadiness";
 import { useAuth } from "@/lib/auth";
@@ -22,7 +23,9 @@ import { retryHouseholdResolution } from "@/lib/householdStartupResolution";
 export default function RootLayout() {
   return (
     <AppThemeProvider>
-      <RootLayoutContent />
+      <HistoryDisplayPreferenceProvider>
+        <RootLayoutContent />
+      </HistoryDisplayPreferenceProvider>
     </AppThemeProvider>
   );
 }

@@ -6,6 +6,7 @@ type SearchOptionTransaction = {
   type: "income" | "expense";
   categoryName?: string | null;
   breakdownName?: string | null;
+  accountName?: string | null;
   storeName?: string | null;
 };
 
@@ -54,6 +55,26 @@ export function buildHistorySearchCategoryOptions(
   for (const tx of candidateTransactions) {
     if (!matchesType(tx, type)) continue;
     pushUniqueNonEmpty(options, seen, tx.categoryName);
+  }
+
+  return options;
+}
+
+/**
+ * 口座名の候補。口座は種別・カテゴリと独立した軸なので、種別だけで絞る。
+ * 候補は取引のスナップショット名から作るため、口座マスタから消えた口座も候補に残る。
+ */
+export function buildHistorySearchAccountOptions(
+  transactions: SearchOptionTransaction[],
+  type: HistorySearchType,
+  candidateTransactions: SearchOptionTransaction[] = transactions,
+): string[] {
+  const seen = new Set<string>();
+  const options: string[] = [];
+
+  for (const tx of candidateTransactions) {
+    if (!matchesType(tx, type)) continue;
+    pushUniqueNonEmpty(options, seen, tx.accountName);
   }
 
   return options;

@@ -11,6 +11,7 @@ export function hasHistorySearchCriteria(
     criteria.type !== "all" ||
     hasText(criteria.categoryName) ||
     hasText(criteria.breakdownName) ||
+    hasText(criteria.accountName) ||
     hasText(criteria.storeName) ||
     hasText(criteria.memoQuery) ||
     hasText(criteria.fromDate) ||

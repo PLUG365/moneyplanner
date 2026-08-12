@@ -33,6 +33,7 @@ import { useAppTheme } from "@/hooks/useAppTheme";
 import { useCachedStoreOptions } from "@/hooks/useCachedStoreOptions";
 import { useCachedTransactions } from "@/hooks/useCachedTransactions";
 import { useCollection, useHouseholdId } from "@/hooks/useFirestore";
+import { useHistoryDisplayPreference } from "@/hooks/useHistoryDisplayPreference";
 import { usePaginatedTransactions } from "@/hooks/usePaginatedTransactions";
 import { sortBreakdownsForDisplay } from "@/lib/breakdownOrdering";
 import {
@@ -58,9 +59,14 @@ import {
     filterHistoryTransactions,
     type HistorySearchType,
 } from "@/lib/historySearch";
+import {
+    filterTransactionsUpToDate,
+    resolveHistoryDateCutoff,
+} from "@/lib/historyFutureVisibility";
 import { hasHistorySearchCriteria } from "@/lib/historySearchCriteria";
 import { buildHistorySearchTotals } from "@/lib/historySearchTotals";
 import {
+    buildHistorySearchAccountOptions,
     buildHistorySearchBreakdownOptions,
     buildHistorySearchCategoryOptions,
     buildHistorySearchStoreOptions,
@@ -81,6 +87,7 @@ import {
     resolveTransactionCopyTarget,
     resolveTransactionMasterSelection,
 } from "@/lib/transactionCopy";
+import { buildBulkCopyAlert } from "@/lib/transactionCopyResult";
 import {
     fromYearMonthDate as fromYearMonthDateString,
     toYearMonthDate as toYearMonthDateString,
@@ -152,6 +159,8 @@ export default function HistoryScreen() {
   } = historyParams;
 
   const now = new Date();
+  const todayDate = formatDate(now);
+  const { showFutureTransactions } = useHistoryDisplayPreference();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -187,6 +196,7 @@ export default function HistoryScreen() {
     useState("");
   const [historySearchBreakdownName, setHistorySearchBreakdownName] =
     useState("");
+  const [historySearchAccountName, setHistorySearchAccountName] = useState("");
   const [historySearchStoreName, setHistorySearchStoreName] = useState("");
   const [historySearchMemoQuery, setHistorySearchMemoQuery] = useState("");
   const [historySearchFromDate, setHistorySearchFromDate] = useState<
@@ -205,6 +215,8 @@ export default function HistoryScreen() {
     appliedHistorySearchBreakdownName,
     setAppliedHistorySearchBreakdownName,
   ] = useState("");
+  const [appliedHistorySearchAccountName, setAppliedHistorySearchAccountName] =
+    useState("");
   const [appliedHistorySearchStoreName, setAppliedHistorySearchStoreName] =
     useState("");
   const [appliedHistorySearchMemoQuery, setAppliedHistorySearchMemoQuery] =
@@ -223,12 +235,14 @@ export default function HistoryScreen() {
       type: appliedHistorySearchType,
       categoryName: appliedHistorySearchCategoryName,
       breakdownName: appliedHistorySearchBreakdownName,
+      accountName: appliedHistorySearchAccountName,
       storeName: appliedHistorySearchStoreName,
       memoQuery: appliedHistorySearchMemoQuery,
       fromDate: appliedHistorySearchFromDate,
       toDate: appliedHistorySearchToDate,
     }),
     [
+      appliedHistorySearchAccountName,
       appliedHistorySearchBreakdownName,
       appliedHistorySearchCategoryName,
       appliedHistorySearchFromDate,
@@ -305,15 +319,35 @@ export default function HistoryScreen() {
     return built.filter((tx) => !removed.has(tx.id));
   }, [monthTransactionData, pendingDeletedIds]);
 
+  // 既定では当日より後の記録を履歴一覧に出さない（Issue #13）。設定タブの
+  // 「未来の記録を表示」で切り替える。合計も同じ配列から出すため、表示と合計がずれない。
+  const historyDateCutoff = resolveHistoryDateCutoff({
+    showFutureTransactions,
+    toDate: appliedHistorySearchToDate,
+    today: todayDate,
+  });
+
+  const searchedListTransactions = useMemo(
+    () => filterHistoryTransactions(listTransactions, appliedHistorySearchCriteria),
+    [appliedHistorySearchCriteria, listTransactions],
+  );
+
   const filteredListTransactions = useMemo(() => {
-    const filtered = filterHistoryTransactions(
-      listTransactions,
-      appliedHistorySearchCriteria,
+    const filtered = filterTransactionsUpToDate(
+      searchedListTransactions,
+      historyDateCutoff,
     );
     if (pendingDeletedIds.length === 0) return filtered;
     const removed = new Set(pendingDeletedIds);
     return filtered.filter((tx) => !removed.has(tx.id));
-  }, [appliedHistorySearchCriteria, listTransactions, pendingDeletedIds]);
+  }, [historyDateCutoff, pendingDeletedIds, searchedListTransactions]);
+
+  // 未来の記録を隠したことを一覧の空表示で伝えるための件数。
+  const hiddenFutureCount = useMemo(() => {
+    if (!historyDateCutoff) return 0;
+    return searchedListTransactions.filter((tx) => tx.date > historyDateCutoff)
+      .length;
+  }, [historyDateCutoff, searchedListTransactions]);
 
   // 削除した項目は、書き込みの返事を待たずに一覧から消す。
   // `deleteTransactionFromPrevious` が前提としている「呼び出し側UIが削除済み項目を
@@ -393,6 +427,16 @@ export default function HistoryScreen() {
   const historySearchCategoryOptions = useMemo(
     () =>
       buildHistorySearchCategoryOptions(
+        listTransactions,
+        historySearchType,
+        cachedStoreTransactions,
+      ),
+    [cachedStoreTransactions, historySearchType, listTransactions],
+  );
+
+  const historySearchAccountOptions = useMemo(
+    () =>
+      buildHistorySearchAccountOptions(
         listTransactions,
         historySearchType,
         cachedStoreTransactions,
@@ -505,6 +549,7 @@ export default function HistoryScreen() {
     appliedHistorySearchType,
     appliedHistorySearchCategoryName,
     appliedHistorySearchBreakdownName,
+    appliedHistorySearchAccountName,
     appliedHistorySearchStoreName,
     appliedHistorySearchMemoQuery,
   ]);
@@ -528,6 +573,7 @@ export default function HistoryScreen() {
     setHistorySearchType(parsed.type);
     setHistorySearchCategoryName(parsed.categoryName);
     setHistorySearchBreakdownName("");
+    setHistorySearchAccountName("");
     setHistorySearchStoreName("");
     setHistorySearchMemoQuery("");
     setHistorySearchFromDate(parsed.fromDate || null);
@@ -535,6 +581,7 @@ export default function HistoryScreen() {
     setAppliedHistorySearchType(parsed.type);
     setAppliedHistorySearchCategoryName(parsed.categoryName);
     setAppliedHistorySearchBreakdownName("");
+    setAppliedHistorySearchAccountName("");
     setAppliedHistorySearchStoreName("");
     setAppliedHistorySearchMemoQuery("");
     setAppliedHistorySearchFromDate(parsed.fromDate || null);
@@ -555,6 +602,7 @@ export default function HistoryScreen() {
     setHistorySearchType("all");
     setHistorySearchCategoryName("");
     setHistorySearchBreakdownName("");
+    setHistorySearchAccountName("");
     setHistorySearchStoreName("");
     setHistorySearchMemoQuery("");
     setHistorySearchFromDate(null);
@@ -562,6 +610,7 @@ export default function HistoryScreen() {
     setAppliedHistorySearchType("all");
     setAppliedHistorySearchCategoryName("");
     setAppliedHistorySearchBreakdownName("");
+    setAppliedHistorySearchAccountName("");
     setAppliedHistorySearchStoreName("");
     setAppliedHistorySearchMemoQuery("");
     setAppliedHistorySearchFromDate(null);
@@ -574,6 +623,7 @@ export default function HistoryScreen() {
     setAppliedHistorySearchType(historySearchType);
     setAppliedHistorySearchCategoryName(historySearchCategoryName);
     setAppliedHistorySearchBreakdownName(historySearchBreakdownName);
+    setAppliedHistorySearchAccountName(historySearchAccountName);
     setAppliedHistorySearchStoreName(historySearchStoreName);
     setAppliedHistorySearchMemoQuery(historySearchMemoQuery);
     setAppliedHistorySearchFromDate(historySearchFromDate);
@@ -587,6 +637,7 @@ export default function HistoryScreen() {
     setHistorySearchType(nextType);
     setHistorySearchCategoryName("");
     setHistorySearchBreakdownName("");
+    setHistorySearchAccountName("");
     setHistorySearchStoreName("");
     setHistorySearchMemoQuery("");
     setHistorySearchFromDate(null);
@@ -633,6 +684,7 @@ export default function HistoryScreen() {
     setHistorySearchType("all");
     setHistorySearchCategoryName("");
     setHistorySearchBreakdownName("");
+    setHistorySearchAccountName("");
     setHistorySearchStoreName("");
     setHistorySearchMemoQuery("");
     setHistorySearchFromDate(null);
@@ -640,6 +692,7 @@ export default function HistoryScreen() {
     setAppliedHistorySearchType("all");
     setAppliedHistorySearchCategoryName("");
     setAppliedHistorySearchBreakdownName("");
+    setAppliedHistorySearchAccountName("");
     setAppliedHistorySearchStoreName("");
     setAppliedHistorySearchMemoQuery("");
     setAppliedHistorySearchFromDate(null);
@@ -745,8 +798,14 @@ export default function HistoryScreen() {
     let copied = 0;
     let skipped = 0;
     let fallbackCount = 0;
+    let categoryFallbackCount = 0;
     const failed: UncopiedRecord[] = [];
-    const sourceMap = new Map(transactions.map((tx) => [tx.id, tx]));
+    // 選択はリストビュー・カレンダービューのどちらでもできる。カレンダーは月スコープの
+    // 別データを描いているため、一覧側だけを見ると選択済みの記録を取りこぼす
+    // （未来の記録を一覧から隠すと、カレンダーで選んだぶんが該当しうる）。
+    const sourceMap = new Map(
+      [...transactions, ...calendarTransactions].map((tx) => [tx.id, tx]),
+    );
 
     const categories = categoryOptions;
     const accounts = accountOptions;
@@ -764,8 +823,49 @@ export default function HistoryScreen() {
         accounts,
         defaultAccountId: DEFAULT_ACCOUNT_ID,
       });
-      if (!target) {
-        skipped += 1;
+      if (target.accountFallback) {
+        fallbackCount += 1;
+      }
+      if (target.categoryFallback) {
+        categoryFallbackCount += 1;
+      }
+
+      try {
+        await waitForPendingWrite(
+          addTransaction(
+            copyDate,
+            tx.amount,
+            tx.type,
+            target.categoryId,
+            target.accountId,
+            tx.memo ?? "",
+            target.breakdownId,
+            null,
+            {
+              accountName:
+                accounts.find((account) => account.id === target.accountId)
+                  ?.name ?? tx.accountName,
+              categoryName:
+                categories.find((category) => category.id === target.categoryId)
+                  ?.name ?? tx.categoryName,
+              categoryColor:
+                categories.find((category) => category.id === target.categoryId)
+                  ?.color ?? tx.categoryColor,
+              breakdownName:
+                (target.breakdownId
+                  ? breakdownsByCategory
+                      .get(target.categoryId)
+                      ?.find((breakdown) => breakdown.id === target.breakdownId)
+                      ?.name
+                  : "") ?? tx.breakdownName,
+              storeName: tx.storeName,
+            },
+          ),
+          WRITE_ACK_TIMEOUT_MS,
+        );
+        copied += 1;
+      } catch {
+        // 1件の書き込み失敗で残りを巻き添えにしない。未コピー分は下のモーダルで示す。
         failed.push({
           id: tx.id,
           date: tx.date,
@@ -774,46 +874,7 @@ export default function HistoryScreen() {
           categoryName: tx.categoryName,
           breakdownName: tx.breakdownName,
         });
-        continue;
       }
-
-      if (target.accountFallback) {
-        fallbackCount += 1;
-      }
-
-      await waitForPendingWrite(
-        addTransaction(
-          copyDate,
-          tx.amount,
-          tx.type,
-          target.categoryId,
-          target.accountId,
-          tx.memo ?? "",
-          target.breakdownId,
-          null,
-          {
-            accountName:
-              accounts.find((account) => account.id === target.accountId)
-                ?.name ?? tx.accountName,
-            categoryName:
-              categories.find((category) => category.id === target.categoryId)
-                ?.name ?? tx.categoryName,
-            categoryColor:
-              categories.find((category) => category.id === target.categoryId)
-                ?.color ?? tx.categoryColor,
-            breakdownName:
-              (target.breakdownId
-                ? breakdownsByCategory
-                    .get(target.categoryId)
-                    ?.find((breakdown) => breakdown.id === target.breakdownId)
-                    ?.name
-                : "") ?? tx.breakdownName,
-            storeName: tx.storeName,
-          },
-        ),
-        WRITE_ACK_TIMEOUT_MS,
-      );
-      copied += 1;
     }
 
     setShowBulkCopyModal(false);
@@ -828,26 +889,16 @@ export default function HistoryScreen() {
     setUncopiedRecords(failed);
     setShowUncopiedModal(failed.length > 0);
 
-    if (copied === 0 && failed.length > 0) {
-      return;
+    const alert = buildBulkCopyAlert({
+      copied,
+      failed: failed.length,
+      skipped,
+      accountFallback: fallbackCount,
+      categoryFallback: categoryFallbackCount,
+    });
+    if (alert) {
+      Alert.alert(alert.title, alert.message);
     }
-    if (copied === 0) {
-      Alert.alert("コピーできませんでした", "コピー対象が見つかりません");
-      return;
-    }
-    if (failed.length > 0 || skipped > 0) {
-      let message = `${copied}件コピーしました（${Math.max(failed.length, skipped)}件未コピー）`;
-      if (fallbackCount > 0) {
-        message += `\n口座が存在しない${fallbackCount}件は既定口座で登録されました。`;
-      }
-      Alert.alert("一括コピー完了", message);
-      return;
-    }
-    let message = `${copied}件コピーしました`;
-    if (fallbackCount > 0) {
-      message += `\n口座が存在しない${fallbackCount}件は既定口座で登録されました。`;
-    }
-    Alert.alert("一括コピー完了", message);
   };
 
   const syncEditCategories = (
@@ -1234,6 +1285,7 @@ export default function HistoryScreen() {
           type={historySearchType}
           categoryName={historySearchCategoryName}
           breakdownName={historySearchBreakdownName}
+          accountName={historySearchAccountName}
           storeName={historySearchStoreName}
           memoQuery={historySearchMemoQuery}
           fromDate={historySearchFromDate}
@@ -1241,12 +1293,14 @@ export default function HistoryScreen() {
           datePickerTarget={searchDatePickerTarget}
           categoryOptions={historySearchCategoryOptions}
           breakdownOptions={historySearchBreakdownOptions}
+          accountOptions={historySearchAccountOptions}
           storeOptions={historySearchStoreOptions}
           expanded={isHistorySearchExpanded}
           onExpandedChange={setIsHistorySearchExpanded}
           onTypeChange={handleHistorySearchTypeChange}
           onCategoryNameChange={setHistorySearchCategoryName}
           onBreakdownNameChange={setHistorySearchBreakdownName}
+          onAccountNameChange={setHistorySearchAccountName}
           onStoreNameChange={setHistorySearchStoreName}
           onMemoQueryChange={setHistorySearchMemoQuery}
           onFromDateChange={setHistorySearchFromDate}
@@ -1329,7 +1383,9 @@ export default function HistoryScreen() {
             // 検索中は ProgressOverlay が出るので、一覧側には何も出さない。
             searchResultsPending || paginatedLoadingInitial ? null : (
               <Text style={[styles.emptyText, { color: colors.subText }]}>
-                記録がありません
+                {hiddenFutureCount > 0
+                  ? `記録がありません（未来の日付の${hiddenFutureCount}件は非表示です）`
+                  : "記録がありません"}
               </Text>
             )
           }
@@ -1661,7 +1717,8 @@ export default function HistoryScreen() {
               一部コピーされませんでした
             </Text>
             <Text style={[styles.copyModalDesc, { color: colors.subText }]}>
-              現在存在しないカテゴリのため、下記はコピーされませんでした。
+              保存に失敗したため、下記はコピーされませんでした。通信状況を確認して
+              もう一度お試しください。
             </Text>
 
             <ScrollView

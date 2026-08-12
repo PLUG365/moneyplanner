@@ -16,6 +16,7 @@ import {
     Platform,
     ScrollView,
     StyleSheet,
+    Switch,
     Text,
     TextInput,
     TouchableOpacity,
@@ -32,6 +33,7 @@ import { THEME_IDS, THEMES } from "@/constants/Themes";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { useCsvImportPurchase } from "@/hooks/useCsvImportPurchase";
 import { useCollection } from "@/hooks/useFirestore";
+import { useHistoryDisplayPreference } from "@/hooks/useHistoryDisplayPreference";
 import {
     ACCOUNT_DELETION_CONFIRMATION_TEXT,
     isAccountDeletionConfirmationValid,
@@ -138,6 +140,8 @@ type NumericInputTarget = "category-budget" | "account-balance";
 
 export default function SettingsScreen() {
   const { colors, themeId, setThemeId } = useAppTheme();
+  const { showFutureTransactions, setShowFutureTransactions } =
+    useHistoryDisplayPreference();
   const insets = useSafeAreaInsets();
   const {
     access: csvImportAccess,
@@ -1558,6 +1562,39 @@ export default function SettingsScreen() {
         ]}
       >
         <Text style={[styles.sectionTitle, { color: colors.text }]}>
+          履歴の表示
+        </Text>
+        <Text style={[styles.sectionDescription, { color: colors.subText }]}>
+          この端末にのみ保存されます。
+        </Text>
+        <View style={styles.preferenceRow}>
+          <View style={styles.preferenceLabelColumn}>
+            <Text style={[styles.preferenceLabel, { color: colors.text }]}>
+              未来の記録を表示
+            </Text>
+            <Text
+              style={[styles.preferenceHint, { color: colors.subText }]}
+            >
+              オフのときは、履歴一覧に今日までの記録だけを出します。検索で終了日を
+              指定した場合はその指定に従います。
+            </Text>
+          </View>
+          <Switch
+            value={showFutureTransactions}
+            onValueChange={setShowFutureTransactions}
+            trackColor={{ true: colors.tint, false: colors.border }}
+            accessibilityLabel="未来の記録を表示"
+          />
+        </View>
+      </View>
+
+      <View
+        style={[
+          styles.section,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
           配色テーマ
         </Text>
         <Text style={[styles.sectionDescription, { color: colors.subText }]}>
@@ -2787,6 +2824,15 @@ const styles = StyleSheet.create({
   collapsibleChevron: { fontSize: 12, fontWeight: "600" },
   collapsibleBody: { marginTop: 12 },
   sectionDescription: { fontSize: 13, marginBottom: 12, lineHeight: 20 },
+  preferenceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  preferenceLabelColumn: { flex: 1 },
+  preferenceLabel: { fontSize: 15, fontWeight: "600" },
+  preferenceHint: { fontSize: 12, lineHeight: 18, marginTop: 4 },
   themeGrid: {
     flexDirection: "row",
     flexWrap: "wrap",

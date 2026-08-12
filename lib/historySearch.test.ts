@@ -68,6 +68,54 @@ test("filterHistoryTransactions filters by selected category, breakdown, and sto
   );
 });
 
+test("filterHistoryTransactions filters by account name across both types", () => {
+  assert.deepEqual(
+    filterHistoryTransactions(transactions, {
+      type: "all",
+      accountName: "家計",
+    }).map((tx) => tx.id),
+    ["expense-food", "expense-utility"],
+  );
+
+  assert.deepEqual(
+    filterHistoryTransactions(transactions, {
+      type: "all",
+      accountName: "銀行",
+    }).map((tx) => tx.id),
+    ["income-salary"],
+  );
+});
+
+test("filterHistoryTransactions matches account name exactly, not partially", () => {
+  assert.deepEqual(
+    filterHistoryTransactions(transactions, {
+      type: "all",
+      accountName: "銀",
+    }).map((tx) => tx.id),
+    [],
+  );
+});
+
+test("filterHistoryTransactions combines account name with other conditions", () => {
+  assert.deepEqual(
+    filterHistoryTransactions(transactions, {
+      type: "expense",
+      accountName: "家計",
+      categoryName: "食費",
+    }).map((tx) => tx.id),
+    ["expense-food"],
+  );
+
+  assert.deepEqual(
+    filterHistoryTransactions(transactions, {
+      type: "expense",
+      accountName: "銀行",
+      categoryName: "食費",
+    }).map((tx) => tx.id),
+    [],
+  );
+});
+
 test("filterHistoryTransactions matches store by partial text", () => {
   assert.deepEqual(
     filterHistoryTransactions(transactions, {
@@ -161,5 +209,25 @@ test("buildHistorySearchConditionSummary includes active type and filters", () =
       toDate: "2026-05-31",
     }),
     { count: 4, label: "収入 / 給与 / メモ: 5月 / 2026-05-01〜2026-05-31" },
+  );
+});
+
+test("buildHistorySearchConditionSummary counts the account name as a condition", () => {
+  assert.deepEqual(
+    buildHistorySearchConditionSummary({
+      type: "all",
+      accountName: "銀行",
+    }),
+    { count: 1, label: "銀行" },
+  );
+
+  assert.deepEqual(
+    buildHistorySearchConditionSummary({
+      type: "expense",
+      categoryName: "食費",
+      breakdownName: "昼ご飯",
+      accountName: "家計",
+    }),
+    { count: 4, label: "支出 / 食費 / 昼ご飯 / 家計" },
   );
 });
