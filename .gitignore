@@ -63,3 +63,6 @@ firestore-debug.log
 
 # superpowersのドキュメント
 docs/superpowers/
+
+# Task Board拡張機能のローカルデータ（tasks.json / history.json）
+.copilot/todo-board/
