@@ -20,5 +20,12 @@
         "EXPO_PUBLIC_CSV_IMPORT_IAP_ENABLED": "1"
       }
     }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6763791091"
+      }
+    }
   }
 }
