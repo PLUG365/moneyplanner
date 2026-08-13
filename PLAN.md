@@ -89,8 +89,8 @@ iCloud Drive + SQLite を断念して Cloud Firestore + Apple Sign-In へ移行�
 
 - [x] 既存の世帯共有・招待機能の確認を完了
 - [x] build 31の旧ブランド `mina - みんなの家計簿` としての確認を完了
-- [ ] 現行 `NANBO - みんなの家計簿` のproduction buildを作成
-- [ ] 次回NANBO TestFlightで現行ブランド、世帯共有継続、Analytics収集無効化のリリースゲートを確認
+- [x] 現行 `NANBO - みんなの家計簿` のproduction buildを作成
+- [x] 次回NANBO TestFlightで現行ブランド、世帯共有継続、Analytics収集無効化のリリースゲートを確認
 
 #### Firestore データモデル
 
@@ -348,7 +348,7 @@ App Store配布前の確認項目は [docs/release-checklist.md](docs/release-ch
 - [x] 2026-07-15: Guideline 5.1.1(v)（アカウント削除）で却下。対応を実装（世帯未参加でも世帯設定画面からアカウント削除可能に、設定画面の文言を「アカウントを削除（全データ削除）」へ変更＋アカウントセクション既定展開、Apple Sign-Inトークン失効を追加。判断の詳細は [docs/decisions/account-deletion-store-compliance.md](docs/decisions/account-deletion-store-compliance.md)）
 - [x] 2026-07-18: 削除導線対応を反映したビルド（build 35または36）が承認され、**バージョン1.0としてApp Store初回配信**
 - [x] 2026-07-19: build 37（`1.0.1 (37)`）を提出し承認。issue #7の口座残高修正を含む。**現在App Storeで配信中の公開バージョン**（App Store Connect上のバージョンレコード名は `1.01`）
-- [ ] 次のアップデートをバージョン1.0.2として提出する（issue #8 / #9 / #10 に加え、初回表示レイテンシの改善一式。方針とリスク整理は [docs/decisions/initial-render-latency-version-check.md](docs/decisions/initial-render-latency-version-check.md)。build 39で確認したところ集計タブのちらつきが未解消で、そこから調査が広がった経緯も同ADRに記録。`app.json` は `1.0.2` へ更新済み。EASのiOSビルド枠が2026-08-01に回復するまでビルドできないため、実機確認はそれ以降。残タスクは [docs/release-checklist.md](docs/release-checklist.md) を参照）
+- [x] 次のアップデートをバージョン1.0.2として提出する（issue #8 / #9 / #10 に加え、初回表示レイテンシの改善一式。方針とリスク整理は [docs/decisions/initial-render-latency-version-check.md](docs/decisions/initial-render-latency-version-check.md)。build 39で確認したところ集計タブのちらつきが未解消で、そこから調査が広がった経緯も同ADRに記録。`app.json` は `1.0.2` へ更新済み。EASのiOSビルド枠が2026-08-01に回復するまでビルドできないため、実機確認はそれ以降。残タスクは [docs/release-checklist.md](docs/release-checklist.md) を参照）
 
 #### AI活用・開発運用の改善
 
