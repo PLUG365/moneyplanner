@@ -103,10 +103,12 @@ export function resolveTransactionMasterSelection(
     : undefined;
   const resolvedCategory =
     category ??
-    candidateCategories.find(
-      (candidate) =>
-        normalize(candidate.name) === normalize(source.categoryName),
-    );
+    (source.categoryName.trim()
+      ? candidateCategories.find(
+          (candidate) =>
+            normalize(candidate.name) === normalize(source.categoryName),
+        )
+      : undefined);
 
   if (!resolvedCategory) {
     return null;
@@ -130,6 +132,27 @@ export function resolveTransactionMasterSelection(
     categoryId: resolvedCategory.id,
     breakdownId: resolvedBreakdown?.id ?? null,
   };
+}
+
+/**
+ * 記録の編集モーダルを開いたときの初期カテゴリを決める。
+ *
+ * `resolveTransactionMasterSelection` で再解決できればそれを使う。できない場合、
+ * 記録側から指定があった（＝既存記録を開いた）ときは元のIDをそのまま保持し、
+ * 種別変更など指定自体がないときだけ一覧の先頭カテゴリを補う。先頭カテゴリへ
+ * 無条件フォールバックすると、カテゴリ削除やCSVインポートで未解決になった記録を
+ * 開いてメモなどを直しただけで、保存時に無関係なカテゴリへ静かに変わってしまう。
+ */
+export function resolveEditInitialCategoryId(
+  selection: MasterSelection | null,
+  hasPreferredCategory: boolean,
+  preferredCategoryId: string | null,
+  fallbackCategoryId: string | null,
+): string | null {
+  if (selection) {
+    return selection.categoryId;
+  }
+  return hasPreferredCategory ? preferredCategoryId : fallbackCategoryId;
 }
 
 /**

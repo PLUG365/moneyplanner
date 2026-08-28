@@ -4,6 +4,7 @@ import test from "node:test";
 import {
     buildBreakdownsByCategory,
     getSelectionCopyButtonLabel,
+    resolveEditInitialCategoryId,
     resolveTransactionCopyTarget,
     resolveTransactionMasterSelection,
 } from "./transactionCopy";
@@ -191,6 +192,65 @@ test("resolveTransactionMasterSelection falls back to snapshot category and brea
     categoryId: "cat-food",
     breakdownId: "bd-eat-out",
   });
+});
+
+test("resolveEditInitialCategoryId uses the resolved selection when found", () => {
+  const result = resolveEditInitialCategoryId(
+    { categoryId: "cat-food", breakdownId: null },
+    true,
+    "old-cat",
+    "cat-salary",
+  );
+
+  assert.equal(result, "cat-food");
+});
+
+test("resolveEditInitialCategoryId keeps the original id instead of the first master category when a preferred category was given but unresolved", () => {
+  // 再現ケース: CSVインポートで「副業」（income）が未分類のまま取り込まれた記録
+  // （categoryId: null）を開いたとき、マスタ先頭の「給与所得」へ無条件で
+  // フォールバックしていたのが本来のバグ。記録由来の指定があるときは
+  // 解決できなくても元のIDをそのまま保つ。
+  const result = resolveEditInitialCategoryId(null, true, null, "cat-salary");
+
+  assert.equal(result, null);
+});
+
+test("resolveEditInitialCategoryId keeps a stale non-null id when a preferred category was given but unresolved", () => {
+  const result = resolveEditInitialCategoryId(
+    null,
+    true,
+    "deleted-cat",
+    "cat-salary",
+  );
+
+  assert.equal(result, "deleted-cat");
+});
+
+test("resolveEditInitialCategoryId falls back to the first master category only when no preferred category was given (type change)", () => {
+  const result = resolveEditInitialCategoryId(null, false, null, "cat-salary");
+
+  assert.equal(result, "cat-salary");
+});
+
+test("resolveTransactionMasterSelection does not match a category via an empty snapshot name", () => {
+  // 内訳側は空文字ガードがあるが（source.breakdownName.trim() ? ... : undefined）、
+  // カテゴリ側には無かった。空/破損データでカテゴリ名が空になった場合に、
+  // 同じく空の名前を持つ別カテゴリへ誤って一致しないことを確認する。
+  const result = resolveTransactionMasterSelection(
+    {
+      type: "expense",
+      categoryId: null,
+      categoryName: "",
+      breakdownId: null,
+      breakdownName: "",
+    },
+    {
+      categories: [{ id: "cat-blank", name: "", type: "expense" }],
+      breakdownsByCategory: new Map(),
+    },
+  );
+
+  assert.equal(result, null);
 });
 
 test("resolveTransactionMasterSelection keeps empty breakdown when snapshot has none", () => {

@@ -84,6 +84,7 @@ import {
 import {
     buildBreakdownsByCategory,
     getSelectionCopyButtonLabel,
+    resolveEditInitialCategoryId,
     resolveTransactionCopyTarget,
     resolveTransactionMasterSelection,
 } from "@/lib/transactionCopy";
@@ -921,7 +922,12 @@ export default function HistoryScreen() {
       },
       { categories: cats, breakdownsByCategory: new Map() },
     );
-    const nextCategoryId = initialSelection?.categoryId ?? cats[0]?.id ?? null;
+    const nextCategoryId = resolveEditInitialCategoryId(
+      initialSelection,
+      preferredCategoryId !== undefined,
+      preferredCategoryId ?? null,
+      cats[0]?.id ?? null,
+    );
     setEditCategoryId(nextCategoryId);
 
     if (nextCategoryId) {
