@@ -98,6 +98,8 @@ App Storeへの提出に必要なメタデータ・スクリーンショット�
   - [x] 実機で「サインイン → 削除導線へ移動 → 削除完了」の画面録画を撮影する
   - [x] 新ビルド（build 35または36）を作成・提出し、App Reviewへの返信に画面録画を添付する。2026-07-18に承認され、バージョン1.0としてApp Store初回配信
 - [x] バージョン1.0.1（build 37）を2026-07-19に提出・承認（issue #7の口座残高修正。現在の公開バージョン）
+- [x] バージョン1.0.3（build 42）を提出済み（世帯所属誤判定の修正とSecurity Rulesの堅牢化。承認/公開状況は本ドキュメント未確認）
+- [x] バージョン1.0.4（build 43）を2026-08-29に提出（履歴の編集モーダルで未解決カテゴリが先頭カテゴリへ黙って変わる不具合の修正。詳細は [copy-tolerates-missing-category.md](decisions/copy-tolerates-missing-category.md)、実機確認項目は [docs/testflight-history.md](testflight-history.md) のbuild 43を参照。**実機でのTestFlight確認は未実施のまま提出**）
 
 ## 次アップデート（バージョン1.0.2）の提出前確認
 
